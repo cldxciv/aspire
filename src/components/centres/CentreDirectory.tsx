@@ -1,0 +1,161 @@
+"use client";
+
+import { Search } from "lucide-react";
+import { useId, useRef, useState } from "react";
+import { EXAM_META, EXAM_ORDER } from "@/components/programs/exam-meta";
+import { Button, EmptyState, Notice } from "@/components/ui";
+import type { Centre, ExamTrack } from "@/lib/types";
+import { CentreCard } from "./CentreCard";
+
+const controlClass =
+  "min-h-11 w-full rounded-control border border-[#d8e2ef] bg-white text-sm text-ink focus:border-blue";
+
+function matches(centre: Centre, query: string, exam: ExamTrack | ""): boolean {
+  const q = query.trim().toLowerCase();
+  const text = [centre.name, centre.district, centre.label, centre.address, ...(centre.servesDistricts ?? [])]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return (!q || text.includes(q)) && (!exam || centre.programs.includes(exam));
+}
+
+/**
+ * Centre search (name / district / districts served / address) + program filter
+ * over the server-provided list. The program filter only appears once at least
+ * one centre lists its programs. Filtering happens in the browser; nothing is fetched.
+ */
+export function CentreDirectory({
+  centres,
+  facultySlugs = [],
+  hostelSlugs = [],
+}: {
+  centres: Centre[];
+  /** Published faculty profiles: a campus head with one of these slugs links to /faculty#<slug>. */
+  facultySlugs?: string[];
+  /** Centres with published hostel details: their cards link to /hostels#hostel-<slug>. */
+  hostelSlugs?: string[];
+}) {
+  const [query, setQuery] = useState("");
+  const [exam, setExam] = useState<ExamTrack | "">("");
+  const searchId = useId();
+  const programId = useId();
+  const listId = useId();
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const programsListed = centres.some((c) => c.programs.length > 0);
+  const examOptions = EXAM_ORDER.filter((e) => centres.some((c) => c.programs.includes(e)));
+  const activeExam = programsListed ? exam : "";
+  const filtered = centres.filter((c) => matches(c, query, activeExam));
+  const filtersActive = query.trim() !== "" || activeExam !== "";
+  const hasPlaceholders = centres.some((c) => c.status === "placeholder");
+
+  // The "Clear filters" button unmounts with the empty state, so move focus to the search box.
+  const reset = () => {
+    setQuery("");
+    setExam("");
+    searchRef.current?.focus();
+  };
+
+  return (
+    <div>
+      <form
+        role="search"
+        aria-label="Centres"
+        onSubmit={(e) => e.preventDefault()}
+        className="flex flex-col gap-3 sm:flex-row sm:items-end"
+      >
+        <div className="flex-1">
+          <label htmlFor={searchId} className="mb-1 block text-xs font-bold text-[#354b66]">
+            Search by district or centre
+          </label>
+          <div className="relative">
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted"
+            />
+            <input
+              ref={searchRef}
+              id={searchId}
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="e.g. Mandi or Shimla"
+              autoComplete="off"
+              aria-controls={listId}
+              className={`${controlClass} pl-9 pr-3`}
+            />
+          </div>
+        </div>
+        {programsListed && (
+          <div className="sm:w-52">
+            <label htmlFor={programId} className="mb-1 block text-xs font-bold text-[#354b66]">
+              Program
+            </label>
+            <select
+              id={programId}
+              value={exam}
+              onChange={(e) => setExam(e.target.value as ExamTrack | "")}
+              aria-controls={listId}
+              className={`${controlClass} px-3`}
+            >
+              <option value="">All programs</option>
+              {examOptions.map((e) => (
+                <option key={e} value={e}>
+                  {EXAM_META[e].label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {filtersActive && (
+          <Button variant="outline" onClick={reset}>
+            Clear
+          </Button>
+        )}
+      </form>
+
+      <p role="status" className="mb-4 mt-3 text-sm text-muted">
+        {filtered.length === 1 ? "Showing 1 centre" : `Showing ${filtered.length} centres`}
+        {query.trim() !== "" && ` matching “${query.trim()}”`}
+      </p>
+
+      {hasPlaceholders && (
+        <Notice className="mb-5">
+          Entries marked DEMO are sample listings imported from Aspire&apos;s demo site and are pending verification.
+          Building images are illustrations, not photos of the actual centres.
+          {!programsListed && " Which programs run at each campus is confirmed by the admissions team."}
+        </Notice>
+      )}
+
+      {filtered.length > 0 ? (
+        <ul id={listId} className="space-y-5">
+          {filtered.map((centre) => (
+            <li key={centre.id}>
+              <CentreCard
+                centre={centre}
+                headProfileHref={
+                  centre.head?.facultySlug && facultySlugs.includes(centre.head.facultySlug)
+                    ? `/faculty#${centre.head.facultySlug}`
+                    : undefined
+                }
+                hostelHref={hostelSlugs.includes(centre.slug) ? `/hostels#hostel-${centre.slug}` : undefined}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div id={listId}>
+          <EmptyState
+            title="No centres match your search"
+            description="Try another district or centre name, or clear the search. A counsellor can also suggest the nearest campus."
+            action={
+              <Button variant="outline" onClick={reset}>
+                Clear filters
+              </Button>
+            }
+          />
+        </div>
+      )}
+    </div>
+  );
+}

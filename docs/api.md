@@ -1,0 +1,288 @@
+# Public API
+
+Owner: BE. Covers the public route handlers under `src/app/api/` (portal APIs under `/api/admin|student|parent` and `/api/session` are documented in `docs/auth-and-portals.md`).
+
+Implementation: route files in `src/app/api/**/route.ts` stay thin; logic lives in `src/lib/server/**`. Content is read only through `src/lib/data.ts`. Contracts: `src/lib/contracts/api.ts` (envelope, D-007) and `src/lib/contracts/enquiry.ts` (enquiry schema, D-008).
+
+## Conventions
+
+Every response is JSON in the shared envelope, with a matching HTTP status:
+
+```jsonc
+{ "ok": true, "data": [ ... ] }                       // ApiList<T>
+{ "ok": true, "data": { ... } }                       // ApiItem<T>
+{ "ok": false, "error": "<code>", "message": "...", "fieldErrors": { "field": ["..."] } } // ApiError
+```
+
+- `Cache-Control: no-store` on every response from these routes.
+- Error `message`s are user-safe and never contain internals.
+- `error` codes: `bad_request`, `forbidden`, `not_found`, `validation`, `rate_limited`, `server_error` (plus `unauthenticated` / `not_configured` used by portal routes).
+- Methods that a route doesn't export get Next.js's automatic `405` (plain, not JSON). `OPTIONS` is answered automatically with an `Allow` header. **No CORS headers are sent by any route**, so other origins can't call them from a browser.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/enquiries` | Validate and forward an enquiry |
+| GET | `/api/programs` | List programs (`?exam=`) |
+| GET | `/api/programs/[slug]` | One program |
+| GET | `/api/centres` | List centres (`?q=&exam=`) |
+| GET | `/api/centres/[slug]` | One centre |
+| GET | `/api/results` | List published results (`?year=&exam=`) |
+| GET | `/api/health` | Liveness + non-secret config state |
+
+---
+
+## POST /api/enquiries
+
+Accepts the three enquiry forms (home "quick" card, `/admissions`, `/contact`) and passes valid ones to the configured destination. **The API only answers `received` when a configured destination accepted the enquiry.**
+
+### Request
+
+- `Content-Type: application/json` (an optional `charset` must be `utf-8`).
+- Body ≤ **10 KB** (10,240 bytes, counted while streaming as well as from `Content-Length`).
+- Must come from this site (see [Origin check](#origin-check-csrf)).
+- Body: one of the `enquirySchema` variants, discriminated by `source`:
+
+| Field | quick | admissions | contact | Rules |
+|---|---|---|---|---|
+| `source` | `"quick"` | `"admissions"` | `"contact"` | required |
+| `name` | ✓ | ✓ | ✓ | 2–80 chars, trimmed |
+| `phone` | ✓ | ✓ | ✓ | Indian mobile: optional `+91`/`91`/`0`, then 10 digits starting 6–9; spaces/hyphens ignored (`+91 98765 43210` ok) |
+| `email` | opt | opt | opt | valid email or `""` |
+| `message` | opt | opt | opt | ≤ 1000 chars |
+| `consent` | ✓ | ✓ | ✓ | must be `true` |
+| `website` | opt | opt | opt | **honeypot** — leave empty |
+| `currentClass` | ✓ | ✓ | – | `class-6-8`, `class-9`, `class-10`, `class-11`, `class-12`, `dropper` |
+| `programInterest` | ✓ | ✓ | – | `jee`, `neet`, `foundation`, `integrated`, `not-sure` |
+| `intent` | opt | – | – | `enquiry` (default) or `scholarship` |
+| `preferredCentre` | – | opt | – | `"not-sure"`, `""`, or the slug of a centre `getCentres()` currently publishes (enforced server-side; free text → 422) |
+| `topic` | – | – | ✓ | `course-information`, `admissions`, `scholarship`, `centre-information`, `other` |
+
+Unknown keys are dropped.
+
+### Processing order
+
+1. Origin / CSRF check → `403`
+2. Content type → `415`
+3. Per-IP rate limit → `429` (only requests that passed 1–2 count)
+4. Body size / UTF-8 → `413` / `400`
+5. JSON parse; must be an object → `400`
+6. `enquirySchema.safeParse` + `preferredCentre` check → `422`
+7. Honeypot (after validation, so bots see exactly what a person would)
+8. Destination → `200` / `201` / `500`
+
+### Responses
+
+| Status | Body | When |
+|---|---|---|
+| 201 | `{ ok: true, status: "received", reference: "ENQ-XXXXXXXXXX", message }` | The configured destination returned 2xx |
+| 200 | `{ ok: true, status: "not_configured", message }` | Valid, but **no destination is configured — nothing was sent or stored**. The UI must say so. |
+| 400 | `bad_request` | Malformed JSON, non-object body, invalid UTF-8, invalid `Content-Length` |
+| 403 | `forbidden` | Failed origin check |
+| 413 | `bad_request` | Body over 10 KB |
+| 415 | `bad_request` | `Content-Type` is not `application/json` |
+| 422 | `validation` + `fieldErrors` | Schema errors (`z.flattenError(...).fieldErrors`), e.g. `{ "phone": ["Enter a valid 10-digit mobile number"] }` |
+| 429 | `rate_limited` + `Retry-After: <seconds>` header | More than 5 requests from this IP in 10 minutes |
+| 500 | `server_error` | The destination failed (non-2xx, timeout, network) or an unexpected error. Message says nothing was submitted. |
+
+`413` and `415` reuse the `bad_request` code because the frozen `ApiErrorCode` union has no dedicated codes; clients should branch on the HTTP status.
+
+`reference` is `ENQ-` plus 10 random Crockford-base32 characters (no I/L/O/U). It is random, so it reveals nothing about volume.
+
+### Origin check (CSRF)
+
+`src/lib/server/request-guards.ts → checkSameOrigin` (deny by default):
+
+- `Origin` present: it must equal the request's own host (`X-Forwarded-Host`, else `Host`, compared without the scheme so TLS-terminating proxies work) **or** the origin of `NEXT_PUBLIC_SITE_URL`. `Origin: null`, malformed and non-http(s) origins are rejected.
+- `Origin` absent: `Sec-Fetch-Site` must be `same-origin` or `none`.
+- Neither header: rejected. All current browsers send `Origin` on POST, so this only blocks non-browser clients that don't identify an origin.
+- `Sec-Fetch-Site: cross-site` is always rejected.
+
+Together with the JSON-only content type (cross-origin JSON needs a CORS preflight, and no CORS headers are sent), this blocks cross-site form posts and `fetch` calls.
+
+### Rate limiting
+
+`src/lib/server/rate-limit.ts`: an in-memory sliding-window log, **5 requests per client IP per rolling 10 minutes**. Only allowed requests are recorded, so `Retry-After` is exact and a blocked client can't extend its own block. Memory is bounded (10,000 keys, least-recently-used eviction, and expired keys are swept).
+
+- **Single instance only.** Each server process or serverless instance has its own counters, which reset on restart or cold start. A shared store (e.g. Redis/Upstash) is needed before multi-instance hosting.
+- Client IP = first `X-Forwarded-For` hop, then `X-Real-IP`, else the shared bucket `"unknown"`. The first hop is only trustworthy when the hosting proxy **overwrites** `X-Forwarded-For` (Vercel does). Behind a proxy that appends, clients can rotate fake IPs. `next start` without a proxy fills it from the socket only when the header is absent.
+- The IP is used only as an in-memory key. It is never logged or forwarded.
+
+### Honeypot
+
+The forms render a visually hidden `website` input. If it is non-empty after validation, the API returns exactly what a genuine submission would get for the current configuration (`200 not_configured`, or `201 received` with a fresh reference in webhook mode), but **nothing is forwarded**. The log records outcome `honeypot`. Known trade-off: a person whose browser autofills the hidden field would see a success message although nothing was sent. The field uses `autocomplete="off"`, `tabindex="-1"` and `aria-hidden` to make that unlikely.
+
+### Destinations
+
+Selected by `ENQUIRY_DESTINATION` at request time (`src/lib/server/env.ts`, adapters in `src/lib/server/destinations/`):
+
+| Value | Behaviour |
+|---|---|
+| unset, `""`, `none` | Validate only. Responds `200 not_configured`. Nothing is sent or stored. |
+| `webhook` | POST to `ENQUIRY_WEBHOOK_URL`, signed with `ENQUIRY_WEBHOOK_SECRET`. |
+| anything else | Treated as `none`; logs config warning `enquiry_destination_unknown`. |
+
+The webhook falls back to `none` (still `200 not_configured`, plus a one-time `config` warning in the log) when the URL is missing or invalid, contains credentials, or is not `https:` (plain `http://localhost` is allowed outside production), or when the secret is missing or shorter than 16 characters. The site therefore never claims receipt when it couldn't deliver.
+
+#### Webhook request
+
+```http
+POST <ENQUIRY_WEBHOOK_URL>
+Content-Type: application/json; charset=utf-8
+User-Agent: AspireWeb-Enquiries/1
+X-Aspire-Signature-256: sha256=<hex HMAC-SHA256(secret, raw body)>
+X-Aspire-Enquiry-Reference: ENQ-XXXXXXXXXX
+```
+
+```json
+{
+  "reference": "ENQ-7K3M9Q2XWD",
+  "receivedAt": "2026-10-19T10:00:00.000Z",
+  "consentAt": "2026-10-19T10:00:00.000Z",
+  "enquiry": {
+    "source": "admissions",
+    "name": "…",
+    "phone": "+919876543210",
+    "email": "…",
+    "consent": true,
+    "currentClass": "class-11",
+    "programInterest": "jee",
+    "preferredCentre": "shimla",
+    "message": "…"
+  }
+}
+```
+
+- `enquiry` is the validated, normalised enquiry: the phone has its spaces and hyphens stripped, `intent` defaults to `enquiry`, and the honeypot and empty optional fields are removed.
+- `consentAt` is the server time of the submission. The schema requires `consent: true`.
+- Any **2xx** means accepted (→ `201 received`). Any other status, a redirect (redirects are **not followed**), a network error or more than **8 s** → `500 server_error`. There are no retries, because the visitor is waiting for the response.
+
+#### Verifying the signature (receiver side)
+
+Sign and compare over the **exact raw body bytes** before parsing:
+
+```ts
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function isValidSignature(rawBody: string, header: string | null, secret: string): boolean {
+  if (!header) return false;
+  const expected = Buffer.from(`sha256=${createHmac("sha256", secret).update(rawBody, "utf8").digest("hex")}`);
+  const received = Buffer.from(header);
+  return received.length === expected.length && timingSafeEqual(received, expected);
+}
+```
+
+Receiver recommendations:
+
+- Reject a `receivedAt` older than ~5 minutes, to limit replay.
+- Deduplicate on `reference`.
+- Respond 2xx only after the enquiry is durably stored.
+- Treat all fields as untrusted text. If they land in a spreadsheet, neutralise values starting with `=`, `+`, `-` or `@` (formula injection).
+
+### Logging
+
+`src/lib/server/logger.ts` writes one JSON line per request:
+
+```json
+{"ts":"…","level":"info","event":"enquiry","outcome":"received","durationMs":412,"reference":"ENQ-…","source":"quick"}
+```
+
+- Allowed fields: `outcome`, `durationMs`, `reference`, `source` and a short `reason` code (for example `origin_mismatch`, `invalid_json`, `timeout`, `http_503`, `exception_TypeError`).
+- Never logged: name, phone, email, message, IP address, request body, webhook URL or secret, or any `Error.message` (JSON and fetch errors can echo input or URLs).
+- Config warnings are logged once per process: `{"event":"config","code":"enquiry_webhook_secret_missing"}`.
+
+---
+
+## GET /api/programs
+
+`?exam=JEE|NEET|Foundation|Integrated` (optional, case-insensitive).
+
+- `200` `ApiList<Program>` (`src/lib/types.ts`).
+- `400 bad_request` with `fieldErrors` for an invalid or repeated `exam`.
+
+An empty parameter (`?exam=`) is treated as absent. Unknown parameters are ignored.
+
+## GET /api/programs/[slug]
+
+- `200` `ApiItem<Program>`
+- `404 not_found` for unknown, unpublished or malformed slugs.
+
+## GET /api/centres
+
+- `?q=` (optional, ≤ 100 chars) matches name or district, case-insensitive.
+- `?exam=` (optional) filters on the exams a centre offers.
+- `200` `ApiList<Centre>`; `400` on invalid parameters.
+
+Placeholder centres currently list no programs, so any `exam` filter returns `[]` until verified data exists.
+
+## GET /api/centres/[slug]
+
+- `200` `ApiItem<Centre>`
+- `404 not_found`
+
+## GET /api/results
+
+- `?year=YYYY` (optional, 2000–2100).
+- `?exam=` (optional).
+- `200` `ApiList<PublicResult>`; `400` on invalid parameters.
+
+Only records `getResults()` publishes are returned: published, and consent not pending. On top of that, `studentDisplayName` is included **only** when `consentStatus === "granted"`, and the internal `verifiedBy` field is never exposed. Results content is intentionally empty for now (D-009), so the response is `{ ok: true, data: [] }`.
+
+## GET /api/health
+
+```json
+{ "ok": true, "data": { "status": "ok", "time": "2026-10-19T10:00:00.000Z", "enquiries": "not_configured", "placeholderContent": false } }
+```
+
+`enquiries` is `connected` when a valid webhook destination is configured, otherwise `not_configured`. `placeholderContent` mirrors `showPlaceholderContent()`; it should be `false` in production. The response never includes URLs, secrets or versions.
+
+---
+
+## Rendering and caching (Next.js 16, Cache Components)
+
+- The list routes read `request.nextUrl.searchParams`, so they render per request. The request is read first and outside any `try/catch` so Next.js can bail out of prerendering cleanly.
+- `/api/health` calls `await connection()` so it reflects the running server's environment.
+- The `[slug]` routes use `generateStaticParams`, documented for route handlers under Cache Components:
+  - Programs use `getProgramSlugs()`, which always returns at least one entry.
+  - Centres use the visible centres, or `STATIC_PARAM_FALLBACK`.
+  - Known slugs are prerendered at build time; unknown slugs render on request. Prerendered `404`s are accepted by the build.
+  - Placeholder visibility for these routes follows the **build-time** environment, as the pages do.
+  - These routes have been type-checked against the route types from `next typegen`, but **`next build` has not yet been run against them**.
+- `POST` handlers are never prerendered or cached.
+
+## Environment variables
+
+All of these are listed in `.env.example`. Only `NEXT_PUBLIC_SITE_URL` is public.
+
+| Variable | Used by | Default | Notes |
+|---|---|---|---|
+| `ENQUIRY_DESTINATION` | POST /api/enquiries, /api/health | `none` | `none` or `webhook` |
+| `ENQUIRY_WEBHOOK_URL` | webhook adapter | – | `https://` required (`http://localhost` allowed outside production). No credentials in the URL. Treated as a secret: never logged. |
+| `ENQUIRY_WEBHOOK_SECRET` | webhook adapter | – | ≥ 16 chars, 32+ random chars recommended (`openssl rand -hex 32`). Server-only. |
+| `NEXT_PUBLIC_SITE_URL` | origin check | – | Its origin is also accepted as a same-site `Origin` |
+| `SHOW_PLACEHOLDER_CONTENT` | content routes (via `data.ts`), /api/health | dev on / prod off | D-005 |
+| `NODE_ENV` | webhook URL policy | – | Set by Next.js |
+
+## Known limitations
+
+- The rate limiter is in-memory and single-instance, and relies on a trustworthy `X-Forwarded-For` (see above).
+- No persistence: with `none`, enquiries are validated and then discarded. With `webhook`, the receiver is the system of record.
+- No retry queue: a webhook outage returns `500` and the visitor is asked to try again or contact Aspire directly.
+- Honeypot responses return immediately; a webhook-mode genuine submission takes as long as the webhook does. This timing difference is observable.
+- No CAPTCHA. Add one only with owner and privacy approval if spam gets past the honeypot and rate limit.
+
+## Tests
+
+```bash
+npx vitest run src/lib/contracts/enquiry.test.ts src/lib/server src/app/api/enquiries src/app/api/content-routes.test.ts
+```
+
+| Area | Test file |
+|---|---|
+| Schema cases per source (phone formats, consent, email) | `src/lib/contracts/enquiry.test.ts` |
+| Rate limiter window | `src/lib/server/rate-limit.test.ts` |
+| Origin guard, content type, client IP, body limit | `src/lib/server/request-guards.test.ts` |
+| Destination config parsing | `src/lib/server/env.test.ts` |
+| Webhook signing, timeout and failures | `src/lib/server/destinations/webhook.test.ts` |
+| Service: reference, honeypot, payload, centre check | `src/lib/server/enquiry-service.test.ts` |
+| POST handler end to end, including a no-PII-in-logs assertion on every test | `src/app/api/enquiries/route.test.ts` |
+| GET routes and health | `src/app/api/content-routes.test.ts` |

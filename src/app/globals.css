@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens — source of truth: specs/design_system.md.
+ * Deviation (docs/agent-decisions.md D-004): muted text darkened from #65758B
+ * to #5A6A7F so it passes WCAG AA on the pale-blue surface.
+ *
+ * Usage: bg-navy, text-muted, border-line, bg-surface, rounded-card,
+ * rounded-control, shadow-card, max-w-content, font-sans.
+ */
+@theme {
+  --color-navy: #09284b;
+  --color-navy-2: #123e70;
+  --color-navy-deep: #061e39;
+  --color-blue: #1768d4;
+  --color-blue-soft: #e8f1ff;
+  --color-gold: #ffc629;
+  --color-gold-2: #f5b900;
+  --color-gold-soft: #fff7df;
+  --color-ink: #14253d;
+  --color-muted: #5a6a7f;
+  --color-line: #e2eaf3;
+  --color-surface: #f3f7fc;
+  --color-success: #14845a;
+  --color-success-soft: #e7f7ee;
+  --color-danger: #b42318;
+  --color-danger-soft: #fdecea;
+
+  --radius-card: 18px;
+  --radius-control: 10px;
+
+  --shadow-card: 0 12px 32px rgb(9 40 75 / 0.09);
+  --shadow-soft: 0 4px 14px rgb(9 40 75 / 0.04);
+
+  --container-content: 1200px;
+}
+
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: #fff;
+    color: var(--color-ink);
+    line-height: 1.5;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-blue);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
