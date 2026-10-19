@@ -42,3 +42,6 @@ next-env.d.ts
 
 # keep the variable-name template
 !.env.example
+
+# Claude Code personal settings (keep shared agents/CLAUDE.md in git)
+.claude/settings.local.json
