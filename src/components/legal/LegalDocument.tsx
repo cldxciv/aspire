@@ -24,7 +24,7 @@ export function ToBeConfirmed({ label }: { label: string }) {
  * Draft legal page body: a prominent draft banner, an "On this page" index and numbered
  * sections in one column, beside a sticky column of calm stock photos on large screens
  * (`StickyMediaLayout`, D-030), so about half of the reading viewport stays visual while the
- * text scrolls. Below `sm` the photos are left out (the page hero already has one), so the
+ * text scrolls. Below `lg` the photos are left out (the page hero already has them), so the
  * draft banner stays near the top. Copy must not name a legal entity, address or
  * jurisdiction until Aspire supplies approved text.
  */
@@ -48,7 +48,6 @@ export function LegalDocument({
       image={image}
       secondaryImage={secondaryImage}
       imageLabel={imageLabel}
-      className="max-sm:[&>aside]:hidden"
     >
       <Notice variant="warning" title={messages.draft.title}>
         {richText(messages.draft.body, { tbc: messages.tbc })}

@@ -83,13 +83,12 @@ export default async function ArticlePage({ params }: PageProps<"/[lang]/resourc
         carouselLabels={tc.carousel}
       />
 
-      {/* D-030: the article beside a sticky column of stock photos (left out below `sm`; the hero has photos). */}
+      {/* D-030: the article beside a sticky column of stock photos (left out below `lg`; the hero has photos). */}
       <Section>
         <StickyMediaLayout
           image={photos.sticky[0]}
           secondaryImage={photos.sticky[1]}
           imageLabel={photoLabel}
-          className="max-sm:[&>aside]:hidden"
         >
           <article className="min-w-0">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-muted">

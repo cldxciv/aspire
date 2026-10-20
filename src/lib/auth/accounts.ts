@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { DatabaseSync } from "node:sqlite";
+
 import { listAudit, recordAudit, type AuditEntry } from "@/lib/db/audit";
 import { getDb, withTransaction } from "@/lib/db/connection";
 import {
@@ -35,7 +37,7 @@ import {
   verifyPassword,
   type PasswordPolicyIssue,
 } from "./password";
-import type { Role, Session } from "./roles";
+import { STAFF_SIDE_ROLES, type Role, type Session } from "./roles";
 import { createSession, revokeSessionToken, type NewSession } from "./sessions";
 import { checkAndRecordAttempt, clearAttempts, forgiveAttempt, PASSWORD_CHANGE_LIMIT, SIGN_IN_LIMITS } from "./throttle";
 
@@ -77,6 +79,8 @@ export interface PublicUser {
   linkedStudentIds?: string[];
   /** Students: linked parent ids. */
   linkedParentIds?: string[];
+  /** Staff (M7): CRM membership, added by the admin users API (null = none yet). */
+  crm?: { crmRole: "counsellor" | "manager"; centreSlugs: string[]; active: boolean } | null;
 }
 
 type LinkMaps = { byParent: Map<string, string[]>; byStudent: Map<string, string[]> };
@@ -117,6 +121,16 @@ export type SignInResult =
   | { ok: true; user: UserRecord }
   | { ok: false; error: "invalid_credentials"; reason: SignInFailureReason }
   | { ok: false; error: "rate_limited"; retryAfterSeconds: number };
+
+/**
+ * Whether the login page's tab `tab` accepts an account of `accountRole`. Learner tabs are exact;
+ * the Admin and Staff tabs both accept admin and staff accounts (M7: before the Staff tab existed,
+ * "staff" links opened the Admin tab). The session role always comes from the account record.
+ */
+export function signInTabAccepts(tab: Role, accountRole: Role): boolean {
+  if (tab === accountRole) return true;
+  return STAFF_SIDE_ROLES.includes(tab) && STAFF_SIDE_ROLES.includes(accountRole);
+}
 
 /**
  * Verifies credentials. Every failure (unknown id, wrong password, disabled account,
@@ -162,7 +176,7 @@ export async function signIn(input: {
   // Re-read after the async hash: the account may have been disabled meanwhile.
   const user = findUserById(db, candidate.id);
   if (!user || user.disabled) return fail("disabled");
-  if (input.role && input.role !== user.role) return fail("role_mismatch");
+  if (input.role && !signInTabAccepts(input.role, user.role)) return fail("role_mismatch");
 
   forgiveAttempt(db, throttle.attemptIds);
   clearAttempts(db, "login", loginId);
@@ -322,11 +336,16 @@ export type CreateUserResult =
 
 class LoginIdTakenError extends Error {}
 
-/** Creates an account with a server-generated temporary password (returned once). */
+/**
+ * Creates an account with a server-generated temporary password (returned once). `onCreated`
+ * runs inside the same transaction (e.g. the CRM membership of a new `staff` account), so the
+ * account and its extras are created together or not at all.
+ */
 export async function adminCreateUser(
   actor: Session,
   input: { role: Role; displayName: string; loginId: string },
   now: number = Date.now(),
+  options: { onCreated?: (db: DatabaseSync, user: UserRecord) => void } = {},
 ): Promise<CreateUserResult> {
   const loginId = normalizeLoginId(input.loginId);
   if (!isValidLoginId(loginId)) return { ok: false, error: "invalid_login_id" };
@@ -356,6 +375,7 @@ export async function adminCreateUser(
         details: { role: created.role, loginId: created.loginId },
         now,
       });
+      options.onCreated?.(db, created);
       return created;
     });
     return { ok: true, user: toPublicUser(user), temporaryPassword };

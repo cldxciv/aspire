@@ -1,12 +1,31 @@
-import { BookOpenCheck, Eye, KeyRound, PencilLine, ScrollText, Terminal } from "lucide-react";
+import { BookOpenCheck, KeyRound, LayoutList, ScrollText, Terminal, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
+import { Badge } from "@/components/ui";
 import type { Messages } from "@/i18n/messages/types";
+import { serviceDescription, serviceName } from "./labels";
+import { MCP_SERVICE_VIEWS, type McpServiceView } from "./permissions";
+
+type McpT = Messages<"mcp">;
 
 /**
- * What MCP is, what each access level allows, that every call is audited and that tokens are
+ * What MCP is, what each service's Read / Write permission allows (from the service catalogue in
+ * src/lib/mcp/scopes.ts), a warning about Write, that every call is audited and that tokens are
  * secrets. Server-rendered and static: no request data except the endpoint URL passed in.
  */
-export function McpExplainer({ t, endpoint }: { t: Messages<"mcp">["explainer"]; endpoint: string | null }) {
+export function McpExplainer({
+  t,
+  services: names,
+  serviceWrite,
+  endpoint,
+  catalogue = MCP_SERVICE_VIEWS,
+}: {
+  t: McpT["explainer"];
+  services: McpT["services"];
+  serviceWrite: McpT["serviceWrite"];
+  endpoint: string | null;
+  catalogue?: readonly McpServiceView[];
+}) {
+  const writeText = serviceWrite as Record<string, string | undefined>;
   return (
     <section aria-labelledby="mcp-explainer-title" className="min-w-0 rounded-card border border-line bg-white p-5 shadow-soft md:p-6">
       <h2 id="mcp-explainer-title" className="text-lg font-extrabold text-navy">
@@ -24,21 +43,45 @@ export function McpExplainer({ t, endpoint }: { t: Messages<"mcp">["explainer"];
         <Item icon={<Terminal aria-hidden="true" className="size-5" />} title={t.setupTitle}>
           <p>{t.setup}</p>
         </Item>
-        <Item icon={<Eye aria-hidden="true" className="size-5" />} title={t.scopesTitle} wide>
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-control border border-[#d7e7fb] bg-[#eef5ff] p-3">
-              <dt className="font-bold text-navy">{t.readTitle}</dt>
-              <dd className="mt-1">{t.read}</dd>
-            </div>
-            <div className="rounded-control border border-[#f2dfa0] bg-gold-soft p-3">
-              <dt className="flex items-center gap-1.5 font-bold text-navy">
-                <PencilLine aria-hidden="true" className="size-4 shrink-0 text-[#8b5b00]" />
-                {t.writeTitle}
-              </dt>
-              <dd className="mt-1">{t.write}</dd>
-            </div>
-          </dl>
+
+        <Item icon={<LayoutList aria-hidden="true" className="size-5" />} title={t.servicesTitle} wide>
+          <p>{t.servicesLead}</p>
+          <ul className="mt-3 grid gap-3 sm:grid-cols-2">
+            {catalogue.map((service) => {
+              const write = writeText[service.id];
+              return (
+                <li key={service.id} className="min-w-0 rounded-control border border-line bg-[#fbfdff] p-3">
+                  <p className="flex flex-wrap items-center gap-2 font-bold text-navy">
+                    {serviceName(service.id, names)}
+                    {!service.available && <Badge variant="neutral">{t.comingSoon}</Badge>}
+                  </p>
+                  {service.available ? (
+                    <dl className="mt-1 grid gap-1">
+                      <div>
+                        <dt className="inline font-semibold text-[#354b66]">{t.read}: </dt>
+                        <dd className="inline">{serviceDescription(service.id, names)}</dd>
+                      </div>
+                      <div>
+                        <dt className="inline font-semibold text-[#8b5b00]">{t.write}: </dt>
+                        <dd className="inline">{service.hasWrite && write ? write : t.noWrite}</dd>
+                      </div>
+                    </dl>
+                  ) : (
+                    <p className="mt-1">{serviceDescription(service.id, names)}</p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <div role="note" className="mt-3 flex gap-2 rounded-control border border-[#f2dfa0] bg-gold-soft p-3 text-[#5c4a12]">
+            <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            <p>
+              <strong className="block">{t.writeWarningTitle}</strong>
+              {t.writeWarning}
+            </p>
+          </div>
         </Item>
+
         <Item icon={<ScrollText aria-hidden="true" className="size-5" />} title={t.auditTitle}>
           <p>{t.audit}</p>
         </Item>

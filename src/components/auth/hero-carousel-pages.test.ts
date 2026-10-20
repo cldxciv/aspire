@@ -50,7 +50,7 @@ const PAGES: { name: string; render: () => Promise<ReactNode>; hero: StockImageK
   {
     name: "tools",
     render: () => ToolsPage(),
-    hero: ["laptopStudy", "studyThroughWindow", "physicsWhiteboard", "mathsNotebook"],
+    hero: ["laptopStudy", "studyThroughWindow", "physicsWhiteboard", "booksAndNotebook"],
   },
 ];
 

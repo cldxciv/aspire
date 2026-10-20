@@ -80,13 +80,15 @@ export default async function ContactPage() {
         )}
       />
 
-      {/* D-030: the form beside a tall photo (after the form on small screens, so the form stays near the top). */}
+      {/* D-030: the form beside a tall photo from lg (after the form below lg, so the form stays near the top
+          and keeps its full width on tablets). */}
       <Section>
         <FillMediaSplit
           image={localizeImage(stockImages[CONTACT_FORM_PHOTO], locale)}
           imageSide="right"
           imageLabel={photoLabel}
           imageFirstOnMobile={false}
+          splitFrom="lg"
         >
           <Card className="p-5 md:p-7">
             <h2 className="text-2xl font-extrabold leading-snug tracking-tight text-navy">{t.form.title}</h2>

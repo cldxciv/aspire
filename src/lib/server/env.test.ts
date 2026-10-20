@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getEnquiryDeliveryStatus, getSiteOrigin, parseEnquiryDestination } from "./env";
+import { getEnquiryDeliveryStatus, getSiteOrigin, parseEnquiryDestination, parseEnquiryStore } from "./env";
 
 const SECRET = "s".repeat(32);
 
@@ -75,6 +75,20 @@ describe("parseEnquiryDestination", () => {
   });
 });
 
+describe("parseEnquiryStore (ENQUIRY_STORE, D-039)", () => {
+  it.each([undefined, "", "crm", " CRM "])("defaults to crm for %j", (value) => {
+    expect(parseEnquiryStore({ ENQUIRY_STORE: value })).toEqual({ mode: "crm", warnings: [] });
+  });
+
+  it.each(["off", "none", " OFF "])("is off for %j", (value) => {
+    expect(parseEnquiryStore({ ENQUIRY_STORE: value })).toEqual({ mode: "off", warnings: [] });
+  });
+
+  it.each(["on", "true", "postgres", "of"])("fails closed (off + warning) for an unknown value %j", (value) => {
+    expect(parseEnquiryStore({ ENQUIRY_STORE: value })).toEqual({ mode: "off", warnings: ["enquiry_store_unknown"] });
+  });
+});
+
 describe("getEnquiryDeliveryStatus", () => {
   const URL_ = "https://hooks.example.com/enquiries";
 
@@ -82,9 +96,15 @@ describe("getEnquiryDeliveryStatus", () => {
     vi.unstubAllEnvs();
   });
 
-  it("is 'connected' only for a valid webhook destination", () => {
+  it("is 'connected' when leads are stored (ENQUIRY_STORE unset = crm), even without a webhook", () => {
+    expect(getEnquiryDeliveryStatus({})).toBe("connected");
+    expect(getEnquiryDeliveryStatus({ ENQUIRY_STORE: "crm", ENQUIRY_DESTINATION: "none" })).toBe("connected");
+  });
+
+  it("with the store off, is 'connected' only for a valid webhook destination", () => {
     expect(
       getEnquiryDeliveryStatus({
+        ENQUIRY_STORE: "off",
         ENQUIRY_DESTINATION: "webhook",
         ENQUIRY_WEBHOOK_URL: URL_,
         ENQUIRY_WEBHOOK_SECRET: SECRET,
@@ -108,13 +128,19 @@ describe("getEnquiryDeliveryStatus", () => {
         ENQUIRY_WEBHOOK_SECRET: SECRET,
       },
     ],
-  ])("is 'not_configured' when %s", (_label, env) => {
-    expect(getEnquiryDeliveryStatus(env)).toBe("not_configured");
+  ])("is 'not_configured' with the store off when %s", (_label, env) => {
+    expect(getEnquiryDeliveryStatus({ ENQUIRY_STORE: "off", ...env })).toBe("not_configured");
+    // An unknown ENQUIRY_STORE value is off, too.
+    expect(getEnquiryDeliveryStatus({ ENQUIRY_STORE: "typo", ...env })).toBe("not_configured");
   });
 
   it("reads process.env by default", () => {
+    vi.stubEnv("ENQUIRY_STORE", "off");
     vi.stubEnv("ENQUIRY_DESTINATION", "");
     expect(getEnquiryDeliveryStatus()).toBe("not_configured");
+    vi.stubEnv("ENQUIRY_STORE", "");
+    expect(getEnquiryDeliveryStatus()).toBe("connected");
+    vi.stubEnv("ENQUIRY_STORE", "off");
     vi.stubEnv("ENQUIRY_DESTINATION", "webhook");
     vi.stubEnv("ENQUIRY_WEBHOOK_URL", URL_);
     vi.stubEnv("ENQUIRY_WEBHOOK_SECRET", SECRET);

@@ -6,6 +6,21 @@ import { z } from "zod";
 
 import { recordAudit } from "@/lib/db/audit";
 import { getDb, withTransaction } from "@/lib/db/connection";
+import { isLegacyMcpTokensTable, MCP_TOKENS_INDEX_SQL, mcpTokensTableSql } from "@/lib/db/features/mcp";
+
+import {
+  MCP_LEGACY_SCOPES,
+  MCP_SERVICES,
+  mcpScopesInputSchema,
+  normalizeScopes,
+  scopeIssues,
+  scopesSummary,
+  isToolAllowed,
+  type McpLegacyScopes,
+  type McpScope,
+  type McpServiceAccess,
+  type McpServiceId,
+} from "./scopes";
 
 /**
  * MCP bearer tokens (owner: MCP-CORE; docs/mcp.md). Table: `mcp_tokens`
@@ -13,10 +28,12 @@ import { getDb, withTransaction } from "@/lib/db/connection";
  *
  * Public API for the admin UI / token routes (MCP-ADMIN). Callers must already hold
  * `requireAdmin(...)` (same-origin for writes). Stable:
- * - `createMcpToken({ name, scopes, expiresInDays, createdBy })` → `{ token, record }`. `token`
- *   is the plaintext `asp_mcp_…` value: show it ONCE, never store or log it. Throws
- *   `McpTokenError` (`code`) for invalid input; validate the request body with
- *   `createMcpTokenInputSchema` first to answer 422 with field errors.
+ * - `createMcpToken({ name, scopes, expiresInDays, createdBy })` → `{ token, record }`. `scopes`
+ *   is an array of per-service scopes (`["accounts:read", "content:read"]`, see ./scopes.ts) or a
+ *   legacy `"read"` / `"read write"`. `token` is the plaintext `asp_mcp_…` value: show it ONCE,
+ *   never store or log it. Throws `McpTokenError` (`code`) for invalid input; validate the request
+ *   body with `createMcpTokenInputSchema` (or `mcpScopesInputSchema` for the scopes) first to
+ *   answer 422 with field errors.
  * - `listMcpTokens()` → `McpTokenRecord[]`, newest first. Never contains a token or its hash.
  * - `getMcpToken(id)` → `McpTokenRecord | null`.
  * - `revokeMcpToken(id, revokedBy)` → `{ record, changed } | null` (null = unknown id).
@@ -28,8 +45,11 @@ import { getDb, withTransaction } from "@/lib/db/connection";
  * creator is no longer an enabled admin with a changed password.
  */
 
-export const MCP_SCOPES = ["read", "read write"] as const;
-export type McpScopes = (typeof MCP_SCOPES)[number];
+/** @deprecated Legacy whole-token scopes; use the per-service scopes in ./scopes.ts. */
+export const MCP_SCOPES = MCP_LEGACY_SCOPES;
+/** @deprecated Legacy whole-token scopes; use `McpScope[]` from ./scopes.ts. */
+export type McpScopes = McpLegacyScopes;
+export type { McpScope, McpServiceAccess, McpServiceId } from "./scopes";
 
 export const MCP_TOKEN_PREFIX = "asp_mcp_";
 /** `asp_mcp_` + 32 random bytes as base64url (43 characters). */
@@ -54,7 +74,10 @@ export type McpTokenStatus = "active" | "expired" | "revoked" | "creator_inactiv
 export interface McpTokenRecord {
   id: string;
   name: string;
-  scopes: McpScopes;
+  /** Normalised per-service scopes (write ⇒ read; legacy rows mapped). */
+  scopes: McpScope[];
+  /** Access per service: "none" | "read" | "write" for every service in MCP_SERVICES. */
+  scopeSummary: Record<McpServiceId, McpServiceAccess>;
   /** Admin user id that created the token. */
   createdBy: string;
   /** That admin's display name (null if the account no longer exists). */
@@ -103,8 +126,9 @@ function isValidName(name: string): boolean {
 }
 
 /**
- * Request-body schema for "create token" (MCP-ADMIN routes): `{ name, scopes?, expiresInDays? }`.
- * `scopes` defaults to "read", `expiresInDays` to 90 (1–365).
+ * Request-body schema for "create token" (MCP-ADMIN routes): `{ name, scopes, expiresInDays? }`.
+ * `scopes`: an array of per-service scopes (validated and normalised by `mcpScopesInputSchema`) or
+ * a legacy `"read"` / `"read write"`. `expiresInDays` defaults to 90 (1–365).
  */
 export const createMcpTokenInputSchema = z.strictObject({
   name: z
@@ -112,7 +136,7 @@ export const createMcpTokenInputSchema = z.strictObject({
     .max(200)
     .transform(normalizeMcpTokenName)
     .refine(isValidName, `Use 1–${MCP_TOKEN_LIMITS.nameMaxLength} characters.`),
-  scopes: z.enum(MCP_SCOPES).default("read"),
+  scopes: z.union([z.enum(MCP_LEGACY_SCOPES), mcpScopesInputSchema]),
   expiresInDays: z
     .number()
     .int()
@@ -154,10 +178,6 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 const nullableNumber = (value: SQLOutputValue | undefined): number | null =>
   value === null || value === undefined ? null : Number(value);
 
-function isScopes(value: string): value is McpScopes {
-  return (MCP_SCOPES as readonly string[]).includes(value);
-}
-
 function creatorActive(row: Row): boolean {
   return (
     row.creator_role === "admin" && Number(row.creator_disabled) === 0 && Number(row.creator_must_change) === 0
@@ -172,13 +192,14 @@ function statusOf(row: Row, now: number): McpTokenStatus {
 }
 
 function toRecord(row: Row, now: number): McpTokenRecord {
-  const scopes = String(row.scopes);
+  const scopes = normalizeScopes(String(row.scopes ?? ""));
   const lastUsed = nullableNumber(row.last_used_at);
   const revoked = nullableNumber(row.revoked_at);
   return {
     id: String(row.id),
     name: String(row.name),
-    scopes: isScopes(scopes) ? scopes : "read",
+    scopes,
+    scopeSummary: scopesSummary(scopes),
     createdBy: String(row.created_by),
     createdByName: row.creator_name === null || row.creator_name === undefined ? null : String(row.creator_name),
     createdAt: iso(Number(row.created_at)),
@@ -195,6 +216,51 @@ function findRow(db: DatabaseSync, id: string): Row | undefined {
 }
 
 // ---------------------------------------------------------------------------
+// Scopes on create + legacy table upgrade
+// ---------------------------------------------------------------------------
+
+/** Strict validation of requested scopes (array, space-separated string or legacy string). */
+function parseRequestedScopes(requested: readonly string[] | string): McpScope[] {
+  if (typeof requested === "string" && (MCP_LEGACY_SCOPES as readonly string[]).includes(requested.trim())) {
+    return normalizeScopes(requested);
+  }
+  const list = typeof requested === "string" ? requested.trim().split(/\s+/).filter(Boolean) : [...requested];
+  if (!list.every((entry) => typeof entry === "string")) {
+    throw new McpTokenError("invalid_scopes", "Permissions must be a list of <service>:read / <service>:write.");
+  }
+  const issues = scopeIssues(list);
+  if (issues.length > 0) throw new McpTokenError("invalid_scopes", issues[0]);
+  return normalizeScopes(list);
+}
+
+const upgradedDbs = new WeakSet<DatabaseSync>();
+
+/**
+ * Databases created before per-service permissions have `CHECK (scopes IN ('read', 'read write'))`
+ * on `mcp_tokens.scopes`, which rejects the new space-separated lists. Rebuild that table once:
+ * same columns, rows copied unchanged (legacy values are still mapped when read). Runs before the
+ * first new-format write; a no-op on current databases.
+ */
+function upgradeLegacyTokensTable(db: DatabaseSync): void {
+  if (upgradedDbs.has(db)) return;
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mcp_tokens'").get();
+  if (isLegacyMcpTokensTable(row?.sql === undefined || row?.sql === null ? null : String(row.sql))) {
+    withTransaction(db, () => {
+      const current = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mcp_tokens'").get();
+      if (!isLegacyMcpTokensTable(current?.sql === undefined || current?.sql === null ? null : String(current.sql))) return;
+      const columns = "id, token_hash, name, created_by, scopes, created_at, expires_at, last_used_at, revoked_at, revoked_by";
+      db.exec("DROP TABLE IF EXISTS mcp_tokens_rebuild");
+      db.exec(mcpTokensTableSql("mcp_tokens_rebuild"));
+      db.exec(`INSERT INTO mcp_tokens_rebuild (${columns}) SELECT ${columns} FROM mcp_tokens`);
+      db.exec("DROP TABLE mcp_tokens");
+      db.exec("ALTER TABLE mcp_tokens_rebuild RENAME TO mcp_tokens");
+      db.exec(MCP_TOKENS_INDEX_SQL);
+    });
+  }
+  upgradedDbs.add(db);
+}
+
+// ---------------------------------------------------------------------------
 // Admin API (MCP-ADMIN)
 // ---------------------------------------------------------------------------
 
@@ -204,15 +270,20 @@ function findRow(db: DatabaseSync, id: string): Row | undefined {
  * (`mcp.token_create`). Throws `McpTokenError` for invalid input.
  */
 export function createMcpToken(
-  input: { name: string; scopes?: McpScopes; expiresInDays?: number; createdBy: string },
+  input: {
+    name: string;
+    /** Per-service scopes, or a legacy "read" / "read write". Default: "read" (every available service at read). */
+    scopes?: readonly string[] | string;
+    expiresInDays?: number;
+    createdBy: string;
+  },
   now: number = Date.now(),
 ): { token: string; record: McpTokenRecord } {
   const name = normalizeMcpTokenName(String(input.name ?? ""));
   if (!isValidName(name)) {
     throw new McpTokenError("invalid_name", `Use 1–${MCP_TOKEN_LIMITS.nameMaxLength} characters for the name.`);
   }
-  const scopes = input.scopes ?? "read";
-  if (!isScopes(scopes)) throw new McpTokenError("invalid_scopes", 'Scopes must be "read" or "read write".');
+  const scopes = parseRequestedScopes(input.scopes ?? "read");
   const days = input.expiresInDays ?? MCP_TOKEN_LIMITS.defaultExpiresInDays;
   if (
     !Number.isInteger(days) ||
@@ -226,8 +297,10 @@ export function createMcpToken(
   }
 
   const db = getDb();
+  upgradeLegacyTokensTable(db);
   const token = generateToken();
   const id = randomUUID();
+  const summary = scopesSummary(scopes);
   withTransaction(db, () => {
     const creator = db
       .prepare("SELECT role, disabled, must_change_password FROM users WHERE id = ?")
@@ -243,12 +316,18 @@ export function createMcpToken(
     db.prepare(
       `INSERT INTO mcp_tokens (id, token_hash, name, created_by, scopes, created_at, expires_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, hashMcpToken(token), name, input.createdBy, scopes, now, now + days * DAY_MS);
+    ).run(id, hashMcpToken(token), name, input.createdBy, scopes.join(" "), now, now + days * DAY_MS);
     recordAudit(db, {
       actorId: input.createdBy,
       action: AUDIT_MCP_TOKEN.create,
       target: id,
-      details: { name, scopes, expiresInDays: days },
+      details: {
+        name,
+        expiresInDays: days,
+        scopes: scopes.join(" "),
+        // Scope summary, e.g. "site=read accounts=write progress=none audit=none content=read crm=none".
+        access: MCP_SERVICES.map((service) => `${service.id}=${summary[service.id]}`).join(" "),
+      },
       now,
     });
   });
@@ -302,7 +381,8 @@ export function revokeMcpToken(
 export interface McpCaller {
   tokenId: string;
   tokenName: string;
-  scopes: McpScopes;
+  /** Normalised per-service scopes (write ⇒ read). */
+  scopes: McpScope[];
   /** The admin who created the token: the actor recorded in audit rows. */
   createdBy: string;
   expiresAt: number;
@@ -333,20 +413,19 @@ export function resolveMcpToken(token: string, now: number = Date.now()): Resolv
   if (lastUsed === null || now - lastUsed >= TOUCH_INTERVAL_MS) {
     db.prepare("UPDATE mcp_tokens SET last_used_at = ? WHERE id = ?").run(now, String(row.id));
   }
-  const scopes = String(row.scopes);
   return {
     ok: true,
     caller: {
       tokenId: String(row.id),
       tokenName: String(row.name),
-      scopes: isScopes(scopes) ? scopes : "read",
+      scopes: normalizeScopes(String(row.scopes ?? "")),
       createdBy: String(row.created_by),
       expiresAt: Number(row.expires_at),
     },
   };
 }
 
-/** True when the caller may use write tools. */
-export function canWrite(caller: Pick<McpCaller, "scopes">): boolean {
-  return caller.scopes === "read write";
+/** True when the caller's scopes allow `toolName` (see `isToolAllowed` in ./scopes.ts). */
+export function callerMayUse(caller: Pick<McpCaller, "scopes">, toolName: string): boolean {
+  return isToolAllowed(caller.scopes, toolName);
 }

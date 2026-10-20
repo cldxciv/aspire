@@ -8,10 +8,11 @@ import { portalApiError, portalApiItem } from "@/lib/auth/responses";
 import { isRecordId } from "@/lib/auth/roles";
 import { requireAdmin, serverError } from "@/lib/auth/route-helpers";
 import { updateUserBodySchema } from "@/lib/auth/schemas";
+import { staffMemberships } from "@/lib/crm";
 
 type Context = { params: Promise<{ userId: string }> };
 
-/** GET /api/admin/users/:userId — one account (no password hash). Admin only. */
+/** GET /api/admin/users/:userId — one account (no password hash; staff: with `crm`). Admin only. */
 export async function GET(request: NextRequest, ctx: Context) {
   try {
     const auth = await requireAdmin(request, { write: false });
@@ -19,7 +20,8 @@ export async function GET(request: NextRequest, ctx: Context) {
     const { userId } = await ctx.params;
     if (!isRecordId(userId)) return portalApiError("bad_request", AUTH_MESSAGES.invalidUserId);
     const user = adminGetUser(userId);
-    return user ? portalApiItem(user) : portalApiError("not_found", AUTH_MESSAGES.userNotFound);
+    if (!user) return portalApiError("not_found", AUTH_MESSAGES.userNotFound);
+    return portalApiItem(user.role === "staff" ? { ...user, crm: staffMemberships().get(user.id) ?? null } : user);
   } catch (error) {
     return serverError("admin_users", error);
   }

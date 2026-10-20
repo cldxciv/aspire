@@ -17,6 +17,7 @@ const { createMcpToken, hashMcpToken, revokeMcpToken } = await import("@/lib/mcp
 const { resetMcpRateLimitsForTests, MCP_RATE_LIMITS } = await import("@/lib/mcp/auth");
 const { MCP_SERVER_VERSION } = await import("@/lib/mcp/info");
 const { runTool } = await import("@/lib/mcp/server");
+const { MCP_SERVICES, normalizeScopes } = await import("@/lib/mcp/scopes");
 const route = await import("./route");
 
 const URL_MCP = "http://localhost:3000/api/mcp";
@@ -233,36 +234,28 @@ describe("protocol", () => {
     expect(String(result.instructions)).toContain("minors");
   });
 
-  it("tools/list returns every tool with correct annotations and object input schemas", async () => {
-    const response = await rpc(readToken, "tools/list");
+  it("tools/list returns every tool (full-access token) with correct annotations and object input schemas", async () => {
+    const full = createMcpToken({
+      name: "Full",
+      scopes: MCP_SERVICES.flatMap((service) => (service.hasWrite ? [`${service.id}:write`] : [`${service.id}:read`])),
+      createdBy: admin.id,
+    });
+    const response = await rpc(full.token, "tools/list");
     const tools = (response.json as { result: { tools: { name: string; description: string; annotations: Json; inputSchema: Json }[] } })
       .result.tools;
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
-    expect([...byName.keys()].sort()).toEqual(
-      [
-        "create_account",
-        "get_account",
-        "get_student_progress",
-        "link_parent_student",
-        "list_accounts",
-        "list_audit_log",
-        "list_centres",
-        "list_programs",
-        "list_results",
-        "set_account_disabled",
-        "site_status",
-        "unlink_parent_student",
-      ].sort(),
-    );
-    for (const name of ["site_status", "list_accounts", "get_account", "list_audit_log", "get_student_progress", "list_programs", "list_centres", "list_results"]) {
+    expect([...byName.keys()].sort()).toEqual(MCP_SERVICES.flatMap((service) => [...service.tools.read, ...service.tools.write]).sort());
+    expect(byName.size).toBe(23);
+    for (const name of MCP_SERVICES.flatMap((service) => service.tools.read)) {
       expect(byName.get(name)?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
     }
-    for (const name of ["create_account", "link_parent_student", "unlink_parent_student", "set_account_disabled"]) {
+    for (const name of MCP_SERVICES.flatMap((service) => service.tools.write)) {
       expect(byName.get(name)?.annotations).toMatchObject({ readOnlyHint: false });
       expect(byName.get(name)?.description).toMatch(/^WRITE/);
     }
-    expect(byName.get("set_account_disabled")?.annotations.destructiveHint).toBe(true);
-    expect(byName.get("unlink_parent_student")?.annotations.destructiveHint).toBe(true);
+    // Only account disabling and unlinking are destructive; no CRM tool deletes anything.
+    const destructive = tools.filter((tool) => tool.annotations.destructiveHint === true).map((tool) => tool.name).sort();
+    expect(destructive).toEqual(["set_account_disabled", "unlink_parent_student"]);
     expect(byName.get("create_account")?.annotations.destructiveHint).toBe(false);
     expect(byName.get("create_account")?.description).toContain("ONE-TIME temporary password");
     for (const tool of tools) expect(tool.inputSchema.type).toBe("object");
@@ -302,10 +295,16 @@ describe("read tools", () => {
     expect(result.isError).toBeFalsy();
     expect(result.structuredContent).toMatchObject({
       server: { name: "aspire-website", version: MCP_SERVER_VERSION },
-      enquiries: { stored: false, delivery: "connected" },
+      enquiries: { delivery: "connected", webhook: "connected", storedAsCrmLeads: true, availableViaMcp: true },
       askAspire: { configured: true },
       previewPasswordGate: { enabled: true },
-      mcp: { thisToken: { name: "Reader", scopes: "read" } },
+      mcp: {
+        thisToken: {
+          name: "Reader",
+          scopes: ["site:read", "accounts:read", "progress:read", "audit:read", "content:read"],
+          access: { site: "read", accounts: "read", progress: "read", audit: "read", content: "read", crm: "none" },
+        },
+      },
     });
     const text = JSON.stringify(result);
     for (const secret of ["sk-ant-test-secret-value", "secret-path", "webhook-secret-0123456789", "preview-password-123"]) {
@@ -315,10 +314,16 @@ describe("read tools", () => {
     expect(result.content[0].text).toContain('"enquiries"');
   });
 
-  it("site_status says when enquiries are not configured", async () => {
+  it("site_status says where enquiries go (CRM leads, webhook, or nowhere)", async () => {
     vi.stubEnv("ENQUIRY_DESTINATION", "");
-    const result = await call(readToken, "site_status");
-    expect(result.structuredContent).toMatchObject({ enquiries: { stored: false, delivery: "not_configured" } });
+    vi.stubEnv("ENQUIRY_STORE", "off");
+    const off = await call(readToken, "site_status");
+    expect(off.structuredContent).toMatchObject({
+      enquiries: { delivery: "not_configured", storedAsCrmLeads: false, webhook: "not_configured", availableViaMcp: false },
+    });
+    vi.stubEnv("ENQUIRY_STORE", "");
+    const crm = await call(readToken, "site_status");
+    expect(crm.structuredContent).toMatchObject({ enquiries: { delivery: "connected", storedAsCrmLeads: true, availableViaMcp: true } });
   });
 
   it("list_accounts filters, searches and paginates without password data", async () => {
@@ -449,6 +454,105 @@ describe("read tools", () => {
   });
 });
 
+async function listedTools(token: string): Promise<string[]> {
+  const response = await rpc(token, "tools/list");
+  expect(response.status).toBe(200);
+  return (response.json as { result: { tools: { name: string }[] } }).result.tools.map((tool) => tool.name);
+}
+
+/** Legacy whole-token scopes cover the services that existed then (not crm). */
+const LEGACY_SERVICES = MCP_SERVICES.filter((service) => service.id !== "crm");
+const READ_TOOLS = LEGACY_SERVICES.flatMap((service) => service.tools.read);
+const WRITE_TOOLS = MCP_SERVICES.find((service) => service.id === "accounts")!.tools.write;
+/** Full access, in service-catalogue order (each service's read tools, then its write tools). */
+const ALL_TOOLS = LEGACY_SERVICES.flatMap((service) => [...service.tools.read, ...service.tools.write]);
+
+describe("per-service scopes", () => {
+  it("tools/list follows the token's scopes (legacy read, legacy read write, mixed)", async () => {
+    expect(await listedTools(readToken)).toEqual(READ_TOOLS);
+    expect(await listedTools(writeToken)).toEqual(ALL_TOOLS);
+
+    const mixed = createMcpToken({ name: "Mixed", scopes: ["accounts:read", "content:read"], createdBy: admin.id });
+    expect(await listedTools(mixed.token)).toEqual(["list_accounts", "get_account", "list_programs", "list_centres", "list_results"]);
+
+    const accountsWrite = createMcpToken({ name: "Accounts writer", scopes: ["accounts:write"], createdBy: admin.id });
+    expect(await listedTools(accountsWrite.token)).toEqual(["list_accounts", "get_account", ...WRITE_TOOLS]);
+
+    const siteOnly = createMcpToken({ name: "Status", scopes: ["site:read"], createdBy: admin.id });
+    expect(await listedTools(siteOnly.token)).toEqual(["site_status"]);
+  });
+
+  it("calls outside the token's scopes are forbidden and audited, inside them they work", async () => {
+    const mixed = createMcpToken({ name: "Mixed", scopes: ["accounts:read", "content:read"], createdBy: admin.id });
+    const student = user("student", "stu.one");
+
+    const allowed = await call(mixed.token, "list_programs", { limit: 2 });
+    expect(allowed.isError).toBeFalsy();
+    expect((await call(mixed.token, "get_account", { id: student.id })).isError).toBeFalsy();
+
+    for (const [tool, args] of [
+      ["site_status", {}],
+      ["list_audit_log", {}],
+      ["get_student_progress", { studentId: student.id }],
+      ["set_account_disabled", { userId: student.id, disabled: true }],
+      ["create_account", { role: "student", loginId: "stu.x", displayName: "X" }],
+    ] as const) {
+      const denied = await call(mixed.token, tool, args as Json);
+      expect(denied.isError).toBe(true);
+      expect(denied.structuredContent).toMatchObject({ error: "forbidden" });
+      expect(denied.content[0].text).toMatch(/needs the '(site|audit|progress|accounts):(read|write)' permission/);
+    }
+    // Even invalid arguments to an out-of-scope tool get "forbidden", not a schema error.
+    expect((await call(mixed.token, "list_audit_log", { limit: 999 })).structuredContent).toMatchObject({ error: "forbidden" });
+
+    expect(findUserById(getDb(), student.id)?.disabled).toBe(false);
+    expect(findUserByLoginIdCount("stu.x")).toBe(0);
+    const denials = mcpAudit().filter((entry) => entry.details.outcome === "forbidden");
+    expect(denials.map((entry) => entry.action).sort()).toEqual(
+      [
+        "mcp.create_account",
+        "mcp.get_student_progress",
+        "mcp.list_audit_log",
+        "mcp.list_audit_log",
+        "mcp.set_account_disabled",
+        "mcp.site_status",
+      ].sort(),
+    );
+    expect(denials.every((entry) => entry.details.mcpKeyId === mixed.record.id && entry.actorId === admin.id)).toBe(true);
+    const calls = mcpAudit().filter((entry) => entry.action === "mcp.call");
+    expect(calls).toHaveLength(8);
+    expect(calls[0].details.scopes).toBe("accounts:read content:read");
+  });
+
+  it("accounts:write allows the write tools", async () => {
+    const writer = createMcpToken({ name: "Accounts writer", scopes: ["accounts:write"], createdBy: admin.id });
+    const created = await call(writer.token, "create_account", { role: "parent", loginId: "par.new", displayName: "New Parent" });
+    expect(created.isError).toBeFalsy();
+    expect(findUserByLoginIdCount("par.new")).toBe(1);
+    expect((await call(writer.token, "list_programs")).structuredContent).toMatchObject({ error: "forbidden" });
+  });
+
+  it("site_status reports this token's permissions per service", async () => {
+    const token = createMcpToken({ name: "Status + content", scopes: ["site:read", "content:read"], createdBy: admin.id });
+    const result = await call(token.token, "site_status");
+    expect(result.structuredContent).toMatchObject({
+      mcp: {
+        thisToken: {
+          scopes: ["site:read", "content:read"],
+          access: { site: "read", accounts: "none", progress: "none", audit: "none", content: "read", crm: "none" },
+          tools: ["site_status", "list_programs", "list_centres", "list_results"],
+        },
+      },
+    });
+    expect(result.content[0].text).toContain("site=read, content=read");
+  });
+
+  it("tokens stored with the legacy 'read write' value keep full access", async () => {
+    getDb().prepare("UPDATE mcp_tokens SET scopes = 'read write' WHERE id = ?").run(readTokenId);
+    expect(await listedTools(readToken)).toEqual(ALL_TOOLS);
+  });
+});
+
 describe("write tools", () => {
   it("a read-only token cannot call write tools (forbidden, audited, nothing changes)", async () => {
     const result = await call(readToken, "create_account", { role: "student", loginId: "stu.new", displayName: "New Student" });
@@ -564,7 +668,7 @@ describe("tool runner", () => {
         },
       },
       {},
-      { caller: { tokenId: "t1", tokenName: "x", scopes: "read", createdBy: admin.id, expiresAt: NOW + 1000 }, now: NOW },
+      { caller: { tokenId: "t1", tokenName: "x", scopes: normalizeScopes("read"), createdBy: admin.id, expiresAt: NOW + 1000 }, now: NOW },
     );
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result)).not.toContain("secret detail");

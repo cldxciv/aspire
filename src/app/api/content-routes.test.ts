@@ -205,8 +205,16 @@ describe("GET /api/health", () => {
     expect(JSON.stringify(body)).not.toMatch(/secret-path|xxxxxxxx/);
   });
 
-  it("reports not_configured by default", async () => {
+  it("reports connected by default (enquiries are stored as CRM leads, D-039)", async () => {
     vi.stubEnv("ENQUIRY_DESTINATION", "");
+    vi.stubEnv("ENQUIRY_STORE", "");
+    const body = await json<{ data: { enquiries: string } }>(await getHealth());
+    expect(body.data.enquiries).toBe("connected");
+  });
+
+  it("reports not_configured when the CRM store is off and no webhook is set", async () => {
+    vi.stubEnv("ENQUIRY_DESTINATION", "");
+    vi.stubEnv("ENQUIRY_STORE", "off");
     const body = await json<{ data: { enquiries: string } }>(await getHealth());
     expect(body.data.enquiries).toBe("not_configured");
   });

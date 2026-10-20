@@ -11,11 +11,12 @@ import type { ImageAsset } from "@/lib/types";
  */
 export type CarouselSlide = { image: ImageAsset; label?: string; caption?: string; position?: string };
 
-export type CarouselAspect = "16/10" | "4/3" | "1/1" | "3/4" | "21/9" | "fill";
+export type CarouselAspect = "16/10" | "4/3" | "1/1" | "3/4" | "21/9" | "hero" | "fill";
 
 /**
  * Tailwind classes for each aspect box; `fill` absolutely fills a positioned parent. The `21/9`
- * band is 16/10 below `md` so phones keep a usable height for the caption and controls.
+ * band is 16/10 below `md` so phones keep a usable height for the caption and controls. `hero` is
+ * PageHero's media box: 16/10 stacked on phones, 4/3 beside the copy on tablets, 16/10 from `lg`.
  */
 export const carouselAspectClass: Record<CarouselAspect, string> = {
   "16/10": "relative aspect-16/10",
@@ -23,16 +24,18 @@ export const carouselAspectClass: Record<CarouselAspect, string> = {
   "1/1": "relative aspect-square",
   "3/4": "relative aspect-3/4",
   "21/9": "relative aspect-16/10 md:aspect-[21/9]",
+  hero: "relative aspect-16/10 md:aspect-4/3 lg:aspect-16/10",
   fill: "absolute inset-0",
 };
 
-/** Width / height of each fixed box (the narrowest variant for the responsive `21/9` band). */
+/** Width / height of each fixed box (the narrowest variant for the responsive `21/9` band and `hero`). */
 export const carouselBoxRatio: Record<Exclude<CarouselAspect, "fill">, number> = {
   "16/10": 1.6,
   "4/3": 4 / 3,
   "1/1": 1,
   "3/4": 0.75,
   "21/9": 1.6,
+  hero: 4 / 3,
 };
 
 /**

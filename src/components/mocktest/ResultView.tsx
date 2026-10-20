@@ -1,8 +1,9 @@
 "use client";
 
-import { Award, FileText, Lock, RotateCcw, Trophy } from "lucide-react";
+import { Award, FileText, Lock, MessageCircle, RotateCcw, Trophy } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toolEnquiryHref } from "@/components/forms/enquiry-context";
 import { Badge, Button, ButtonLink, EmptyState, Notice } from "@/components/ui";
 import { useLocale } from "@/i18n/client";
 import { format } from "@/i18n/format";
@@ -227,6 +228,11 @@ function ResultBody({
           <ButtonLink href={localePath(base, locale)} variant="outline" size="sm">
             <RotateCcw aria-hidden="true" className="size-4" />
             {tr.retake}
+          </ButtonLink>
+          {/* D-039: the enquiry form with `from=mock-test` only — no score, answers or attempt id. */}
+          <ButtonLink href={toolEnquiryHref("mock-test", locale)} variant="outline" size="sm">
+            <MessageCircle aria-hidden="true" className="size-4" />
+            {tr.counsellor}
           </ButtonLink>
         </div>
         <p className="mt-3 text-sm text-muted">{t.parents.notConnected}</p>

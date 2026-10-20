@@ -2,9 +2,16 @@ import { z } from "zod";
 import type { ApiError } from "./api";
 
 /**
- * Enquiry contract — FROZEN (docs/agent-decisions.md D-008, D-016, D-021).
+ * Enquiry contract — FROZEN (docs/agent-decisions.md D-008, D-016, D-021, D-039).
  * Shared by the client forms (client-side validation) and POST /api/enquiries
  * (authoritative server-side validation). Change only via the Orchestrator.
+ *
+ * M7 / D-039 (lead capture): every variant also carries
+ *  - `consentVersion` (required): the id of the consent sentence the form showed. The server
+ *    stores the matching text with the lead (src/lib/server/enquiry-consent.ts);
+ *  - `context` (optional): attribution only — page, locale, utm_*, tool, referrer host. Every
+ *    context field is validated strictly but leniently: an invalid or over-long value is
+ *    dropped, never a reason to reject an enquiry. Never use it for anything but attribution.
  */
 
 export const CLASS_OPTIONS = [
@@ -116,6 +123,113 @@ export function heroClassExamOption(value: HeroClassExamOption["value"]): HeroCl
   return option;
 }
 
+// ── Consent (D-039) ──────────────────────────────────────────────────────────
+
+/**
+ * Id of the consent sentence the forms show now (`forms.shared.consent`, en + hi). Bump it —
+ * and add the new text to src/lib/server/enquiry-consent.ts — whenever that sentence changes.
+ * Format: date the text was approved + ".v" + sequence.
+ */
+export const CONSENT_VERSION = "2026-10-20.v2";
+
+/** Versions the server still accepts. v1 (no parent/guardian confirmation) is not accepted. */
+export const CONSENT_VERSIONS = [CONSENT_VERSION] as const;
+export type ConsentVersion = (typeof CONSENT_VERSIONS)[number];
+
+// ── Attribution context (D-039) ──────────────────────────────────────────────
+
+/** Tools whose "Talk to a counsellor" CTA links to the enquiry form with `?from=<tool>`. */
+export const ENQUIRY_TOOLS = ["predictor", "mock-test", "ask", "planner"] as const;
+export type EnquiryTool = (typeof ENQUIRY_TOOLS)[number];
+
+export const ENQUIRY_UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"] as const;
+export type EnquiryUtmKey = (typeof ENQUIRY_UTM_KEYS)[number];
+
+export const CONTEXT_LIMITS = { page: 200, utm: 100, referrer: 100, toolExam: 30, toolBand: 30 } as const;
+
+/** Drops an invalid value instead of failing the enquiry (attribution must never block a lead). */
+const lenient = <T extends z.ZodType>(schema: T) => schema.optional().catch(undefined);
+
+/** A site path: starts with one "/", path characters only (no query, hash, scheme or spaces). */
+const contextPage = z
+  .string()
+  .max(CONTEXT_LIMITS.page)
+  .regex(/^\/(?!\/)[A-Za-z0-9\-._~%/]*$/);
+/** Free-text campaign tag: letters, digits, spaces and common punctuation; no control or markup characters. */
+const utmValue = z
+  .string()
+  .trim()
+  .min(1)
+  .max(CONTEXT_LIMITS.utm)
+  .regex(/^[\p{L}\p{M}\p{N} _.,:;+~|/()[\]@!&=#%*-]+$/u);
+/** Host name (optionally with a port) of the external page the visitor came from. Never a path. */
+const referrerHost = z
+  .string()
+  .max(CONTEXT_LIMITS.referrer)
+  .regex(/^(?=.{1,100}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::\d{1,5})?$/);
+/** Predictor exam id, e.g. "jee-main". */
+const toolExam = z
+  .string()
+  .max(CONTEXT_LIMITS.toolExam)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+/** Predictor score/percentile band, e.g. "score-180-189" or "percentile-98-99". Never the exact value. */
+const toolBand = z
+  .string()
+  .max(CONTEXT_LIMITS.toolBand)
+  .regex(/^(?:score|percentile)-\d{1,4}-\d{1,4}$/);
+
+export const enquiryContextSchema = z
+  .object({
+    page: lenient(contextPage),
+    locale: lenient(z.enum(["en", "hi"])),
+    utm_source: lenient(utmValue),
+    utm_medium: lenient(utmValue),
+    utm_campaign: lenient(utmValue),
+    utm_term: lenient(utmValue),
+    utm_content: lenient(utmValue),
+    tool: lenient(z.enum(ENQUIRY_TOOLS).nullable()),
+    toolExam: lenient(toolExam),
+    toolBand: lenient(toolBand),
+    referrer: lenient(referrerHost),
+  })
+  .transform((context) => {
+    // Only defined values; the predictor's exam + band only travel with tool "predictor".
+    const out: Partial<Record<keyof typeof context, string>> = {};
+    for (const [key, value] of Object.entries(context) as [keyof typeof context, string | null | undefined][]) {
+      if (typeof value === "string" && value !== "") out[key] = value;
+    }
+    if (out.tool !== "predictor") {
+      delete out.toolExam;
+      delete out.toolBand;
+    }
+    return Object.keys(out).length > 0 ? (out as EnquiryContext) : undefined;
+  });
+
+/** Validated attribution context (only the fields that passed validation). */
+export interface EnquiryContext {
+  page?: string;
+  locale?: "en" | "hi";
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_term?: string;
+  utm_content?: string;
+  tool?: EnquiryTool;
+  toolExam?: string;
+  toolBand?: string;
+  referrer?: string;
+}
+
+/** What a client may send as `context` (same keys; the server re-validates every value). */
+export type EnquiryContextInput = Partial<Record<keyof EnquiryContext, string | null>>;
+
+/** Context + consent version: present on every variant, outside the hero steps. */
+const captureFields = {
+  consentVersion: z.enum(CONSENT_VERSIONS, { error: "Please reload the page and confirm the consent statement again" }),
+  /** Attribution only. Not an object / invalid → dropped (never a 422). */
+  context: enquiryContextSchema.optional().catch(undefined),
+};
+
 /** Indian mobile number: optional +91/91/0 prefix, then 10 digits starting 6–9. Spaces and hyphens ignored. */
 export const phoneSchema = z
   .string()
@@ -132,6 +246,7 @@ const baseFields = {
   consent: z.literal(true, { error: "Please confirm you agree to be contacted about this enquiry" }),
   /** Honeypot. Real users never fill this; the server silently drops submissions where it is set. */
   website: z.string().optional(),
+  ...captureFields,
 };
 
 const classField = z.enum(values(CLASS_OPTIONS), { error: "Select the current class" });
@@ -221,6 +336,8 @@ export const heroEnquirySchema = z
     ...heroDetailsStepSchema.shape,
     /** Honeypot — not part of any step; the form renders it once. */
     website: baseFields.website,
+    /** Consent version + attribution — not part of any step (hidden, sent with step 3). */
+    ...captureFields,
   })
   .transform(({ classOrExam, ...rest }) => {
     const { currentClass, programInterest } = heroClassExamOption(classOrExam);
@@ -265,9 +382,10 @@ export type HeroEnquiryInput = z.input<typeof heroEnquirySchema>;
 
 /**
  * POST /api/enquiries responses.
- * - 201 `received`: a configured destination accepted the enquiry.
- * - 200 `not_configured`: input was valid but NO destination is configured, so
- *   nothing was sent or stored. The UI must say so plainly — never "submitted".
+ * - 201 `received`: the enquiry was stored as a lead (ENQUIRY_STORE=crm, D-039) and/or a
+ *   configured webhook accepted it.
+ * - 200 `not_configured`: input was valid but it was neither stored nor forwarded (store off
+ *   and no destination), so nothing was kept. The UI must say so plainly — never "submitted".
  * - 4xx/5xx: ApiError (validation → 422 with fieldErrors).
  */
 export type EnquiryResponse =

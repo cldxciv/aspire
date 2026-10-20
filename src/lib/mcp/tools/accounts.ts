@@ -54,13 +54,13 @@ function actorOf(ctx: ToolContext): Session {
   return { userId: ctx.caller.createdBy, role: "admin" };
 }
 
-const roleFilter = z.enum(["student", "parent", "admin"]);
+const roleFilter = z.enum(["student", "parent", "staff", "admin"]);
 
 export const listAccounts = defineTool({
   name: "list_accounts",
   title: "List accounts",
   description:
-    "Lists portal accounts (students, parents, admins) of the Aspire website, sorted admins → parents → students, then by name. " +
+    "Lists portal accounts (students, parents, CRM staff, admins) of the Aspire website. " +
     "Filters: role, status (active = not disabled), and search (case-insensitive substring of display name or login ID). " +
     "Returns id, role, displayName, loginId, disabled, mustChangePassword (true = the user still has an admin-issued temporary password), createdAt, updatedAt. " +
     "Paginated: limit 1–100 (default 25) and offset; follow nextOffset for more. Students are often minors: use the data only for the admin task at hand.",
@@ -210,7 +210,7 @@ export const setAccountDisabled = defineTool({
   description:
     "WRITE (needs a 'read write' token). Disables (disabled: true) or re-enables (disabled: false) a STUDENT or PARENT account. " +
     "Disabling signs the user out everywhere immediately and blocks sign-in; a disabled student also disappears from linked parents' portals. " +
-    "Admin accounts cannot be changed via MCP (use the admin portal). Idempotent. Audited.",
+    "Admin and staff accounts cannot be changed via MCP (use the admin portal). Idempotent. Audited.",
   scope: "write",
   inputSchema: z.object({
     userId: recordIdSchema.describe("Student or parent account id."),
@@ -220,8 +220,11 @@ export const setAccountDisabled = defineTool({
   run(args, ctx) {
     const target = adminGetUser(args.userId);
     if (!target) return fail("not_found", "No account has this id. Use list_accounts to find the right id.");
-    if (target.role === "admin") {
-      return fail("forbidden", "Admin accounts cannot be disabled or enabled via MCP. An admin must use the admin portal.");
+    if (target.role !== "student" && target.role !== "parent") {
+      return fail(
+        "forbidden",
+        `${target.role === "admin" ? "Admin" : "Staff"} accounts cannot be disabled or enabled via MCP. An admin must use the admin portal.`,
+      );
     }
     const result = adminUpdateUser(actorOf(ctx), args.userId, { disabled: args.disabled }, ctx.now);
     if (!result.ok) {

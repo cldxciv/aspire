@@ -157,7 +157,7 @@ export function LoginForm({
 
   return (
     <div>
-      <div role="tablist" aria-label={t.login.tabsLabel} className="grid grid-cols-3 gap-1 rounded-control bg-surface p-1">
+      <div role="tablist" aria-label={t.login.tabsLabel} className="grid grid-cols-2 gap-1 rounded-control bg-surface p-1 min-[400px]:grid-cols-4">
         {ROLES.map((option) => {
           const selected = option === role;
           return (

@@ -182,7 +182,7 @@ function profileSections(profile: InstituteProfile, { locale, t, tc, photoLabel 
           imageSide="right"
           imageLabel={photoLabel}
         >
-          <SectionHeading id="story-heading" title={t.profile.storyTitle} action={demo} className="mb-0" />
+          <SectionHeading id="story-heading" title={t.profile.storyTitle} action={demo} stack className="mb-0" />
           <p className="mt-3 font-bold text-blue">{profile.tagline}</p>
           <p className="mt-3 text-muted">{profile.foundingStory}</p>
           <p className="mt-3 text-muted">{profile.summary}</p>
@@ -208,6 +208,7 @@ function profileSections(profile: InstituteProfile, { locale, t, tc, photoLabel 
           <SectionHeading
             id="mission-heading"
             title={t.profile.missionTitle}
+            stack
             className="mb-0"
             action={
               <div className="flex items-end gap-4">
@@ -241,6 +242,7 @@ function profileSections(profile: InstituteProfile, { locale, t, tc, photoLabel 
               title={t.profile.approachTitle}
               description={t.profile.approachDescription}
               action={demo}
+              stack
             />
             <ApproachGrid points={profile.approach} columns={1} />
           </FillMediaSplit>
@@ -260,6 +262,7 @@ function profileSections(profile: InstituteProfile, { locale, t, tc, photoLabel 
               eyebrow={t.profile.valuesEyebrow}
               title={t.profile.valuesTitle}
               action={demo}
+              stack
               className="mb-5"
             />
             <PrinciplesList principles={profile.pedagogyPrinciples} columns={1} />
@@ -363,7 +366,7 @@ function pendingSections({ locale, t, photoLabel }: Ctx): ToneSection[] {
             title={p.valuesTitle}
             description={p.valuesDescription}
           />
-          <ul className="grid gap-4 sm:grid-cols-2">
+          <ul className="grid gap-4 sm:grid-cols-2 md:max-lg:grid-cols-1">
             {p.values.map(({ title, detail }, index) => {
               const { icon: Icon, tint } = VALUE_STYLES[index % VALUE_STYLES.length];
               return (

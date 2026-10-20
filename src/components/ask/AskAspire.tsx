@@ -4,6 +4,7 @@ import { Camera, Check, Copy, ImageOff, LoaderCircle, Send, Square, ThumbsDown, 
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
+import { withEnquiryTool } from "@/components/forms/enquiry-context";
 import { Button, ButtonLink, Notice } from "@/components/ui";
 import { format } from "@/i18n/format";
 import type { Locale } from "@/i18n/config";
@@ -327,7 +328,7 @@ export function AskAspire({
         {notConnected && (
           <Notice variant="warning" title={t.errors.notConnectedTitle} className="mt-5" role="status">
             <p>{t.errors.notConnectedBody}</p>
-            <Link href={links.enquiry} className="mt-1 inline-block font-bold underline">
+            <Link href={withEnquiryTool(links.enquiry, "ask")} className="mt-1 inline-block font-bold underline">
               {t.stuck.cta}
             </Link>
           </Notice>
@@ -655,7 +656,8 @@ export function AskAspire({
                 <p className="font-bold text-navy">{t.stuck.title}</p>
                 <p className="text-sm text-[#5c4a12]">{t.stuck.body}</p>
               </div>
-              <ButtonLink href={links.enquiry} size="sm">
+              {/* D-039: `from=ask` so the lead records that it came from Ask Aspire (nothing else is passed). */}
+              <ButtonLink href={withEnquiryTool(links.enquiry, "ask")} size="sm">
                 {t.stuck.cta}
               </ButtonLink>
             </div>

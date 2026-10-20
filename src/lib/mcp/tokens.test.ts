@@ -38,7 +38,8 @@ describe("createMcpToken", () => {
     expect(token).toMatch(/^asp_mcp_[A-Za-z0-9_-]{43}$/);
     expect(record).toMatchObject({
       name: "Claude Code",
-      scopes: "read",
+      scopes: ["site:read", "accounts:read", "progress:read", "audit:read", "content:read"],
+      scopeSummary: { site: "read", accounts: "read", progress: "read", audit: "read", content: "read", crm: "none" },
       createdBy: admin.id,
       createdByName: "Test admin.one",
       status: "active",
@@ -73,7 +74,12 @@ describe("createMcpToken", () => {
       actorId: admin.id,
       action: "mcp.token_create",
       target: record.id,
-      details: { name: "Agent", scopes: "read write", expiresInDays: 30 },
+      details: {
+        name: "Agent",
+        expiresInDays: 30,
+        scopes: "site:read accounts:read accounts:write progress:read audit:read content:read",
+        access: "site=read accounts=write progress=read audit=read content=read crm=none",
+      },
     });
     expect(JSON.stringify(entry)).not.toContain(token);
   });
@@ -94,6 +100,11 @@ describe("createMcpToken", () => {
     expect(codeOf(() => create({ name: "x".repeat(81) }))).toBe("invalid_name");
     expect(codeOf(() => create({ name: "bad\u0007name" }))).toBe("invalid_name");
     expect(codeOf(() => create({ scopes: "admin" as never }))).toBe("invalid_scopes");
+    expect(codeOf(() => create({ scopes: [] }))).toBe("invalid_scopes");
+    expect(codeOf(() => create({ scopes: ["content:write"] }))).toBe("invalid_scopes");
+    expect(codeOf(() => create({ scopes: ["crm:admin"] }))).toBe("invalid_scopes");
+    expect(codeOf(() => create({ scopes: ["billing:read"] }))).toBe("invalid_scopes");
+    expect(codeOf(() => create({ scopes: ["site:read", "site:read"] }))).toBe("invalid_scopes");
     expect(codeOf(() => create({ expiresInDays: 0 }))).toBe("invalid_expiry");
     expect(codeOf(() => create({ expiresInDays: 366 }))).toBe("invalid_expiry");
     expect(codeOf(() => create({ expiresInDays: 1.5 }))).toBe("invalid_expiry");
@@ -114,13 +125,16 @@ describe("createMcpToken", () => {
   });
 
   it("exposes a body schema with defaults", () => {
-    expect(tokens.createMcpTokenInputSchema.parse({ name: " My  agent " })).toEqual({
+    expect(tokens.createMcpTokenInputSchema.parse({ name: " My  agent ", scopes: ["accounts:write"] })).toEqual({
       name: "My agent",
-      scopes: "read",
+      scopes: ["accounts:read", "accounts:write"],
       expiresInDays: 90,
     });
-    expect(tokens.createMcpTokenInputSchema.safeParse({ name: "x", expiresInDays: 400 }).success).toBe(false);
+    expect(tokens.createMcpTokenInputSchema.parse({ name: "x", scopes: "read" }).scopes).toBe("read");
+    expect(tokens.createMcpTokenInputSchema.safeParse({ name: "x", scopes: ["site:read"], expiresInDays: 400 }).success).toBe(false);
     expect(tokens.createMcpTokenInputSchema.safeParse({ name: "x", scopes: "write" }).success).toBe(false);
+    expect(tokens.createMcpTokenInputSchema.safeParse({ name: "x", scopes: ["site:write"] }).success).toBe(false);
+    expect(tokens.createMcpTokenInputSchema.safeParse({ name: "x" }).success).toBe(false);
   });
 });
 
@@ -134,7 +148,7 @@ describe("resolveMcpToken", () => {
       caller: {
         tokenId: record.id,
         tokenName: "Agent",
-        scopes: "read write",
+        scopes: ["site:read", "accounts:read", "accounts:write", "progress:read", "audit:read", "content:read"],
         createdBy: admin.id,
         expiresAt: Date.parse(record.expiresAt),
       },
@@ -210,12 +224,68 @@ describe("listMcpTokens", () => {
       expect(json).not.toContain(tokens.hashMcpToken(created.token));
     }
     expect(Object.keys(list[0]).sort()).toEqual(
-      ["createdAt", "createdBy", "createdByName", "expiresAt", "id", "lastUsedAt", "name", "revokedAt", "revokedBy", "scopes", "status"].sort(),
+      ["createdAt", "createdBy", "createdByName", "expiresAt", "id", "lastUsedAt", "name", "revokedAt", "revokedBy", "scopeSummary", "scopes", "status"].sort(),
     );
   });
 
-  it("canWrite only for 'read write'", () => {
-    expect(tokens.canWrite({ scopes: "read" })).toBe(false);
-    expect(tokens.canWrite({ scopes: "read write" })).toBe(true);
+  it("callerMayUse follows the scopes", () => {
+    expect(tokens.callerMayUse({ scopes: ["accounts:read"] }, "list_accounts")).toBe(true);
+    expect(tokens.callerMayUse({ scopes: ["accounts:read"] }, "create_account")).toBe(false);
+    expect(tokens.callerMayUse({ scopes: ["accounts:read", "accounts:write"] }, "create_account")).toBe(true);
+  });
+});
+
+describe("per-service scopes", () => {
+  it("creates tokens from scope arrays (write implies read) and lists them normalised", () => {
+    const admin = makeUser("admin", "admin.one");
+    const { token, record } = tokens.createMcpToken(
+      { name: "Mixed", scopes: ["content:read", "accounts:write"], createdBy: admin.id },
+      NOW,
+    );
+    expect(record.scopes).toEqual(["accounts:read", "accounts:write", "content:read"]);
+    expect(record.scopeSummary).toEqual({ site: "none", accounts: "write", progress: "none", audit: "none", content: "read", crm: "none" });
+    expect(getDb().prepare("SELECT scopes FROM mcp_tokens WHERE id = ?").get(record.id)?.scopes).toBe(
+      "accounts:read accounts:write content:read",
+    );
+    const resolved = tokens.resolveMcpToken(token, NOW);
+    expect(resolved.ok && resolved.caller.scopes).toEqual(["accounts:read", "accounts:write", "content:read"]);
+    expect(tokens.listMcpTokens(NOW)[0].scopes).toEqual(record.scopes);
+  });
+
+  it("maps rows stored with legacy scopes when read", () => {
+    const admin = makeUser("admin", "admin.one");
+    const { token, record } = tokens.createMcpToken({ name: "Old", scopes: ["site:read"], createdBy: admin.id }, NOW);
+    getDb().prepare("UPDATE mcp_tokens SET scopes = 'read write' WHERE id = ?").run(record.id);
+    const listed = tokens.getMcpToken(record.id, NOW);
+    expect(listed?.scopes).toEqual(["site:read", "accounts:read", "accounts:write", "progress:read", "audit:read", "content:read"]);
+    expect(listed?.scopeSummary.accounts).toBe("write");
+    getDb().prepare("UPDATE mcp_tokens SET scopes = 'read' WHERE id = ?").run(record.id);
+    const resolved = tokens.resolveMcpToken(token, NOW);
+    expect(resolved.ok && resolved.caller.scopes).toEqual(["site:read", "accounts:read", "progress:read", "audit:read", "content:read"]);
+  });
+
+  it("rebuilds a pre-per-service mcp_tokens table once, keeping its rows", () => {
+    const admin = makeUser("admin", "admin.one");
+    const db = getDb();
+    // Simulate a database created before per-service permissions (legacy CHECK on scopes).
+    db.exec("DROP TABLE mcp_tokens");
+    db.exec(`CREATE TABLE mcp_tokens (
+      id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+      created_by TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      scopes TEXT NOT NULL CHECK (scopes IN ('read', 'read write')),
+      created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_used_at INTEGER, revoked_at INTEGER, revoked_by TEXT)`);
+    db.prepare(
+      "INSERT INTO mcp_tokens (id, token_hash, name, created_by, scopes, created_at, expires_at) VALUES ('old-1', ?, 'Legacy', ?, 'read write', ?, ?)",
+    ).run("ab".repeat(32), admin.id, NOW, NOW + DAY);
+
+    const created = tokens.createMcpToken({ name: "New", scopes: ["audit:read"], createdBy: admin.id }, NOW + 1);
+    expect(created.record.scopes).toEqual(["audit:read"]);
+    const legacy = tokens.getMcpToken("old-1", NOW);
+    expect(legacy).toMatchObject({ name: "Legacy", status: "active" });
+    expect(legacy?.scopeSummary.accounts).toBe("write");
+    expect(db.prepare("SELECT scopes FROM mcp_tokens WHERE id = 'old-1'").get()?.scopes).toBe("read write");
+    const sql = String(db.prepare("SELECT sql FROM sqlite_master WHERE name = 'mcp_tokens'").get()?.sql);
+    expect(sql).not.toContain("'read write'");
+    expect(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'mcp_tokens_created_idx'").get()?.n).toBe(1);
   });
 });

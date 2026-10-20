@@ -11,11 +11,13 @@ const auth = {
     student: "Student",
     parent: "Parent",
     admin: "Admin",
+    staff: "Staff",
   },
   roleHints: {
     student: "For students enrolled with Aspire.",
     parent: "For parents and guardians of enrolled students.",
-    admin: "For authorised Aspire staff.",
+    admin: "For Aspire administrators.",
+    staff: "For Aspire counsellors and centre managers (leads and admissions).",
   },
   passwordToggle: {
     show: "Show",
@@ -62,6 +64,7 @@ const auth = {
       student: "Your timetable, study material and progress will appear here once Aspire connects its systems.",
       parent: "See only the learners an Aspire administrator has linked to your account.",
       admin: "Manage accounts, reset passwords, link parents to students and review the audit log.",
+      staff: "Work on enquiries and admissions: your leads, follow-ups and reports.",
       noAccountTitle: "Enrolled but don't have a login yet?",
       noAccountBody: "Contact Aspire. Accounts are created by an Aspire administrator, who gives you a temporary password to change when you first sign in.",
       contact: "Contact Aspire",

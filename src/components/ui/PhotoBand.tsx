@@ -52,7 +52,8 @@ export function PhotoBand({
 /**
  * Long-form layout (legal text, articles, data tables): content on one side and a sticky photo
  * column on the other at `lg+`, so roughly half of the reading viewport stays visual while the
- * text scrolls (D-030). Stacks on small screens with a short photo above the content.
+ * text scrolls (D-030). Below `lg` the photo column is left out: it is decorative and the page hero
+ * above already has photos, so the content (draft banner, article, list) starts right after the hero.
  */
 export function StickyMediaLayout({
   image,
@@ -65,7 +66,7 @@ export function StickyMediaLayout({
   image: ImageAsset;
   imageLabel?: string;
   imageSide?: "left" | "right";
-  /** Optional second photo stacked under the first inside the sticky column (tall viewports only). */
+  /** Optional second photo stacked under the first inside the sticky column (viewports at least 760px tall). */
   secondaryImage?: ImageAsset;
   className?: string;
   children: ReactNode;
@@ -77,14 +78,15 @@ export function StickyMediaLayout({
   );
   return (
     <div className={cn("grid gap-10 lg:grid-cols-2 lg:gap-16", className)}>
-      <div aria-hidden="true" className={cn("relative", imageSide === "left" ? "lg:order-1" : "lg:order-2")}>
+      <div aria-hidden="true" className={cn("relative max-lg:hidden", imageSide === "left" ? "lg:order-1" : "lg:order-2")}>
         <div className="flex flex-col gap-4 lg:sticky lg:top-24">
           <div className="relative aspect-16/10 overflow-hidden rounded-card bg-surface shadow-soft lg:aspect-auto lg:h-[min(60vh,560px)]">
             <Image src={image.src} alt="" fill sizes="(min-width: 1280px) 820px, (min-width: 1024px) 60vw, 100vw" className="object-cover" />
             {label}
           </div>
           {secondaryImage && (
-            <div className="relative hidden overflow-hidden rounded-card bg-surface shadow-soft lg:h-[min(28vh,260px)] lg:tall:block">
+            // Sized to the space left under the primary photo, so the sticky column never runs off-screen.
+            <div className="relative hidden overflow-hidden rounded-card bg-surface shadow-soft lg:h-[min(calc(40vh-8rem),260px)] lg:tall:block">
               <Image src={secondaryImage.src} alt="" fill sizes="(min-width: 1280px) 820px, 60vw" className="object-cover" />
               {label}
             </div>

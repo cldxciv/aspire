@@ -5,17 +5,23 @@ import { usePathname } from "next/navigation";
 import type { Locale } from "@/i18n/config";
 import { localePath, stripLocale } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
-import type { Role } from "@/lib/auth/roles";
-import { isActivePortalItem, portalAreas, type PortalNavKey } from "./areas";
+import { isActivePortalItem, portalAreas, type AnyPortalNavKey, type PortalArea } from "./areas";
 
 export type PortalNavMessages = {
   /** Accessible name of the `<nav>`, e.g. "Student portal sections". */
   label: string;
   sidebarTitle: string;
-  items: Record<PortalNavKey, string>;
+  /** Labels for the area's items (`portal.nav`, or `crm.nav` for the staff area). */
+  items: Partial<Record<AnyPortalNavKey, string>>;
 };
 
-type NavProps = { area: Role; locale: Locale; messages: PortalNavMessages };
+type NavProps = {
+  area: PortalArea;
+  locale: Locale;
+  messages: PortalNavMessages;
+  /** Only these items (staff area: counsellors don't see manager-only items). Default: all. */
+  visibleKeys?: readonly AnyPortalNavKey[];
+};
 
 /**
  * Sidebar section links (mockup `.sidebar` / `.sideitem`). Navy panel on md+,
@@ -23,9 +29,10 @@ type NavProps = { area: Role; locale: Locale; messages: PortalNavMessages };
  * as the Suspense fallback while `usePathname()` resolves. Hrefs are localised; the
  * active state compares locale-free paths (`/hi/student` and `/student` both match).
  */
-export function PortalNavLinks({ area, locale, messages, pathname }: NavProps & { pathname: string | null }) {
+export function PortalNavLinks({ area, locale, messages, visibleKeys, pathname }: NavProps & { pathname: string | null }) {
   const config = portalAreas[area];
   const home = config.nav[0].href;
+  const items = visibleKeys ? config.nav.filter((item) => visibleKeys.includes(item.key)) : config.nav;
   const path = pathname === null ? null : stripLocale(pathname);
   return (
     <nav
@@ -37,7 +44,7 @@ export function PortalNavLinks({ area, locale, messages, pathname }: NavProps & 
         {messages.sidebarTitle}
       </p>
       <ul className="flex gap-1 overflow-x-auto p-0.5 md:flex-col md:overflow-visible">
-        {config.nav.map(({ key, href, icon: Icon }) => {
+        {items.map(({ key, href, icon: Icon }) => {
           const active = isActivePortalItem(path, href, home);
           return (
             <li key={href} className="shrink-0">

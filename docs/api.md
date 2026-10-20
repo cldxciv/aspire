@@ -53,6 +53,8 @@ Accepts the enquiry forms (the 3-step home page "hero" form, `/admissions`, `/co
 | `email` | opt¹ | opt | opt | opt | valid email or `""` |
 | `message` | opt | opt | opt | opt | ≤ 1000 chars |
 | `consent` | ✓ | ✓ | ✓ | ✓ | must be `true` |
+| `consentVersion` | ✓ | ✓ | ✓ | ✓ | id of the consent sentence shown (`CONSENT_VERSIONS`, currently `"2026-10-20.v2"`, D-039). Sent by the forms' hidden input; missing/unknown → 422 (a page from before the change gets "refresh and try again") |
+| `context` | opt | opt | opt | opt | attribution only (D-039): `page` (site path ≤ 200), `locale` (`en`/`hi`), `utm_source/medium/campaign/term/content` (≤ 100 each), `tool` (`predictor`/`mock-test`/`ask`/`planner`), `toolExam` + `toolBand` (predictor only, e.g. `jee-main`, `score-180-189`), `referrer` (external host ≤ 100). Each value is validated strictly; an invalid value is **dropped**, never a 422 |
 | `website` | opt | opt | opt | opt | **honeypot** — leave empty |
 | `currentClass` | (derived) | ✓ | – | ✓ | `class-6-8`, `class-9`, `class-10`, `class-11`, `class-12`, `dropper` |
 | `programInterest` | (derived) | ✓ | – | ✓ | `jee`, `neet`, `foundation`, `integrated`, `not-sure` |
@@ -75,21 +77,22 @@ Unknown keys are dropped. For `hero`, any `currentClass` / `programInterest` the
 5. JSON parse; must be an object → `400`
 6. `enquirySchema.safeParse` + `preferredCentre` check → `422`
 7. Honeypot (after validation, so bots see exactly what a person would)
-8. Destination → `200` / `201` / `500`
+8. `ENQUIRY_STORE=crm` (default, D-039): per-mobile-number cap (5 captures / rolling 24 h → `429`) → store as a CRM lead (`src/lib/server/lead-sink.ts` → `captureLead`) **and** forward to the webhook when configured → `201` if either kept it, else `500`.
+   `ENQUIRY_STORE=off`: destination only, as before → `200` / `201` / `500`.
 
 ### Responses
 
 | Status | Body | When |
 |---|---|---|
-| 201 | `{ ok: true, status: "received", reference: "ENQ-XXXXXXXXXX", message }` | The configured destination returned 2xx |
-| 200 | `{ ok: true, status: "not_configured", message }` | Valid, but **no destination is configured — nothing was sent or stored**. The UI must say so. |
+| 201 | `{ ok: true, status: "received", reference: "ENQ-XXXXXXXXXX", message }` | Stored as a CRM lead and/or the webhook returned 2xx |
+| 200 | `{ ok: true, status: "not_configured", message }` | Valid, but the store is off and no destination is configured — **nothing was sent or stored**. The UI must say so. |
 | 400 | `bad_request` | Malformed JSON, non-object body, invalid UTF-8, invalid `Content-Length` |
 | 403 | `forbidden` | Failed origin check |
 | 413 | `bad_request` | Body over 10 KB |
 | 415 | `bad_request` | `Content-Type` is not `application/json` |
 | 422 | `validation` + `fieldErrors` | Schema errors (`z.flattenError(...).fieldErrors`), e.g. `{ "phone": ["Enter a valid 10-digit mobile number"] }` |
-| 429 | `rate_limited` + `Retry-After: <seconds>` header | More than 5 requests from this IP in 10 minutes |
-| 500 | `server_error` | The destination failed (non-2xx, timeout, network) or an unexpected error. Message says nothing was submitted. |
+| 429 | `rate_limited` + `Retry-After: <seconds>` header | More than 5 requests from this IP in 10 minutes, or (store on) more than 5 captures for one mobile number in 24 hours |
+| 500 | `server_error` | Neither the lead store nor the webhook kept it (store failure and no/failed webhook; webhook failure with the store off) or an unexpected error. Message says nothing was submitted. |
 
 `413` and `415` reuse the `bad_request` code because the frozen `ApiErrorCode` union has no dedicated codes; clients should branch on the HTTP status.
 
@@ -117,6 +120,10 @@ Together with the JSON-only content type (cross-origin JSON needs a CORS preflig
 ### Honeypot
 
 The forms render a visually hidden `website` input. If it is non-empty after validation, the API returns exactly what a genuine submission would get for the current configuration (`200 not_configured`, or `201 received` with a fresh reference in webhook mode), but **nothing is forwarded**. The log records outcome `honeypot`. Known trade-off: a person whose browser autofills the hidden field would see a success message although nothing was sent. The field uses `autocomplete="off"`, `tabindex="-1"` and `aria-hidden` to make that unlikely.
+
+### Lead store (ENQUIRY_STORE, D-039)
+
+`ENQUIRY_STORE` (read per request): unset / `crm` → every valid, non-honeypot enquiry becomes (or is appended to) a CRM lead with its consent version, language, text and time (`src/lib/server/enquiry-consent.ts`) and the validated `context`; `off` / `none` → previous behaviour; any other value → off plus config warning `enquiry_store_unknown`. A store failure is logged as `store_<code>` and never hidden: the response is `received` only if the webhook took it instead. Log entries add `store` (`stored`/`duplicate`/`failed`) and `forward` (`sent`/`failed`/`none`); outcome `phone_rate_limited` for the per-phone cap (keys are hashes; numbers are never kept or logged).
 
 ### Destinations
 
@@ -182,6 +189,7 @@ Hero example (`enquiry` only; the envelope is identical):
 | Date | Change |
 |---|---|
 | 2026-10-20 (D-021, D-021a) | New `source` value `"hero"`; new key `guardianName` (hero only, always present for hero). Hero enquiries carry `currentClass` + `programInterest` like quick/admissions, never `classOrExam`, and normally no `email`. |
+| 2026-10-20 (D-039) | New top-level keys `consentVersion` (always) and `context` (validated attribution, only when non-empty). The `enquiry` object is unchanged (it never contains them). |
 - `consentAt` is the server time of the submission. The schema requires `consent: true`.
 - Any **2xx** means accepted (→ `201 received`). Any other status, a redirect (redirects are **not followed**), a network error or more than **8 s** → `500 server_error`. There are no retries, because the visitor is waiting for the response.
 
@@ -294,6 +302,7 @@ All of these are listed in `.env.example`. Only `NEXT_PUBLIC_SITE_URL` is public
 
 | Variable | Used by | Default | Notes |
 |---|---|---|---|
+| `ENQUIRY_STORE` | POST /api/enquiries, `getEnquiryDeliveryStatus()` | `crm` | `crm` (store leads, D-039) or `off`; anything else = off + warning |
 | `ENQUIRY_DESTINATION` | POST /api/enquiries, /api/health | `none` | `none` or `webhook` |
 | `ENQUIRY_WEBHOOK_URL` | webhook adapter | – | `https://` required (`http://localhost` allowed outside production). No credentials in the URL. Treated as a secret: never logged. |
 | `ENQUIRY_WEBHOOK_SECRET` | webhook adapter | – | ≥ 16 chars, 32+ random chars recommended (`openssl rand -hex 32`). Server-only. |

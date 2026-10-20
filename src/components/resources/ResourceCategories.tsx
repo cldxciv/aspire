@@ -27,7 +27,7 @@ export function ResourceCategories({
   downloadCount?: number;
   messages: Messages<"resources">["categories"];
   locale: Locale;
-  /** 4 across on large screens, or 2 (e.g. beside a photo). */
+  /** 4 across on large screens, or 2 (beside a photo: one column on tablets and at `lg`, two from `xl`). */
   columns?: 2 | 4;
 }) {
   const categories: Category[] = [
@@ -78,7 +78,7 @@ export function ResourceCategories({
   ];
 
   return (
-    <ul className={cn("grid gap-4 sm:grid-cols-2", columns === 4 && "lg:grid-cols-4")}>
+    <ul className={cn("grid gap-4 sm:grid-cols-2", columns === 4 ? "lg:grid-cols-4" : "md:max-xl:grid-cols-1")}>
       {categories.map(({ icon: Icon, title, description, tint, note, action }) => (
         <li key={title}>
           <Card tint={tint} className="flex h-full flex-col p-5">

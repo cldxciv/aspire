@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { enquirySchema, heroStepOfField, validateHeroStep } from "@/lib/contracts/enquiry";
+import { CONSENT_VERSION, enquirySchema, heroStepOfField, validateHeroStep } from "@/lib/contracts/enquiry";
 import { FIELD_ORDER, buildHeroPayload, buildPayload, pickErrors } from "./enquiry-payload";
 import { firstHeroError, pickHeroErrors } from "./hero-steps";
 import { submitEnquiry } from "./submit-enquiry";
@@ -17,6 +17,8 @@ const validQuick = {
   programInterest: "jee",
   phone: "+91 98765 43210",
   consent: "on",
+  // ConsentField's hidden input (D-039).
+  consentVersion: CONSENT_VERSION,
   website: "",
 };
 
@@ -51,6 +53,7 @@ describe("buildPayload", () => {
       email: "parent@example.com",
       topic: "admissions",
       consent: "on",
+      consentVersion: CONSENT_VERSION,
     });
     const payload = buildPayload("contact", data, "enquiry", false);
     expect(payload).toMatchObject({ source: "contact", topic: "admissions", website: "" });
@@ -79,6 +82,7 @@ describe("buildHeroPayload (home hero, D-021)", () => {
     phone: "+91 98765 43210",
     preferredCentre: "not-sure",
     consent: "on",
+    consentVersion: CONSENT_VERSION,
     website: "",
   };
 
@@ -166,8 +170,10 @@ describe("submitEnquiry", () => {
         guardianName: "Parent Name",
         phone: "9876543210",
         consent: "on",
+        consentVersion: CONSENT_VERSION,
       }),
       false,
+      { page: "/", locale: "en", tool: "planner" },
     );
     await submitEnquiry(payload);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -179,7 +185,9 @@ describe("submitEnquiry", () => {
       guardianName: "Parent Name",
       phone: "9876543210",
       consent: true,
+      consentVersion: CONSENT_VERSION,
       website: "",
+      context: { page: "/", locale: "en", tool: "planner" },
     });
   });
 

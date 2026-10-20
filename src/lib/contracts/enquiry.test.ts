@@ -3,10 +3,14 @@ import { z } from "zod";
 
 import {
   CLASS_OPTIONS,
+  CONSENT_VERSION,
+  CONTEXT_LIMITS,
+  ENQUIRY_TOOLS,
   HERO_CLASS_EXAM_OPTIONS,
   HERO_STEP_FIELDS,
   HERO_STEP_SCHEMAS,
   PROGRAM_INTEREST_OPTIONS,
+  enquiryContextSchema,
   enquirySchema,
   heroClassExamOption,
   heroContactStepSchema,
@@ -19,7 +23,7 @@ import {
   type HeroStepIndex,
 } from "./enquiry";
 
-const base = { name: "Test Student", phone: "9876543210", consent: true };
+const base = { name: "Test Student", phone: "9876543210", consent: true, consentVersion: CONSENT_VERSION };
 const quick = { ...base, source: "quick", currentClass: "class-11", programInterest: "jee" };
 const admissions = {
   ...base,
@@ -185,6 +189,7 @@ describe("enquirySchema — hero", () => {
       preferredCentre: "shimla",
       message: "Evening batches?",
       consent: true,
+      consentVersion: CONSENT_VERSION,
       currentClass: "dropper",
       programInterest: "neet",
     });
@@ -271,6 +276,7 @@ describe("enquirySchema — hero", () => {
       name: "Test Student",
       phone: "9876543210",
       consent: true,
+      consentVersion: CONSENT_VERSION,
       currentClass: "class-11",
       programInterest: "jee",
       intent: "enquiry",
@@ -319,10 +325,12 @@ describe("hero step schemas", () => {
     ]);
   });
 
-  it("partitions the hero variant's fields: every field is in exactly one step, plus source and the honeypot", () => {
+  it("partitions the hero variant's fields: every field is in exactly one step, plus source, the honeypot, consent version and context", () => {
     const stepFields: string[] = HERO_STEP_FIELDS.flat();
     expect(new Set(stepFields).size).toBe(stepFields.length);
-    expect([...stepFields, "source", "website"].sort()).toEqual(Object.keys(heroEnquirySchema.in.shape).sort());
+    expect([...stepFields, "source", "website", "consentVersion", "context"].sort()).toEqual(
+      Object.keys(heroEnquirySchema.in.shape).sort(),
+    );
   });
 
   it("validates each step against the whole payload, ignoring the other steps' fields", () => {
@@ -361,7 +369,8 @@ describe("hero step schemas", () => {
   });
 
   it.each([
-    { source: "hero" },
+    // consentVersion is not a step field (hidden input, D-039), so the bare payload carries it.
+    { source: "hero", consentVersion: CONSENT_VERSION },
     { ...hero, name: "", phone: "1" },
     { ...hero, guardianName: "" },
     { ...hero, classOrExam: "neet-class-6-8", guardianName: "A", consent: false },
@@ -381,5 +390,113 @@ describe("hero step schemas", () => {
     expect(heroStepOfField("message")).toBe(2);
     expect(heroStepOfField("consent")).toBe(2);
     for (const field of ["source", "website", "topic", "currentClass", "intent"]) expect(heroStepOfField(field)).toBeNull();
+  });
+});
+
+// ── M7 lead capture (D-039): consent version + attribution context ──────────
+
+describe("enquirySchema — consentVersion (D-039)", () => {
+  it.each([quick, admissions, contact, hero])("requires the consent version with consent ($source)", (payload) => {
+    const { consentVersion: _version, ...withoutVersion } = payload;
+    void _version;
+    expect(fieldErrors(withoutVersion).consentVersion?.length).toBeGreaterThan(0);
+    // The consent tick alone is not enough: the server must know which sentence was agreed to.
+    expect(enquirySchema.safeParse({ ...withoutVersion, consent: true }).success).toBe(false);
+  });
+
+  it.each(["2026-10-18.v1", "", "latest", 2, null])("rejects an unknown consent version %j", (consentVersion) => {
+    expect(fieldErrors({ ...admissions, consentVersion }).consentVersion?.length).toBeGreaterThan(0);
+  });
+
+  it("keeps the version in the parsed enquiry and never maps it to a hero step", () => {
+    expect(parse(admissions).consentVersion).toBe(CONSENT_VERSION);
+    expect(heroStepOfField("consentVersion")).toBeNull();
+    expect(heroStepOfField("context")).toBeNull();
+  });
+});
+
+describe("enquirySchema — context (attribution only, D-039)", () => {
+  const full = {
+    page: "/hi/admissions",
+    locale: "hi",
+    utm_source: "facebook",
+    utm_medium: "paid social",
+    utm_campaign: "neet-2027_shimla",
+    utm_term: "neet coaching",
+    utm_content: "carousel|v2",
+    tool: "predictor",
+    toolExam: "jee-main",
+    toolBand: "score-180-189",
+    referrer: "www.google.com",
+  };
+
+  it("is optional on every source (backwards compatible)", () => {
+    for (const payload of [quick, admissions, contact, hero]) {
+      const data = parse(payload);
+      expect(data).not.toHaveProperty("context");
+    }
+  });
+
+  it("keeps every valid field", () => {
+    expect(parse({ ...admissions, context: full }).context).toEqual(full);
+  });
+
+  it.each(ENQUIRY_TOOLS)("accepts tool %s", (tool) => {
+    expect(parse({ ...contact, context: { tool } }).context).toEqual({ tool });
+  });
+
+  it("drops the predictor exam + band unless the tool is the predictor", () => {
+    expect(parse({ ...contact, context: { tool: "ask", toolExam: "jee-main", toolBand: "score-180-189" } }).context).toEqual({
+      tool: "ask",
+    });
+    expect(parse({ ...contact, context: { toolExam: "jee-main" } }).context).toBeUndefined();
+  });
+
+  it("drops invalid or over-long values instead of rejecting the enquiry", () => {
+    const context = {
+      page: "https://evil.example/x", // not a site path
+      locale: "fr",
+      utm_source: "x".repeat(CONTEXT_LIMITS.utm + 1),
+      utm_medium: "<script>",
+      utm_campaign: "line\nbreak",
+      utm_term: "   ",
+      utm_content: "ok-value",
+      tool: "admin",
+      referrer: "https://www.google.com/search?q=private", // a URL, not a host
+      extra: "stripped",
+    };
+    const result = enquirySchema.safeParse({ ...hero, context });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.context).toEqual({ utm_content: "ok-value" });
+  });
+
+  it("enforces the length limits: page 200, utm 100, referrer 100", () => {
+    const page = `/${"a".repeat(CONTEXT_LIMITS.page - 1)}`;
+    expect(parse({ ...contact, context: { page } }).context).toEqual({ page });
+    expect(parse({ ...contact, context: { page: `${page}a` } }).context).toBeUndefined();
+    const utm = "u".repeat(CONTEXT_LIMITS.utm);
+    expect(parse({ ...contact, context: { utm_source: utm } }).context).toEqual({ utm_source: utm });
+    const host = `${"h".repeat(60)}.${"i".repeat(35)}.com`; // 100 characters
+    expect(host).toHaveLength(100);
+    expect(parse({ ...contact, context: { referrer: host } }).context).toEqual({ referrer: host });
+    expect(parse({ ...contact, context: { referrer: `x${host}` } }).context).toBeUndefined();
+  });
+
+  it.each(["//evil.example/x", "/admissions?phone=9876543210", "/a b", "admissions"])("rejects page %j", (page) => {
+    expect(enquiryContextSchema.parse({ page })).toBeUndefined();
+  });
+
+  it.each(["score-180", "percentile-98.5-99", "180-189", "score-180-189;drop"])("rejects predictor band %j", (toolBand) => {
+    expect(enquiryContextSchema.parse({ tool: "predictor", toolBand })).toEqual({ tool: "predictor" });
+  });
+
+  it.each([null, "context", 42, ["page"]])("treats a non-object context (%j) as absent", (context) => {
+    const result = enquirySchema.safeParse({ ...admissions, context });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.context).toBeUndefined();
+  });
+
+  it("trims utm values and treats tool null as absent", () => {
+    expect(enquiryContextSchema.parse({ utm_source: "  google  ", tool: null })).toEqual({ utm_source: "google" });
   });
 });

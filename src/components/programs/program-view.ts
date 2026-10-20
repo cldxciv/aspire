@@ -35,7 +35,7 @@ const TRACK_PHOTOS: Record<ExamTrack, { hero: ImageAsset; aside: ImageAsset; hig
   Foundation: {
     hero: stockImages.youngStudentNotebook,
     aside: stockImages.youngStudentWriting,
-    highlights: stockImages.mathsNotebook,
+    highlights: stockImages.notebookSolutions,
     cta: stockImages.booksAndNotebook,
   },
   Integrated: {

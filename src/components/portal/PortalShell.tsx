@@ -14,14 +14,16 @@ import { getPageSession } from "@/lib/auth/page-session";
 import { decidePortalPage } from "@/lib/auth/policy";
 import type { Role } from "@/lib/auth/roles";
 import { cn } from "@/lib/cn";
-import { portalAreas } from "./areas";
+import { resolveCrmViewer } from "@/lib/crm/access";
+import { crmPermissions } from "@/lib/crm/types";
+import { portalAreas, visibleStaffNavKeys, type PortalArea } from "./areas";
 import { PortalLanguageSwitcher } from "./PortalLanguageSwitcher";
 import { PortalNav, PortalNavLinks, type PortalNavMessages } from "./PortalNav";
 import { PortalUserMenu, type PortalUserMenuMessages } from "./PortalUserMenu";
 
 /**
- * Portal chrome shared by the student, parent and admin areas (and, with `area={null}`, the
- * role-agnostic /account pages): navy top bar (localised logo link, role badge, language
+ * Portal chrome shared by the student, parent, admin and staff (CRM, `/crm`) areas (and, with
+ * `area={null}`, the role-agnostic /account pages): navy top bar (localised logo link, role badge, language
  * switcher, account menu with sign-out), a preview banner only for data-free previews, the
  * sidebar navigation and the page's `<main>` landmark. The skip link that targets `#main`
  * lives in `src/app/[lang]/(portal)/layout.tsx`.
@@ -30,18 +32,20 @@ import { PortalUserMenu, type PortalUserMenuMessages } from "./PortalUserMenu";
  * session (account menu, preview banner) streams in under <Suspense>. Access checks happen per
  * page inside `<PortalGate>`.
  */
-export async function PortalShell({ area, children }: { area: Role | null; children: ReactNode }) {
-  const [locale, t, auth, common] = await Promise.all([
+export async function PortalShell({ area, children }: { area: PortalArea | null; children: ReactNode }) {
+  const [locale, t, auth, common, crm] = await Promise.all([
     getLocale(),
     getMessages("portal"),
     getMessages("auth"),
     getMessages("common"),
+    getMessages("crm"),
   ]);
   const config = area ? portalAreas[area] : null;
   const AreaIcon = config?.icon;
   const userMessages: PortalUserMenuMessages = { shell: t.shell, roles: auth.roles, signOut: auth.signOut };
   const homePath = area ? portalAreas[area].nav[0].href : "/";
-  const nav = area ? navMessages(t, area) : null;
+  const nav = area === "staff" ? staffNavMessages(t, crm) : area ? navMessages(t, area) : null;
+  const areaLabel = area === "staff" ? crm.area.label : area ? t.areas[area].label : "";
 
   return (
     <div className="flex flex-1 flex-col bg-surface">
@@ -57,7 +61,7 @@ export async function PortalShell({ area, children }: { area: Role | null; child
               )}
             >
               <AreaIcon aria-hidden="true" className="size-3.5" />
-              {t.areas[area].label}
+              {areaLabel}
             </span>
           )}
           <div className="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
@@ -78,7 +82,7 @@ export async function PortalShell({ area, children }: { area: Role | null; child
         </Container>
       </header>
 
-      {area && (
+      {area && area !== "staff" && (
         <Suspense fallback={null}>
           <PreviewBanner area={area} t={t.shell} />
         </Suspense>
@@ -87,9 +91,18 @@ export async function PortalShell({ area, children }: { area: Role | null; child
       {area && nav ? (
         <Container className="grid flex-1 grid-cols-1 content-start gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:gap-6 md:py-8">
           <div className="min-w-0 md:sticky md:top-4 md:self-start">
-            <Suspense fallback={<PortalNavLinks area={area} locale={locale} messages={nav} pathname={null} />}>
-              <PortalNav area={area} locale={locale} messages={nav} />
-            </Suspense>
+            {area === "staff" ? (
+              // Counsellors don't see manager-only items; the static shell starts with the counsellor set.
+              <Suspense
+                fallback={<PortalNavLinks area={area} locale={locale} messages={nav} visibleKeys={visibleStaffNavKeys(false)} pathname={null} />}
+              >
+                <StaffNav locale={locale} messages={nav} />
+              </Suspense>
+            ) : (
+              <Suspense fallback={<PortalNavLinks area={area} locale={locale} messages={nav} pathname={null} />}>
+                <PortalNav area={area} locale={locale} messages={nav} />
+              </Suspense>
+            )}
           </div>
           <main id="main" className="min-w-0">
             {children}
@@ -106,7 +119,7 @@ export async function PortalShell({ area, children }: { area: Role | null; child
   );
 }
 
-export function navMessages(t: Messages<"portal">, area: Role): PortalNavMessages {
+export function navMessages(t: Messages<"portal">, area: Exclude<Role, "staff">): PortalNavMessages {
   const { sectionsLabel, ...items } = t.nav;
   return {
     label: format(sectionsLabel, { area: t.areas[area].label }),
@@ -115,14 +128,31 @@ export function navMessages(t: Messages<"portal">, area: Role): PortalNavMessage
   };
 }
 
+/** Staff (CRM) area: labels from the `crm` messages. */
+export function staffNavMessages(t: Messages<"portal">, crm: Messages<"crm">): PortalNavMessages {
+  return {
+    label: format(t.nav.sectionsLabel, { area: crm.area.label }),
+    sidebarTitle: crm.area.sidebarTitle,
+    items: crm.nav,
+  };
+}
+
+/** Staff nav for the verified viewer (request time): managers / admins also get "Staff & rules". */
+async function StaffNav({ locale, messages }: { locale: Locale; messages: PortalNavMessages }) {
+  const session = await getPageSession();
+  const viewer = resolveCrmViewer(session);
+  const canManage = viewer ? crmPermissions(viewer).canViewStaff : false;
+  return <PortalNav area="staff" locale={locale} messages={messages} visibleKeys={visibleStaffNavKeys(canManage)} />;
+}
+
 /** Reads the verified session (request time). */
-async function PortalUserArea({ area, locale, t }: { area: Role | null; locale: Locale; t: PortalUserMenuMessages }) {
+async function PortalUserArea({ area, locale, t }: { area: PortalArea | null; locale: Locale; t: PortalUserMenuMessages }) {
   const session = await getPageSession();
   return <PortalUserMenu session={session} area={area} locale={locale} t={t} />;
 }
 
 /** Only for data-free previews: a signed-in account of the area's role never sees it. */
-async function PreviewBanner({ area, t }: { area: Role; t: Messages<"portal">["shell"] }) {
+async function PreviewBanner({ area, t }: { area: Exclude<Role, "staff">; t: Messages<"portal">["shell"] }) {
   const session = await getPageSession();
   if (session?.mustChangePassword) return null;
   if (decidePortalPage(session, area, isPortalPreviewEnabled()).kind !== "preview") return null;

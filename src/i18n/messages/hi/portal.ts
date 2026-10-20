@@ -21,6 +21,7 @@ const portal: Messages<"portal"> = {
     users: "उपयोगकर्ता खाते",
     audit: "ऑडिट लॉग",
     mcp: "AI एजेंट एक्सेस",
+    crm: "लीड और प्रवेश",
     enquiries: "पूछताछ",
     content: "सामग्री",
     centres: "केंद्र",

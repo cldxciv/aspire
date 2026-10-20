@@ -2,6 +2,7 @@ import { CircleAlert, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { CONSENT_VERSION } from "@/lib/contracts/enquiry";
 import { formatNodes } from "./format-nodes";
 
 /**
@@ -323,15 +324,20 @@ export function TextAreaField({
 /**
  * Required consent checkbox. The label links to the privacy notice.
  * `large` renders a 24px box (hero form touch target); the default stays 20px.
+ *
+ * D-039: a hidden `consentVersion` input names the sentence shown here, so the server stores the
+ * exact text the visitor agreed to. `text` must be `forms.shared.consent` for that version (the
+ * server keeps one copy per language and version in src/lib/server/enquiry-consent.ts).
  */
 export function ConsentField({
   id,
   error,
   className,
   large = false,
-  text = "I agree to be contacted by Aspire about this enquiry and have read the {link}.",
+  text = "I am the student's parent or guardian, or have their permission, and I agree that Aspire may contact me about this enquiry by phone, WhatsApp or email. I have read the {link}.",
   linkText = "privacy notice",
   privacyHref = "/privacy",
+  version = CONSENT_VERSION,
 }: {
   id: string;
   error?: string;
@@ -342,9 +348,12 @@ export function ConsentField({
   linkText?: string;
   /** Locale-aware privacy URL (`localePath("/privacy", locale)`). */
   privacyHref?: string;
+  /** Id of `text` (contract CONSENT_VERSION). */
+  version?: string;
 }) {
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
+      <input type="hidden" name="consentVersion" value={version} />
       <div
         className={cn(
           "flex items-start gap-3 rounded-lg border p-3",

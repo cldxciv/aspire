@@ -268,6 +268,8 @@ const mocktest = {
     report: "Report for parents",
     retake: "Take the test again",
     leaderboard: "Leaderboard",
+    /** D-039: links to the enquiry form with `from=mock-test` (no score or answers are passed). */
+    counsellor: "Talk to a counsellor",
   },
   certificate: {
     heading: "Certificate of participation",

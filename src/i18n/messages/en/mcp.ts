@@ -1,6 +1,7 @@
 /**
  * Namespace "mcp" — admin MCP access tokens page (owner: MCP-ADMIN). English defines the shape;
  * ../hi/mcp.ts must match it. Plain object, no `as const` (see src/i18n/README.md).
+ * Service keys match the service ids in src/lib/mcp/scopes.ts (MCP-CORE).
  */
 const mcp = {
   meta: {
@@ -13,7 +14,7 @@ const mcp = {
   },
   page: {
     title: "AI agent access (MCP)",
-    lead: "Connect a Claude agent to this website with an access token. You choose what each token may do, and you can revoke it at any time.",
+    lead: "Connect a Claude agent to this website with an access token. You choose what each token may read or change, service by service, and you can revoke it at any time.",
     previewLead: "A data-free preview of agent access. Sign in with an admin account to create or revoke tokens.",
     previewTitle: "Access tokens",
     previewEmpty: "Access tokens are listed here once you sign in with an admin account.",
@@ -22,29 +23,81 @@ const mcp = {
     title: "How agent access works",
     whatTitle: "What is MCP?",
     what: "The Model Context Protocol (MCP) is an open standard that lets an AI assistant such as Claude use the tools a website offers. This website's MCP server is at:",
-    scopesTitle: "What each access level allows",
-    readTitle: "Read only",
-    read: "The agent can look up portal accounts, the audit log, a student's study-tool progress (counts only) and programs, centres and results as the website shows them. It cannot change anything.",
-    writeTitle: "Read + write",
-    write: "Everything in Read only, plus account chores: create student and parent accounts (with a one-time temporary password), link or unlink parents and students, and disable or re-enable student and parent accounts. Admin accounts can't be changed this way. Give it only to an agent you trust and supervise.",
+    setupTitle: "Connect Claude Code",
+    setup: "After you create a token, copy the ready-made command from the dialog and run it in a terminal on the computer where you use Claude Code.",
+    servicesTitle: "What each permission allows",
+    servicesLead: "Permissions are set per service. Read lets an agent look things up. Write lets it make changes as well, and always includes Read.",
+    read: "Read",
+    write: "Write",
+    noWrite: "Read only: this service has no write tools.",
+    comingSoon: "Coming soon",
+    writeWarningTitle: "Write permissions change real data",
+    writeWarning: "With Write, an agent can make changes on this website on your behalf, for example create or disable accounts. Grant it only to an agent you trust and supervise, only for the services it needs, and prefer a short expiry.",
     auditTitle: "Every call is recorded",
     audit: "Every tool call an agent makes is written to the audit log (as “mcp.” actions) under the admin who created the token, so you can always see what it did.",
     secretTitle: "Tokens are secrets",
-    secret: "Anyone holding a token can act with its access level until it expires or is revoked. Keep it in a password manager or your agent's settings, and never paste it into a chat, email or ticket. Revoke it as soon as it is no longer needed or may have leaked.",
-    setupTitle: "Connect Claude Code",
-    setup: "After you create a token, copy the ready-made command from the dialog and run it in a terminal on the computer where you use Claude Code.",
+    secret: "Anyone holding a token can act with its permissions until it expires or is revoked. Keep it in a password manager or your agent's settings, and never paste it into a chat, email or ticket. Revoke it as soon as it is no longer needed or may have leaked.",
+  },
+  /** One entry per MCP service id. */
+  services: {
+    site: {
+      name: "Site status",
+      description: "Content mode, enquiry delivery status, preview settings, account counts and this token's own details. No secret values.",
+    },
+    accounts: {
+      name: "Accounts",
+      description: "Portal accounts and parent–student links. Never passwords or hashes.",
+    },
+    progress: {
+      name: "Study progress",
+      description: "A student's practice-tool progress: counts and labels only (mock tests, planner, weak topics).",
+    },
+    audit: {
+      name: "Audit log",
+      description: "The audit log, newest first, with names instead of ids.",
+    },
+    content: {
+      name: "Programs, centres & results",
+      description: "Programs, centres and results exactly as the website shows them.",
+    },
+    crm: {
+      name: "Enquiries (CRM)",
+      description: "Enquiry leads: the list (phone numbers masked), one lead's full record and timeline (each view is logged), your follow-up tasks and the admissions funnel report.",
+    },
+  },
+  /** What Write adds, for services that have write tools. */
+  serviceWrite: {
+    accounts: "Create student and parent accounts (each with a one-time temporary password), link or unlink parents and students, and disable or re-enable student and parent accounts. Admin accounts can't be changed.",
+    crm: "Add notes, change a lead's stage (lost needs a reason), assign leads, create and complete follow-up tasks, log calls and WhatsApp messages staff made (nothing is sent to families) and enter walk-in leads. No export, erase or staff settings.",
   },
   create: {
     title: "Create an access token",
     description: "The token is shown once, right after you create it.",
     name: "Token name",
     nameHint: "3–60 characters, for example “Office laptop – Claude Code”, so you can recognise it later.",
-    scope: "Access level",
-    scopeRead: "Read only",
-    scopeReadHint: "Recommended. The agent can look things up but cannot change anything.",
-    scopeWrite: "Read + write",
-    scopeWriteHint: "The agent can also change data on this website.",
-    writeWarning: "Read + write lets an agent change data on this website on your behalf. Choose it only for an agent you trust and supervise, and prefer a short expiry.",
+    permissions: "Permissions",
+    permissionsHint: "Tick Read or Write for each service. Write includes Read.",
+    presetsLabel: "Quick choices",
+    presetReadOnly: "Read only",
+    presetFull: "Full access",
+    presetClear: "Clear",
+    matrixCaption: "Permissions by service",
+    columnService: "Service",
+    columnRead: "Read",
+    columnWrite: "Write",
+    readLabel: "Read: {service}",
+    writeLabel: "Write: {service}",
+    noWrite: "No write tools",
+    noWriteHint: "This service has no write tools, so it can only be read.",
+    comingSoon: "Coming soon",
+    comingSoonHint: "This service isn't available yet.",
+    explicitOnly: "Families' personal data: the quick choices never include it. Tick it yourself only if the agent needs it.",
+    summaryRead: "Can read: {services}",
+    summaryWrite: "Can change: {services}",
+    summaryNothing: "nothing",
+    summaryNone: "No permissions chosen yet.",
+    listSeparator: ", ",
+    writeWarning: "Write lets an agent change data on this website on your behalf. Choose it only for an agent you trust and supervise, only for the services it needs, and prefer a short expiry.",
     expiry: "Expires after",
     expiryHint: "The token stops working automatically after this time.",
     expiryDays: "{days} days",
@@ -58,7 +111,7 @@ const mcp = {
     title: "Copy your new token now",
     warning: "This is the only time the token is shown. It is not stored anywhere in readable form, so if you lose it, revoke it and create a new one.",
     name: "Name",
-    access: "Access",
+    permissions: "Permissions",
     expires: "Expires",
     token: "Access token",
     copyToken: "Copy token",
@@ -79,7 +132,7 @@ const mcp = {
     emptyBody: "Create a token above when you're ready to connect an agent.",
     columns: {
       name: "Name",
-      access: "Access",
+      access: "Permissions",
       status: "Status",
       createdBy: "Created by",
       created: "Created",
@@ -87,6 +140,10 @@ const mcp = {
       lastUsed: "Last used",
       actions: "Actions",
     },
+    permissionBadge: "{service}: {access}",
+    morePermissions: "+{count} more",
+    permissionDetails: "All permissions",
+    noPermissions: "No permissions",
     never: "Never",
     noExpiry: "No expiry",
     unknownUser: "Unknown account",
@@ -103,9 +160,11 @@ const mcp = {
     /** Keyed by the token module's status value. */
     creator_inactive: "Paused",
   },
-  scopes: {
-    read: "Read only",
-    readWrite: "Read + write",
+  /** Access levels as shown in badges and summaries. */
+  access: {
+    none: "None",
+    read: "read",
+    write: "write",
   },
   revoke: {
     title: "Revoke “{name}”?",
@@ -122,7 +181,8 @@ const mcp = {
     nameRequired: "Enter a name for the token.",
     nameLength: "Use 3–60 characters.",
     nameInvalid: "Use letters, numbers, spaces and simple punctuation only.",
-    scopeInvalid: "Choose an access level.",
+    permissionsRequired: "Choose at least one permission.",
+    permissionsInvalid: "Some of these permissions aren't allowed. Refresh the page and choose again.",
     expiryInvalid: "Choose when the token expires.",
     tokenNotFound: "That token no longer exists. Refresh the list.",
   },

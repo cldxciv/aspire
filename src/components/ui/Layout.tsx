@@ -71,7 +71,9 @@ export function Section({
 
 /**
  * Section heading row: optional eyebrow, title, description and a trailing action (e.g. a link).
- * Pass `id` and reference it from the section's aria-labelledby.
+ * Pass `id` and reference it from the section's aria-labelledby. The action sits beside the title
+ * from `md`; in a half-width column pass `stack` (always under the title) or `stack="lg"` (under it
+ * from `lg`, where a half-bleed split starts), so the title is not squeezed next to a badge.
  */
 export function SectionHeading({
   id,
@@ -81,6 +83,7 @@ export function SectionHeading({
   action,
   as: Heading = "h2",
   tone = "light",
+  stack = false,
   className,
 }: {
   id?: string;
@@ -90,11 +93,18 @@ export function SectionHeading({
   action?: ReactNode;
   as?: "h1" | "h2" | "h3";
   tone?: "light" | "dark";
+  stack?: boolean | "lg";
   className?: string;
 }) {
   const dark = tone === "dark";
+  const row =
+    stack === true
+      ? undefined
+      : stack === "lg"
+        ? "md:flex-row md:items-end md:justify-between lg:flex-col lg:items-start lg:justify-start"
+        : "md:flex-row md:items-end md:justify-between";
   return (
-    <div className={cn("mb-8 flex flex-col gap-4 md:mb-10 md:flex-row md:items-end md:justify-between md:gap-6", className)}>
+    <div className={cn("mb-8 flex flex-col gap-4 md:mb-10 md:gap-6", row, className)}>
       <div className="max-w-2xl">
         {eyebrow && (
           <p className={cn("mb-2 text-xs font-extrabold uppercase tracking-[0.14em]", dark ? "text-gold" : "text-blue")}>
@@ -104,7 +114,7 @@ export function SectionHeading({
         <Heading
           id={id}
           className={cn(
-            "text-[clamp(1.6rem,3vw,2.25rem)] font-extrabold leading-tight tracking-tight",
+            "text-[clamp(1.6rem,3vw,2.25rem)] font-extrabold leading-tight tracking-tight text-balance",
             dark ? "text-white" : "text-navy",
           )}
         >

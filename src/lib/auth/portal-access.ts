@@ -11,8 +11,10 @@ export type PortalAccess = { kind: "session"; session: Session } | { kind: "prev
 
 /**
  * Server-side access check for portal pages. Returns `session` for a verified
- * session with the area's role, `preview` when data-free previews are enabled,
- * and otherwise redirects to the login page of `locale` with `?next=<path>` (never returns).
+ * session with the area's role (or one of `role` when a list is given, e.g. the CRM:
+ * `["staff", "admin"]`), `preview` when data-free previews are enabled (never for areas
+ * that include `staff`: the CRM has no preview), and otherwise redirects to the login page
+ * of `locale` with `?next=<path>` (never returns).
  *
  * A signed-in account that still has an admin-issued temporary password is sent to the
  * change-password page first (with `next`), whatever the area or preview setting: no
@@ -23,13 +25,15 @@ export type PortalAccess = { kind: "session"; session: Session } | { kind: "prev
  * at the top of a page or layout.
  */
 export async function requirePortalAccess(
-  role: Role,
+  role: Role | readonly Role[],
   path: string,
   locale: Locale = defaultLocale,
 ): Promise<PortalAccess> {
   const session = await getPageSession();
   if (session?.mustChangePassword === true) redirect(buildChangePasswordHref(locale, path));
-  const decision = decidePortalPage(session, role, isPortalPreviewEnabled());
+  const roles: readonly Role[] = typeof role === "string" ? [role] : role;
+  const previewAllowed = !roles.includes("staff") && isPortalPreviewEnabled();
+  const decision = decidePortalPage(session, roles, previewAllowed);
   if (decision.kind === "deny") redirect(buildLoginHref(path, locale));
   return decision;
 }

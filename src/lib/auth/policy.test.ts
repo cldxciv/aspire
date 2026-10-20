@@ -8,6 +8,29 @@ const student: Session = { userId: "learner-1", role: "student" };
 const parent: Session = { userId: "parent-1", role: "parent", linkedStudentIds: ["learner-1", "learner-2"] };
 const unlinkedParent: Session = { userId: "parent-2", role: "parent" };
 
+describe("staff (M7, D-038)", () => {
+  const staff: Session = { userId: "crm-1", role: "staff" };
+
+  it("is a valid role that only explicitly listed guards allow", () => {
+    expect(authorizeRole(staff, ["staff", "admin"])).toEqual({ ok: true, session: staff });
+    expect(authorizeRole(staff, ["admin"])).toEqual({ ok: false, error: "forbidden" });
+    expect(authorizeRole(staff, ["student", "parent"])).toEqual({ ok: false, error: "forbidden" });
+    expect(authorizeRole({ ...staff, mustChangePassword: true }, ["staff"])).toEqual({ ok: false, error: "password_change_required" });
+  });
+
+  it("never reaches learner records", () => {
+    expect(canAccessStudentRecord(staff, "learner-1")).toBe(false);
+    expect(authorizeStudentRecord(staff, ["staff"], "learner-1")).toEqual({ ok: false, error: "forbidden" });
+  });
+
+  it("portal pages accept a list of roles", () => {
+    expect(decidePortalPage(staff, ["staff", "admin"], false)).toEqual({ kind: "session", session: staff });
+    expect(decidePortalPage(admin, ["staff", "admin"], false)).toEqual({ kind: "session", session: admin });
+    expect(decidePortalPage(student, ["staff", "admin"], false)).toEqual({ kind: "deny", error: "forbidden" });
+    expect(decidePortalPage(staff, "admin", false)).toEqual({ kind: "deny", error: "forbidden" });
+  });
+});
+
 describe("authorizeRole (deny by default)", () => {
   it.each([null, undefined])("rejects a missing session (%s) as unauthenticated", (session) => {
     expect(authorizeRole(session, ["admin"])).toEqual({ ok: false, error: "unauthenticated" });

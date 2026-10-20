@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  CONSENT_VERSION,
   HERO_CLASS_EXAM_OPTIONS,
   HERO_STEP_FIELDS,
   enquirySchema,
@@ -37,6 +38,8 @@ const complete = {
   preferredCentre: "not-sure",
   message: "  Hostel question ",
   consent: "on",
+  // ConsentField's hidden input (D-039).
+  consentVersion: CONSENT_VERSION,
   website: "",
 };
 
@@ -108,6 +111,7 @@ describe("buildHeroPayload", () => {
       preferredCentre: undefined,
       message: undefined,
       consent: false,
+      consentVersion: "",
       website: "",
     });
     // What is actually POSTed: undefined keys disappear, required keys stay as "".
@@ -118,6 +122,7 @@ describe("buildHeroPayload", () => {
       guardianName: "",
       phone: "",
       consent: false,
+      consentVersion: "",
       website: "",
     });
   });

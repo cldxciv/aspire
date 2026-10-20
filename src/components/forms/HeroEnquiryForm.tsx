@@ -15,7 +15,7 @@ import {
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
-import { useId, useLayoutEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { z } from "zod";
 import { Button, Notice } from "@/components/ui";
@@ -26,6 +26,7 @@ import type { Messages } from "@/i18n/messages/types";
 import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
 import { enquirySchema, validateHeroStep, type HeroFieldName, type HeroStepIndex } from "@/lib/contracts/enquiry";
+import { captureVisitAttribution, collectEnquiryContext } from "./enquiry-context";
 import { buildHeroPayload } from "./enquiry-payload";
 import { localizeFieldErrors } from "./field-errors";
 import { ConsentField, HoneypotField, SelectField, TextAreaField, TextField } from "./fields";
@@ -53,12 +54,14 @@ import { submitEnquiry } from "./submit-enquiry";
  * name, mobile) · 3 Preferences (centre if any, optional message, consent, submit).
  *
  * - All three fieldsets stay mounted; inactive ones get `hidden`, so one FormData holds every
- *   step and values survive Back. Nothing is stored in the browser.
+ *   step and values survive Back. No form values are stored in the browser.
  * - One submit handler: on steps 1–2 it is "Next" (Enter too) and validates only that step with
  *   the contract's `validateHeroStep`; on step 3 it validates everything with `enquirySchema`
  *   and POSTs once. No per-step requests, no analytics.
  * - Only `received` is shown as success. `not_configured` says plainly that nothing was sent
  *   and keeps every value; other failures reuse FormStatus copy.
+ * - Lead capture (D-039): step 3's consent sentence carries its version (hidden input), and the
+ *   final POST adds attribution `context` (enquiry-context.ts). Nothing is added to steps 1–2.
  *
  * Localisation (D-028): pass `messages={await getMessages("forms")}` (or `{ shared, hero }`);
  * English is the default. Field errors are mapped per field to `forms.shared.errors`; links use
@@ -122,6 +125,11 @@ export function HeroEnquiryForm({
   const submitting = state.kind === "submitting";
   const received = state.kind === "received" ? state : null;
   const isLastStep = step === LAST_HERO_STEP;
+
+  // Visit attribution (utm_*, referrer) is recorded when the form mounts (home page landings).
+  useEffect(() => {
+    captureVisitAttribution();
+  }, []);
 
   // Routes stay mounted (hidden) after navigation. Clear a stale success panel when this
   // form is hidden, so returning to the page shows a fresh step 1.
@@ -198,7 +206,7 @@ export function HeroEnquiryForm({
     if (inFlight.current) return; // no double submit
 
     const form = event.currentTarget;
-    const payload = buildHeroPayload(new FormData(form), hasCentreField);
+    const payload = buildHeroPayload(new FormData(form), hasCentreField, isLastStep ? collectEnquiryContext(locale) : undefined);
 
     // Steps 1–2: "Next" — validate this step only.
     if (!isLastStep) {

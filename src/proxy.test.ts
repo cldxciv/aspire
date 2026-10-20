@@ -319,6 +319,71 @@ describe.skipIf(SESSION_COOKIE_NAME === null)("session cookie hint", () => {
   });
 });
 
+// M7 (D-038): the CRM workspace is a portal area with NO preview shell (lead data).
+describe("CRM pages and APIs", () => {
+  const withSession = (path: string) => request(path, { [SESSION_COOKIE_NAME ?? "unset"]: "opaque-token" });
+
+  it.each(["/crm", "/crm/leads", "/crm/leads/abc", "/hi/crm", "/hi/crm/today", "/api/crm/leads", "/api/crm/leads/x/notes"])(
+    "the matcher runs on %s",
+    (url) => {
+      expect(unstable_doesMiddlewareMatch({ config, url })).toBe(true);
+    },
+  );
+
+  it.each([
+    ["/crm", "/login?next=%2Fcrm"],
+    ["/crm/leads/abc", "/login?next=%2Fcrm%2Fleads%2Fabc"],
+    ["/hi/crm", "/hi/login?next=%2Fcrm"],
+    ["/hi/crm/today", "/hi/login?next=%2Fcrm%2Ftoday"],
+  ])("signed out, %s redirects to %s even when previews are on", (path, target) => {
+    gateOff();
+    for (const toggle of [previewOn, previewOff]) {
+      toggle();
+      const response = proxy(request(path));
+      expect(response.status).toBe(307);
+      expect(getRedirectUrl(response)).toBe(`${ORIGIN}${target}`);
+      expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    }
+  });
+
+  it("redirects /en/crm to the unprefixed URL first", () => {
+    gateOff();
+    expect(getRedirectUrl(proxy(request("/en/crm/leads")))).toBe(`${ORIGIN}/crm/leads`);
+  });
+
+  it("lets a session hint through in both locales, always noindex", () => {
+    gateOff();
+    previewOff();
+    const english = proxy(withSession("/crm/leads"));
+    expect(getRewrittenUrl(english)).toBe(`${ORIGIN}/en/crm/leads`);
+    expect(english.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+    const hindi = proxy(withSession("/hi/crm"));
+    expectPassThrough(hindi);
+    expect(hindi.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+
+  it("answers /api/crm/** with an optimistic 401 without a session hint, no-store + noindex otherwise", async () => {
+    gateOff();
+    previewOn();
+    const denied = proxy(request("/api/crm/leads"));
+    expect(denied.status).toBe(401);
+    expect((await denied.json()).error).toBe("unauthenticated");
+    const allowed = proxy(withSession("/api/crm/leads?stage=new"));
+    expectPassThrough(allowed);
+    expect(allowed.headers.get("cache-control")).toBe("no-store");
+    expect(allowed.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+
+  it.each(["/crmx", "/crm-help", "/hi/crmx", "/about/crm"])("leaves look-alike public path %s alone", (path) => {
+    gateOff();
+    previewOff();
+    const response = proxy(request(path));
+    expect(getRedirectUrl(response)).toBeNull();
+    expect(response.headers.get("x-robots-tag")).toBeNull();
+  });
+});
+
 // AUTH-2: /account/** (change password) is private for every role and has no preview shell.
 describe("account pages", () => {
   const withSession = (path: string) => request(path, { [SESSION_COOKIE_NAME ?? "unset"]: "opaque-token" });

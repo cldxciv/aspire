@@ -120,8 +120,9 @@ export default async function HostelsPage() {
             title={info.headline}
             description={info.audience}
             action={demo}
+            stack
           />
-          <FeatureList features={info.charter} />
+          <FeatureList features={info.charter} className="md:max-lg:grid-cols-1" />
         </FillMediaSplit>
       </Section>
 
@@ -181,6 +182,7 @@ export default async function HostelsPage() {
             title={t.care.title}
             description={t.care.description}
             action={demo}
+            stack
           />
           <FeatureList features={info.features} columns={1} />
         </FillMediaSplit>

@@ -6,6 +6,7 @@ import { LocaleProvider } from "@/i18n/client";
 import { messagesFor } from "@/i18n/messages";
 import {
   CLASS_OPTIONS,
+  CONSENT_VERSION,
   CONTACT_TOPIC_OPTIONS,
   HERO_CLASS_EXAM_OPTIONS,
   PROGRAM_INTEREST_OPTIONS,
@@ -24,12 +25,13 @@ const DEVANAGARI = /[ऀ-ॿ]/;
 /** Every field error the contract can produce for these invalid payloads, as `[field, message]`. */
 function contractErrors(): [string, string][] {
   const long = "x".repeat(81);
+  // Every rendered form sends its consent version (hidden input), so it is not a visible field error.
   const payloads = [
-    { source: "admissions", name: "", phone: "1", email: "nope", currentClass: "", programInterest: "", preferredCentre: "Bad", message: "m".repeat(1001), consent: false },
-    { source: "admissions", name: long, phone: "9876543210", currentClass: "x", programInterest: "x", consent: true },
-    { source: "contact", name: "ab", phone: "9876543210", topic: "", consent: true },
-    { source: "hero", name: "ab", classOrExam: "", guardianName: "", phone: "9876543210", consent: true },
-    { source: "hero", name: "ab", classOrExam: "jee-class-11", guardianName: long, phone: "9876543210", consent: true },
+    { source: "admissions", name: "", phone: "1", email: "nope", currentClass: "", programInterest: "", preferredCentre: "Bad", message: "m".repeat(1001), consent: false, consentVersion: CONSENT_VERSION },
+    { source: "admissions", name: long, phone: "9876543210", currentClass: "x", programInterest: "x", consent: true, consentVersion: CONSENT_VERSION },
+    { source: "contact", name: "ab", phone: "9876543210", topic: "", consent: true, consentVersion: CONSENT_VERSION },
+    { source: "hero", name: "ab", classOrExam: "", guardianName: "", phone: "9876543210", consent: true, consentVersion: CONSENT_VERSION },
+    { source: "hero", name: "ab", classOrExam: "jee-class-11", guardianName: long, phone: "9876543210", consent: true, consentVersion: CONSENT_VERSION },
   ];
   const out: [string, string][] = [];
   for (const payload of payloads) {

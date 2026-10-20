@@ -48,7 +48,7 @@ function auditToolCalls(caller: McpCaller, names: readonly string[], now: number
       actorId: caller.createdBy,
       action: AUDIT_MCP_CALL,
       target: null,
-      details: { tool, via: "mcp", mcpKeyId: caller.tokenId, scopes: caller.scopes },
+      details: { tool, via: "mcp", mcpKeyId: caller.tokenId, scopes: caller.scopes.join(" ") },
       now,
     });
   }

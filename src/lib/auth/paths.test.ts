@@ -3,9 +3,11 @@ import {
   buildChangePasswordHref,
   buildLoginHref,
   isAccountPagePath,
+  isCrmPagePath,
   isPortalApiPath,
   isPortalPagePath,
   localizedPostLoginPath,
+  portalPathAllowsRole,
   portalRoleForPath,
   postLoginRedirect,
   sanitizeNextPath,
@@ -18,6 +20,36 @@ describe("postLoginRedirect", () => {
     expect(postLoginRedirect("student", "//evil.com")).toBe("/student");
     expect(postLoginRedirect("admin", "https://evil.com/admin")).toBe("/admin");
     expect(postLoginRedirect("admin", undefined)).toBe("/admin");
+  });
+});
+
+describe("staff and the CRM (M7)", () => {
+  it("sends staff to /crm and only ever to /crm pages", () => {
+    expect(postLoginRedirect("staff", undefined)).toBe("/crm");
+    expect(postLoginRedirect("staff", "/crm/leads/abc")).toBe("/crm/leads/abc");
+    expect(postLoginRedirect("staff", "/admin")).toBe("/crm");
+    expect(postLoginRedirect("staff", "/student")).toBe("/crm");
+    expect(postLoginRedirect("staff", "//evil.com/crm")).toBe("/crm");
+  });
+
+  it("lets admins follow a /crm next, but not students or parents", () => {
+    expect(postLoginRedirect("admin", "/crm/today")).toBe("/crm/today");
+    expect(postLoginRedirect("parent", "/crm")).toBe("/parent");
+    expect(postLoginRedirect("student", "/crm")).toBe("/student");
+  });
+
+  it("treats /crm as a portal page owned by staff, and /api/crm as a portal API", () => {
+    expect(isPortalPagePath("/crm")).toBe(true);
+    expect(isPortalPagePath("/crm/leads")).toBe(true);
+    expect(isPortalPagePath("/crmx")).toBe(false);
+    expect(portalRoleForPath("/crm/leads")).toBe("staff");
+    expect(portalPathAllowsRole("/crm", "admin")).toBe(true);
+    expect(portalPathAllowsRole("/admin", "staff")).toBe(false);
+    expect(isCrmPagePath("/crm/x")).toBe(true);
+    expect(isCrmPagePath("/admin")).toBe(false);
+    expect(isPortalApiPath("/api/crm/leads")).toBe(true);
+    expect(sanitizeNextPath("/hi/crm/leads")).toBe("/crm/leads");
+    expect(buildLoginHref("/crm/leads", "hi")).toBe("/hi/login?next=%2Fcrm%2Fleads");
   });
 });
 

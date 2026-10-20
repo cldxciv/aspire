@@ -33,6 +33,8 @@ export function authorizeRole(session: Session | null | undefined, allowed: read
  * - parent: only learners explicitly linked to the account (`linkedStudentIds`).
  * - admin: denied until a staff permission model (e.g. centre-scoped access and
  *   audit logging) is agreed — see docs/auth-and-portals.md.
+ * - staff (CRM counsellors / managers, D-038): always denied. Their record-level access is to
+ *   CRM leads only (src/lib/crm/access.ts), never to learner records.
  */
 export function canAccessStudentRecord(session: Session, studentId: string): boolean {
   if (!isValidSession(session) || !isRecordId(studentId)) return false;
@@ -65,16 +67,16 @@ export type PortalPageDecision =
 
 /**
  * What a portal page may render:
- * 1. a verified session with the area's role → the real page (`session`);
+ * 1. a verified session with the area's role (or one of `roles`) → the real page (`session`);
  * 2. otherwise, if previews are enabled → the data-free preview shell;
  * 3. otherwise → deny (the caller redirects to /login).
  */
 export function decidePortalPage(
   session: Session | null | undefined,
-  role: Role,
+  role: Role | readonly Role[],
   previewEnabled: boolean,
 ): PortalPageDecision {
-  const decision = authorizeRole(session, [role]);
+  const decision = authorizeRole(session, typeof role === "string" ? [role] : role);
   if (decision.ok) return { kind: "session", session: decision.session };
   if (previewEnabled) return { kind: "preview" };
   return { kind: "deny", error: decision.error };

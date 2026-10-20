@@ -28,7 +28,7 @@ const predictor = {
   },
   form: {
     title: "Your details",
-    privacy: "What you enter stays in this browser. Nothing is saved on our servers.",
+    privacy: "What you enter stays in this browser and is not saved on our servers — unless you choose to send an enquiry, which then includes your exam and score range.",
     exam: "Exam",
     exams: {
       "jee-main": "JEE Main",
@@ -129,7 +129,7 @@ const predictor = {
     },
     optionsListLabel: "{tag} options",
     ctaText: "Want a plan for these colleges? Aspire's counsellors can help.",
-    ctaButton: "Send an enquiry",
+    ctaButton: "Talk to a counsellor",
   },
   whatIf: {
     title: "What if I score more?",

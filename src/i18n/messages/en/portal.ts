@@ -23,6 +23,7 @@ const portal = {
     users: "User accounts",
     audit: "Audit log",
     mcp: "AI agent access",
+    crm: "Leads & admissions",
     enquiries: "Enquiries",
     content: "Content",
     centres: "Centres",

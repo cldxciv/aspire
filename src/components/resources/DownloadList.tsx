@@ -32,14 +32,22 @@ export function DownloadList({
   labels: Messages<"resources">["downloadCard"];
   /** DEMO badge label (localised) when the list is placeholder data; omitted for verified content. */
   demoLabel?: string;
-  columns?: 1 | 2 | 3;
+  /** Cards per row on wide screens: 3 from `lg`, or "3md" (three from `md`, for a 3-card preview). */
+  columns?: 1 | 2 | 3 | "3md";
   /** Show this many cards, the rest behind a disclosure (needs `more`). */
   initialCount?: number;
   /** Disclosure labels: "Show all {count} downloads" / "Show fewer downloads". */
   more?: { showAll: string; showFewer: string };
   className?: string;
 }) {
-  const gridClass = cn("grid gap-4", columns > 1 && "sm:grid-cols-2", columns === 3 && "lg:grid-cols-3");
+  // While two columns show, an odd last card spans both (no orphan beside an empty cell).
+  const gridClass = cn(
+    "grid gap-4",
+    columns !== 1 && "sm:grid-cols-2",
+    columns === 2 && "sm:[&>li:last-child:nth-child(odd)]:col-span-2",
+    columns === 3 && "lg:grid-cols-3 sm:max-lg:[&>li:last-child:nth-child(odd)]:col-span-2",
+    columns === "3md" && "md:grid-cols-3 sm:max-md:[&>li:last-child:nth-child(odd)]:col-span-2",
+  );
   const collapse = initialCount !== undefined && more !== undefined && downloads.length > initialCount;
   const card = (item: DownloadItem) => {
     const meta = [

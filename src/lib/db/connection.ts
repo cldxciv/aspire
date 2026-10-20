@@ -3,7 +3,8 @@ import "server-only";
 import { mkdirSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { FEATURE_SCHEMAS } from "./features";
+// Explicit .ts paths: scripts/ (auth:seed, auth:create-admin) run these sources directly in Node.
+import { FEATURE_SCHEMAS } from "./features/index.ts";
 
 /**
  * SQLite connection and schema for accounts, sessions, parent links, the audit log
@@ -39,11 +40,20 @@ export function resolveDbPath(env: Env = process.env, cwd: string = process.cwd(
 }
 
 /**
+ * A core migration: plain SQL, or SQL that must run with foreign-key enforcement OFF (SQLite's
+ * table-rebuild procedure, https://sqlite.org/lang_altertable.html#otheralter). For the latter,
+ * `migrate()` switches enforcement off OUTSIDE the transaction (the pragma is a no-op inside one),
+ * runs the SQL, requires `PRAGMA foreign_key_check` to come back empty before committing, and
+ * switches enforcement back on afterwards.
+ */
+type Migration = string | { sql: string; disableForeignKeys: true };
+
+/**
  * Ordered, append-only migrations. `PRAGMA user_version` records how many have run.
  * Never edit a released entry: add a new one. Every statement is idempotent as well
  * (`IF NOT EXISTS`) so a half-applied database still converges.
  */
-const MIGRATIONS: readonly string[] = [
+const MIGRATIONS: readonly Migration[] = [
   `
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -96,29 +106,83 @@ const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX IF NOT EXISTS login_attempts_key_idx ON login_attempts (scope, key_hash, created_at);
   `,
+  // 2 (M7, D-038): widen users.role to include 'staff'. SQLite cannot alter a CHECK constraint, so
+  // the table is rebuilt (create new → copy → drop → rename → indexes) with foreign keys OFF, so the
+  // DROP does not cascade into sessions, parent_links or the feature tables that reference users.
+  // Those references are by name ("users") and resolve to the rebuilt table after the rename.
+  {
+    disableForeignKeys: true,
+    sql: `
+  DROP TABLE IF EXISTS users_rebuild_m7;
+  CREATE TABLE users_rebuild_m7 (
+    id TEXT PRIMARY KEY,
+    role TEXT NOT NULL CHECK (role IN ('student', 'parent', 'admin', 'staff')),
+    display_name TEXT NOT NULL,
+    login_id TEXT NOT NULL UNIQUE CHECK (login_id = lower(login_id)),
+    password_hash TEXT NOT NULL,
+    disabled INTEGER NOT NULL DEFAULT 0 CHECK (disabled IN (0, 1)),
+    must_change_password INTEGER NOT NULL DEFAULT 1 CHECK (must_change_password IN (0, 1)),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  INSERT INTO users_rebuild_m7 (id, role, display_name, login_id, password_hash, disabled, must_change_password, created_at, updated_at)
+    SELECT id, role, display_name, login_id, password_hash, disabled, must_change_password, created_at, updated_at FROM users;
+  DROP TABLE users;
+  ALTER TABLE users_rebuild_m7 RENAME TO users;
+  CREATE INDEX IF NOT EXISTS users_role_idx ON users (role);
+  `,
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
+
+/** The SQL of each core migration, in order (tests build old-schema databases from these). */
+export const CORE_MIGRATION_SQL: readonly string[] = MIGRATIONS.map((migration) =>
+  typeof migration === "string" ? migration : migration.sql,
+);
 
 function userVersion(db: DatabaseSync): number {
   const row = db.prepare("PRAGMA user_version").get();
   return Number(row?.user_version ?? 0);
 }
 
-/** Runs pending migrations inside one write transaction. Safe to call repeatedly. */
+function migrationSql(migration: Migration): string {
+  return typeof migration === "string" ? migration : migration.sql;
+}
+
+function foreignKeysEnabled(db: DatabaseSync): boolean {
+  return Number(db.prepare("PRAGMA foreign_keys").get()?.foreign_keys ?? 0) === 1;
+}
+
+/**
+ * Runs pending migrations inside one write transaction. Safe to call repeatedly. When a pending
+ * migration rebuilds a table, foreign-key enforcement is switched off around the transaction and
+ * `PRAGMA foreign_key_check` must be empty before the commit (else everything rolls back).
+ */
 export function migrate(db: DatabaseSync): void {
-  if (userVersion(db) >= MIGRATIONS.length) return;
-  db.exec("BEGIN IMMEDIATE");
+  const startVersion = userVersion(db);
+  if (startVersion >= MIGRATIONS.length) return;
+  const rebuild = MIGRATIONS.slice(startVersion).some((migration) => typeof migration !== "string");
+  const restoreForeignKeys = rebuild && foreignKeysEnabled(db);
+  if (restoreForeignKeys) db.exec("PRAGMA foreign_keys = OFF");
   try {
-    // Re-read inside the write lock: another connection may have migrated meanwhile.
-    for (let version = userVersion(db); version < MIGRATIONS.length; version += 1) {
-      db.exec(MIGRATIONS[version]);
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      // Re-read inside the write lock: another connection may have migrated meanwhile.
+      for (let version = userVersion(db); version < MIGRATIONS.length; version += 1) {
+        db.exec(migrationSql(MIGRATIONS[version]));
+      }
+      if (rebuild && db.prepare("PRAGMA foreign_key_check").all().length > 0) {
+        throw new Error("Migration aborted: PRAGMA foreign_key_check reported violations");
+      }
+      db.exec(`PRAGMA user_version = ${MIGRATIONS.length}`);
+      db.exec("COMMIT");
+    } catch (error) {
+      if (db.isTransaction) db.exec("ROLLBACK");
+      throw error;
     }
-    db.exec(`PRAGMA user_version = ${MIGRATIONS.length}`);
-    db.exec("COMMIT");
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
+  } finally {
+    if (restoreForeignKeys) db.exec("PRAGMA foreign_keys = ON");
   }
 }
 
@@ -151,18 +215,32 @@ export function openDatabase(path: string): DatabaseSync {
  * One connection per process, kept on `globalThis` so dev-server reloads and
  * separately bundled route handlers share it instead of opening a file handle each.
  */
-type Holder = { path: string; db: DatabaseSync };
+type Holder = { path: string; db: DatabaseSync; schemaKeys?: Set<string> };
 const GLOBAL_KEY = Symbol.for("aspire.authDb");
 const globalStore = globalThis as typeof globalThis & { [GLOBAL_KEY]?: Holder };
+
+/**
+ * Identifies the schema this copy of the module knows (migration count + feature schema sizes).
+ * A long-running dev server keeps its connection on `globalThis` across code reloads, so a
+ * reloaded module with new migrations / feature tables applies them to the open connection.
+ */
+const SCHEMA_KEY = `${MIGRATIONS.length}|${FEATURE_SCHEMAS.map(({ name, sql }) => `${name}:${sql.length}`).join(",")}`;
 
 /** The process-wide database for the configured `AUTH_DB_PATH` (opened lazily). */
 export function getDb(): DatabaseSync {
   const path = resolveDbPath();
   const current = globalStore[GLOBAL_KEY];
-  if (current && current.path === path && current.db.isOpen) return current.db;
+  if (current && current.path === path && current.db.isOpen) {
+    if (!current.schemaKeys?.has(SCHEMA_KEY)) {
+      migrate(current.db);
+      applyFeatureSchemas(current.db);
+      (current.schemaKeys ??= new Set()).add(SCHEMA_KEY);
+    }
+    return current.db;
+  }
   if (current?.db.isOpen) current.db.close();
   const db = openDatabase(path);
-  globalStore[GLOBAL_KEY] = { path, db };
+  globalStore[GLOBAL_KEY] = { path, db, schemaKeys: new Set([SCHEMA_KEY]) };
   return db;
 }
 

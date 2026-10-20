@@ -1,7 +1,7 @@
 "use client";
 
-import { LoaderCircle, Send } from "lucide-react";
-import { useId, useLayoutEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { Info, LoaderCircle, Send } from "lucide-react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { flushSync } from "react-dom";
 import { z } from "zod";
 import { Button } from "@/components/ui";
@@ -12,6 +12,7 @@ import type { Messages } from "@/i18n/messages/types";
 import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
 import { PROGRAM_INTEREST_OPTIONS, enquirySchema } from "@/lib/contracts/enquiry";
+import { captureVisitAttribution, collectEnquiryContext, toolArrivalFrom } from "./enquiry-context";
 import { FIELD_ORDER, buildPayload, pickErrors, type FieldErrors, type FieldName, type Intent } from "./enquiry-payload";
 import { localizeFieldErrors } from "./field-errors";
 import { ConsentField, HoneypotField, SelectField, TextAreaField, TextField } from "./fields";
@@ -19,10 +20,15 @@ import { formatNodes } from "./format-nodes";
 import { FormStatus, type FormState } from "./FormStatus";
 import { classOptions, programOptions, topicOptions } from "./option-labels";
 import { submitEnquiry } from "./submit-enquiry";
+import { useLocationSearch } from "./use-location-search";
 
 /**
  * Enquiry form (contract: src/lib/contracts/enquiry.ts, D-008).
  *
+ * - Lead capture (D-039): the consent sentence carries its version (hidden `consentVersion`), and
+ *   the submit adds attribution `context` (page, locale, utm_* of the visit's landing link, the
+ *   external referrer host, the tool CTA `?from=` — see enquiry-context.ts). When the visitor came
+ *   from the predictor's CTA, a note says that its exam and score band are added.
  * - Validates on the client with the shared `enquirySchema`, then POSTs JSON to /api/enquiries.
  * - Renders the server's answer honestly: only `received` is reported as a successful enquiry;
  *   `not_configured` says plainly that nothing was sent and keeps the entered data.
@@ -89,6 +95,14 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className,
   const [errors, setErrors] = useState<FieldErrors>({});
   const [state, setState] = useState<FormState>({ kind: "idle" });
 
+  // Visit attribution (utm_*, referrer) is recorded when the form mounts; harmless if a layout did it already.
+  useEffect(() => {
+    captureVisitAttribution();
+  }, []);
+  // The tool CTA in the URL, read after hydration ("" on the server) — only for the visible note.
+  const arrival = toolArrivalFrom(useLocationSearch());
+  const showPredictorNote = arrival?.tool === "predictor" && Boolean(arrival.exam || arrival.band);
+
   const order = FIELD_ORDER[variant];
   const hasCentreField = variant === "admissions" && (centreOptions?.length ?? 0) > 0;
   // Accept option values ("jee") and ExamTrack names ("JEE", "Foundation"); ignore anything else.
@@ -142,7 +156,7 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className,
     if (inFlight.current) return; // no double submit
 
     const form = event.currentTarget;
-    const payload = buildPayload(variant, new FormData(form), intent, hasCentreField);
+    const payload = buildPayload(variant, new FormData(form), intent, hasCentreField, collectEnquiryContext(locale));
 
     const parsed = enquirySchema.safeParse(payload);
     if (!parsed.success) {
@@ -416,6 +430,13 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className,
               className={wide}
             />
           </>
+        )}
+
+        {showPredictorNote && (
+          <p className={cn("flex items-start gap-2 rounded-lg bg-blue-soft p-3 text-[13px] leading-snug text-navy", wide)}>
+            <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            <span>{t.fromPredictor}</span>
+          </p>
         )}
 
         <ConsentField

@@ -4,6 +4,7 @@
  * Kept free of React so they can be unit-tested (enquiry-form.test.ts).
  */
 
+import type { EnquiryContext } from "@/lib/contracts/enquiry";
 import type { EnquiryFormVariant } from "./EnquiryForm";
 
 export type FieldName =
@@ -36,13 +37,15 @@ function text(data: FormData, key: string): string {
 /**
  * Builds the request body exactly as the contract's input type expects.
  * Blank optional fields are omitted. The honeypot is forwarded untouched so the
- * server can drop bot submissions.
+ * server can drop bot submissions. `consentVersion` comes from ConsentField's hidden input;
+ * `context` (attribution, D-039) is collected by the form at submit time and omitted when empty.
  */
 export function buildPayload(
   variant: EnquiryFormVariant,
   data: FormData,
   intent: Intent,
   hasCentreField: boolean,
+  context?: EnquiryContext,
 ): Record<string, unknown> {
   const optional = (key: string) => text(data, key) || undefined;
   const honeypot = data.get("website");
@@ -51,7 +54,9 @@ export function buildPayload(
     name: text(data, "name"),
     phone: text(data, "phone"),
     consent: data.has("consent"),
+    consentVersion: text(data, "consentVersion"),
     website: typeof honeypot === "string" ? honeypot : "",
+    ...(context ? { context } : {}),
   };
 
   switch (variant) {
@@ -96,14 +101,18 @@ export type HeroPayload = {
   preferredCentre?: string;
   message?: string;
   consent: boolean;
+  /** From ConsentField's hidden input (step 3). */
+  consentVersion: string;
   website: string;
+  /** Attribution (D-039); omitted when empty. */
+  context?: EnquiryContext;
 };
 
 /**
  * Builds the hero payload from the whole form (every step's fieldset stays mounted, so one
  * FormData has all three steps). The centre is only read when the centre select is rendered.
  */
-export function buildHeroPayload(data: FormData, hasCentreField: boolean): HeroPayload {
+export function buildHeroPayload(data: FormData, hasCentreField: boolean, context?: EnquiryContext): HeroPayload {
   const optional = (key: string) => text(data, key) || undefined;
   const honeypot = data.get("website");
   return {
@@ -115,7 +124,9 @@ export function buildHeroPayload(data: FormData, hasCentreField: boolean): HeroP
     preferredCentre: hasCentreField ? optional("preferredCentre") : undefined,
     message: optional("message"),
     consent: data.has("consent"),
+    consentVersion: text(data, "consentVersion"),
     website: typeof honeypot === "string" ? honeypot : "",
+    ...(context ? { context } : {}),
   };
 }
 

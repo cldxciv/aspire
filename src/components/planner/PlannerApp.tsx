@@ -2,7 +2,8 @@
 
 import { CalendarCheck2, CalendarDays, Cloud, CloudOff, Layers, Settings, Trophy } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Button, Notice } from "@/components/ui";
+import { toolEnquiryHref } from "@/components/forms/enquiry-context";
+import { Button, ButtonLink, Notice } from "@/components/ui";
 import type { Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
 import { applySettings, dueItems, openBlocksToday, recordReview, toggleBlock, type ReviewKind } from "@/lib/planner/actions";
@@ -267,6 +268,7 @@ export function PlannerApp({
           <PlanForm t={t} data={data} today={today} settings={null} onSubmit={onSettings} />
         </div>
         {status}
+        <CounsellorCta t={t} locale={locale} />
       </div>
     );
   }
@@ -380,6 +382,19 @@ export function PlannerApp({
           />
         )}
       </div>
+      <CounsellorCta t={t} locale={locale} />
+    </div>
+  );
+}
+
+/** D-039: "Talk to a counsellor" → the enquiry form with `from=planner`; nothing from the plan is passed. Exported for tests. */
+export function CounsellorCta({ t, locale }: { t: PlannerMessages; locale: Locale }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-control bg-gold-soft p-4">
+      <p className="min-w-0 flex-1 text-sm font-semibold text-[#5c4a12]">{t.counsellor.text}</p>
+      <ButtonLink href={toolEnquiryHref("planner", locale)} size="sm" className="shrink-0">
+        {t.counsellor.cta}
+      </ButtonLink>
     </div>
   );
 }

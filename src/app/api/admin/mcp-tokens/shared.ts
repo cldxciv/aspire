@@ -4,17 +4,13 @@ import { unstable_rethrow } from "next/navigation";
 import type { NextResponse } from "next/server";
 import { z } from "zod";
 
-import {
-  MCP_EXPIRY_DAYS,
-  MCP_SCOPE_CHOICES,
-  normaliseTokenName,
-  tokenNameIssue,
-} from "@/components/mcp-admin/token-view";
+import { MCP_EXPIRY_DAYS, normaliseTokenName, tokenNameIssue } from "@/components/mcp-admin/token-view";
 import { requireRole, type GuardResult } from "@/lib/auth/guards";
 import { exceptionCode } from "@/lib/auth/log";
 import { rejectCrossOrigin, REQUEST_MESSAGES } from "@/lib/auth/request";
 import { portalApiError } from "@/lib/auth/responses";
 import type { ApiError } from "@/lib/contracts/api";
+import { MCP_LEGACY_SCOPES, mcpScopesInputSchema, normalizeScopes, type McpScope } from "@/lib/mcp/scopes";
 import { SlidingWindowRateLimiter } from "@/lib/server/rate-limit";
 
 /**
@@ -46,7 +42,7 @@ export const MCP_TOKEN_MESSAGES = {
     nameLength: "Use 3–60 characters.",
     nameInvalid: "Use letters, numbers, spaces and simple punctuation only.",
   },
-  scopes: 'Choose "read" or "read write".',
+  scopes: "Choose at least one permission (<service>:read or <service>:write).",
   expiresInDays: "Choose a whole number of days from 1 to 365.",
 } as const;
 
@@ -114,10 +110,31 @@ export function isMcpTokenId(value: string): boolean {
 }
 
 /**
- * `POST /api/admin/mcp-tokens` body: `{ name (3–60 characters), scopes? ("read" default |
- * "read write"), expiresInDays? (1–365, default 90) }`. Stricter than the token module's own
- * schema (name 1–80). Unknown keys are refused, so a client can never smuggle extra options
- * (e.g. its own `createdBy`) through to the token module.
+ * `scopes`: an array of `<service>:read|write` validated by MCP-CORE's `mcpScopesInputSchema` (at
+ * least one; known, available services; `:write` only where the service has write tools), or a
+ * legacy whole-token `"read"` / `"read write"`. Output: normalised scopes (write ⇒ read).
+ */
+const scopesField = z.unknown().transform((value, ctx): McpScope[] => {
+  if (typeof value === "string" && (MCP_LEGACY_SCOPES as readonly string[]).includes(value)) return normalizeScopes(value);
+  if (value === undefined) {
+    ctx.addIssue({ code: "custom", message: MCP_TOKEN_MESSAGES.scopes });
+    return z.NEVER;
+  }
+  const parsed = mcpScopesInputSchema.safeParse(value);
+  if (parsed.success) {
+    if (parsed.data.length > 0) return parsed.data;
+    ctx.addIssue({ code: "custom", message: MCP_TOKEN_MESSAGES.scopes });
+    return z.NEVER;
+  }
+  for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", message: issue.message });
+  return z.NEVER;
+});
+
+/**
+ * `POST /api/admin/mcp-tokens` body: `{ name (3–60 characters), scopes (see above), expiresInDays?
+ * (1–365, default 90) }`. Stricter than the token module's own schema (name 1–80). Unknown keys are
+ * refused, so a client can never smuggle extra options (e.g. its own `createdBy`) through to the
+ * token module.
  */
 export const createMcpTokenBodySchema = z
   .strictObject(
@@ -130,8 +147,7 @@ export const createMcpTokenBodySchema = z
           const issue = tokenNameIssue(name);
           if (issue) ctx.addIssue({ code: "custom", message: MCP_TOKEN_MESSAGES.name[issue] });
         }),
-      /** Least privilege by default. */
-      scopes: z.enum(MCP_SCOPE_CHOICES, { error: MCP_TOKEN_MESSAGES.scopes }).optional().default("read"),
+      scopes: scopesField,
       expiresInDays: z
         .number({ error: MCP_TOKEN_MESSAGES.expiresInDays })
         .int({ error: MCP_TOKEN_MESSAGES.expiresInDays })

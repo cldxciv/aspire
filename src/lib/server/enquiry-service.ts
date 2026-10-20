@@ -45,10 +45,13 @@ export function isHoneypotTriggered(enquiry: Enquiry): boolean {
   return typeof enquiry.website === "string" && enquiry.website.trim() !== "";
 }
 
-/** Drops the honeypot and empty optional strings so destinations receive only meaningful fields. */
+/**
+ * Drops the honeypot and empty optional strings so destinations receive only meaningful fields.
+ * The consent version and context are not enquiry fields: buildEnquiryPayload puts them at the top level.
+ */
 export function toForwardedEnquiry(enquiry: Enquiry): ForwardedEnquiry {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- `website` is intentionally discarded.
-  const { website, ...rest } = enquiry;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally discarded / moved to the top level.
+  const { website, consentVersion, context, ...rest } = enquiry;
   const forwarded: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(rest)) {
     if (value === undefined || value === "") continue;
@@ -59,7 +62,14 @@ export function toForwardedEnquiry(enquiry: Enquiry): ForwardedEnquiry {
 
 export function buildEnquiryPayload(enquiry: Enquiry, reference: string, receivedAt: Date): EnquiryPayload {
   const iso = receivedAt.toISOString();
-  return { reference, receivedAt: iso, consentAt: iso, enquiry: toForwardedEnquiry(enquiry) };
+  return {
+    reference,
+    receivedAt: iso,
+    consentAt: iso,
+    consentVersion: enquiry.consentVersion,
+    ...(enquiry.context ? { context: enquiry.context } : {}),
+    enquiry: toForwardedEnquiry(enquiry),
+  };
 }
 
 export type SubmitOutcome =

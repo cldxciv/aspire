@@ -8,7 +8,7 @@ import { ROLES } from "./roles";
  * client form may reuse these for early feedback.
  */
 
-const role = z.enum(ROLES, { error: "Choose student, parent or admin." });
+const role = z.enum(ROLES, { error: "Choose student, parent, admin or staff." });
 
 export const loginBodySchema = z.object({
   loginId: z.string({ error: "Enter your login ID." }).trim().min(1, { error: "Enter your login ID." }).max(200),

@@ -19,8 +19,14 @@ const forms = {
     optionalSuffix: "(optional)",
     /** Key next to the red asterisk in the hero step header. */
     requiredKey: "Required",
-    /** `{link}` is the privacy-notice link (text: consentLink). */
-    consent: "I agree to be contacted by Aspire about this enquiry and have read the {link}.",
+    /**
+     * `{link}` is the privacy-notice link (text: consentLink). D-039: this sentence is consent
+     * version CONSENT_VERSION (src/lib/contracts/enquiry.ts); the server stores the same text from
+     * src/lib/server/enquiry-consent.ts. Changing it needs a new version there (a test enforces it).
+     * LEGAL REVIEW PENDING.
+     */
+    consent:
+      "I am the student's parent or guardian, or have their permission, and I agree that Aspire may contact me about this enquiry by phone, WhatsApp or email. I have read the {link}.",
     consentLink: "privacy notice",
     honeypotLabel: "Leave this field empty",
     /** Centre select option for "no preference yet". */
@@ -109,6 +115,8 @@ const forms = {
       fewMinutes: "a few minutes",
       oneMinute: "about a minute",
       minutes: "about {count} minutes",
+      /** Long waits (the per-mobile-number daily limit). */
+      hours: "about {count} hours",
     },
     /** Live-region notices. `{contact}` is the directContact sentence; `{reference}` is shown in bold. */
     status: {
@@ -123,13 +131,13 @@ const forms = {
         "Your enquiry was not sent. {count} fields were not accepted — please check the highlighted fields and try again.",
       receivedTitle: "Enquiry received",
       receivedBody:
-        "Thank you — Aspire has received your enquiry. Your reference is {reference}. Please keep it for any follow-up.",
+        "Thank you — Aspire has received your enquiry and the admissions team will contact you. Your reference is {reference}. Please keep it for any follow-up.",
       notConfiguredTitle: "Your enquiry has not been sent",
       notConfiguredBody:
         "Your details passed our checks, but online enquiries aren't connected yet, so nothing was sent or stored. {contact} Your details are still in the form.",
       rateLimitedTitle: "Too many attempts",
       rateLimitedBody:
-        "Your enquiry was not sent because several enquiries came from this connection recently. Please wait {wait} and try again. Your details are still in the form.",
+        "Your enquiry was not sent because several enquiries were sent recently from this connection or for this mobile number. Please wait {wait} and try again. Your details are still in the form.",
       rejectedTitle: "Your enquiry couldn't be sent",
       rejectedBody:
         "The request couldn't be verified, so nothing was sent. Please refresh the page and try again. {contact}",
@@ -181,6 +189,9 @@ const forms = {
     },
     submit: "Send enquiry",
     submitScholarship: "Ask about scholarships",
+    /** Shown when the visitor followed the College Predictor's CTA (D-039): say what is added. */
+    fromPredictor:
+      "You came from the rank & college predictor. Your exam and score band (not your exact score) will be added to this enquiry so a counsellor can prepare.",
     referenceNote: "A reference number is shown here only once Aspire has received your enquiry.",
   },
 

@@ -29,7 +29,8 @@ export default async function AdminMcpPage() {
       secret: t.secret,
       list: t.list,
       status: t.status,
-      scopes: t.scopes,
+      access: t.access,
+      services: t.services,
       revoke: t.revoke,
       announce: t.announce,
       errors: t.errors,
@@ -51,7 +52,7 @@ export default async function AdminMcpPage() {
             <AdminMcpContent t={t} messages={messages} />
           ) : (
             <div className="grid gap-6">
-              <McpExplainer t={t.explainer} endpoint={null} />
+              <McpExplainer t={t.explainer} services={t.services} serviceWrite={t.serviceWrite} endpoint={null} />
               <AdminPreviewPanel
                 id="admin-mcp-preview"
                 title={t.page.previewTitle}
@@ -73,7 +74,12 @@ async function AdminMcpContent({ t, messages }: { t: Messages<"mcp">; messages: 
   const origin = resolveMcpOrigin(await headers());
   return (
     <div className="grid min-w-0 gap-6">
-      <McpExplainer t={t.explainer} endpoint={origin ? mcpEndpoint(origin) : null} />
+      <McpExplainer
+        t={t.explainer}
+        services={t.services}
+        serviceWrite={t.serviceWrite}
+        endpoint={origin ? mcpEndpoint(origin) : null}
+      />
       <McpTokenManager initialTokens={loadMcpTokenViews()} messages={messages} />
     </div>
   );

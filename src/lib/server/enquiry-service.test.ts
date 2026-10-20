@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { enquirySchema, type Enquiry } from "@/lib/contracts/enquiry";
+import { CONSENT_VERSION, enquirySchema, type Enquiry } from "@/lib/contracts/enquiry";
 
 import type { EnquiryDestination } from "./destinations";
 import { noneDestination } from "./destinations/none";
@@ -20,6 +20,7 @@ const enquiry: Enquiry = {
   phone: "+919876543210",
   email: "",
   consent: true,
+  consentVersion: CONSENT_VERSION,
   currentClass: "class-11",
   programInterest: "jee",
   website: "",
@@ -47,12 +48,13 @@ describe("isHoneypotTriggered", () => {
 });
 
 describe("buildEnquiryPayload", () => {
-  it("drops the honeypot and empty optional strings, and stamps receivedAt/consentAt", () => {
+  it("drops the honeypot and empty optional strings, and stamps receivedAt/consentAt + the consent version", () => {
     const payload = buildEnquiryPayload(enquiry, "ENQ-0123456789", new Date("2026-10-19T10:00:00Z"));
     expect(payload).toEqual({
       reference: "ENQ-0123456789",
       receivedAt: "2026-10-19T10:00:00.000Z",
       consentAt: "2026-10-19T10:00:00.000Z",
+      consentVersion: CONSENT_VERSION,
       enquiry: {
         source: "admissions",
         name: "Test Student",
@@ -100,6 +102,7 @@ describe("hero enquiries (D-021)", () => {
     guardianName: "Test Parent",
     phone: "+919876543210",
     consent: true,
+    consentVersion: CONSENT_VERSION,
     currentClass: "dropper",
     programInterest: "neet",
   };
@@ -131,13 +134,21 @@ describe("hero enquiries (D-021)", () => {
   it("checkPreferredCentre ignores sources without a centre field", async () => {
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "false");
     try {
-      const contact: Enquiry = { source: "contact", name: "Parent", phone: "9876543210", consent: true, topic: "other" };
+      const contact: Enquiry = {
+        source: "contact",
+        name: "Parent",
+        phone: "9876543210",
+        consent: true,
+        consentVersion: CONSENT_VERSION,
+        topic: "other",
+      };
       await expect(checkPreferredCentre(contact)).resolves.toBeNull();
       const quick: Enquiry = {
         source: "quick",
         name: "Test Student",
         phone: "9876543210",
         consent: true,
+        consentVersion: CONSENT_VERSION,
         currentClass: "class-11",
         programInterest: "jee",
         intent: "enquiry",
@@ -159,12 +170,14 @@ describe("hero enquiries (D-021)", () => {
       preferredCentre: "",
       message: "",
       consent: true,
+      consentVersion: CONSENT_VERSION,
       website: "",
     });
     expect(buildEnquiryPayload(parsed, "ENQ-0123456789", new Date("2026-10-20T10:00:00Z"))).toEqual({
       reference: "ENQ-0123456789",
       receivedAt: "2026-10-20T10:00:00.000Z",
       consentAt: "2026-10-20T10:00:00.000Z",
+      consentVersion: CONSENT_VERSION,
       enquiry: {
         source: "hero",
         name: "Test Student",
@@ -188,6 +201,12 @@ describe("hero enquiries (D-021)", () => {
       preferredCentre: "not-sure",
       message: "Weekend batches?",
       consent: true,
+      consentVersion: CONSENT_VERSION,
+      context: { page: "/", tool: "planner" },
+    });
+    expect(buildEnquiryPayload(parsed, "ENQ-0123456789", new Date("2026-10-20T10:00:00Z"))).toMatchObject({
+      consentVersion: CONSENT_VERSION,
+      context: { page: "/", tool: "planner" },
     });
     expect(buildEnquiryPayload(parsed, "ENQ-0123456789", new Date("2026-10-20T10:00:00Z")).enquiry).toEqual({
       source: "hero",

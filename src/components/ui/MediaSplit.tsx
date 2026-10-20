@@ -8,9 +8,9 @@ import type { CarouselSlide } from "./carousel-utils";
 import { ImageCarousel, type CarouselLabels } from "./ImageCarousel";
 
 /**
- * Text + photo side by side, 50/50 on `lg+` (D-030). Use inside a `<Section>`; alternate
- * `imageSide` between consecutive splits for an editorial rhythm. Stacks on small screens
- * (photo first unless `imageFirstOnMobile` is false).
+ * Text + photo side by side, 50/50 from `md` (D-030; tablets too, so a page never runs photo, text,
+ * photo down a portrait tablet). Use inside a `<Section>`; alternate `imageSide` between consecutive
+ * splits for an editorial rhythm. Stacks on phones (photo first unless `imageFirstOnMobile` is false).
  *
  * Image rules: licensed stock or approved assets only; never a person image beside a real
  * name; pass `imageLabel` ("Illustrative stock photo", "Illustration") for stock / AI imagery.
@@ -31,6 +31,9 @@ type MediaSplitCarouselProps =
   | { slides: CarouselSlide[]; carouselLabels: CarouselLabels; locale?: Locale };
 
 const BOX_RATIO = { "4/3": 4 / 3, "16/10": 1.6, "1/1": 1, "3/4": 0.75 } as const;
+
+/** Half the 1200px container from 1200, about half the viewport from `md`, full width when stacked. */
+const SPLIT_SIZES = "(min-width: 1200px) 560px, (min-width: 768px) 46vw, 100vw";
 
 export function MediaSplit({
   image,
@@ -64,11 +67,11 @@ export function MediaSplit({
 }) {
   const aspectClass = { "4/3": "aspect-4/3", "16/10": "aspect-16/10", "1/1": "aspect-square", "3/4": "aspect-3/4" }[aspect];
   return (
-    <div className={cn("grid items-center gap-10 md:gap-12 lg:grid-cols-2 lg:gap-16 xl:gap-20", className)}>
+    <div className={cn("grid items-center gap-10 md:grid-cols-2 md:gap-12 lg:gap-16 xl:gap-20", className)}>
       <figure
         className={cn(
           "relative m-0",
-          imageSide === "left" ? "lg:order-1" : "lg:order-2",
+          imageSide === "left" ? "md:order-1" : "md:order-2",
           imageFirstOnMobile ? "order-1" : "order-2",
         )}
       >
@@ -82,7 +85,7 @@ export function MediaSplit({
                 aspect="fill"
                 boxRatio={BOX_RATIO[aspect]}
                 tone="light"
-                sizes="(min-width: 1200px) 560px, (min-width: 1024px) 46vw, 100vw"
+                sizes={SPLIT_SIZES}
               />
             ) : (
             <>
@@ -91,7 +94,7 @@ export function MediaSplit({
                   src={image.src}
                   alt={image.alt}
                   fill
-                  sizes="(min-width: 1200px) 560px, (min-width: 1024px) 46vw, 100vw"
+                  sizes={SPLIT_SIZES}
                   className="object-cover"
                 />
               )}
@@ -108,7 +111,7 @@ export function MediaSplit({
       <div
         className={cn(
           "min-w-0",
-          imageSide === "left" ? "lg:order-2" : "lg:order-1",
+          imageSide === "left" ? "md:order-2" : "md:order-1",
           imageFirstOnMobile ? "order-2" : "order-1",
         )}
       >

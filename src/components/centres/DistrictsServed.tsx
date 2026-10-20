@@ -17,7 +17,8 @@ export function DistrictsServed({ centres }: { centres: Centre[] }) {
   if (districts.length === 0) return null;
 
   return (
-    <dl className="grid gap-3 sm:grid-cols-2">
+    // One column at lg (BleedSplit's half column is ~440px), two again from xl.
+    <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
       {districts.map((district) => (
         <div
           key={district}
@@ -25,16 +26,26 @@ export function DistrictsServed({ centres }: { centres: Centre[] }) {
         >
           <dt className="font-bold text-navy">{district}</dt>
           <dd className="flex flex-wrap gap-x-3 text-sm">
-            {(byDistrict.get(district) ?? []).map((centre) => (
-              <a
-                key={centre.id}
-                href={`#${centre.slug}`}
-                className="inline-flex min-h-11 items-center gap-1 font-semibold text-blue hover:underline sm:min-h-6"
-              >
-                {centre.name}
-                <ArrowRight aria-hidden="true" className="size-3.5" />
-              </a>
-            ))}
+            {(byDistrict.get(district) ?? []).map((centre) => {
+              // The arrow is glued to the last word, so a wrapped name never pushes it to the row edge.
+              const words = centre.name.split(" ");
+              const last = words.pop();
+              return (
+                <a
+                  key={centre.id}
+                  href={`#${centre.slug}`}
+                  className="inline-flex min-h-11 items-center font-semibold text-blue hover:underline sm:min-h-6"
+                >
+                  <span>
+                    {words.length > 0 && `${words.join(" ")} `}
+                    <span className="whitespace-nowrap">
+                      {last}
+                      <ArrowRight aria-hidden="true" className="ml-1 inline size-3.5 align-[-0.125em]" />
+                    </span>
+                  </span>
+                </a>
+              );
+            })}
           </dd>
         </div>
       ))}

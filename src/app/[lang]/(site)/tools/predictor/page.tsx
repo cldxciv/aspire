@@ -106,7 +106,7 @@ export default async function PredictorPage() {
         crumbs={[{ label: tTools.meta.title, href: localePath("/tools", locale) }, { label: t.hero.title }]}
         homeLabel={tc.labels.home}
         homeHref={localePath("/", locale)}
-        image={localizeImage(stockImages.mathsNotebook, locale)}
+        image={localizeImage(stockImages.pocketWatchWorksheet, locale)}
         imageLabel={stockLabel}
       />
 

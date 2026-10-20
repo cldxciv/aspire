@@ -45,7 +45,9 @@ describe("login form", () => {
       createElement(LoginForm, { messages: loginMessages("en"), initialRole: "parent", next: null, forgotHref: "/forgot-password" }),
     );
     expect(html).toContain('role="tablist"');
-    expect(html.match(/role="tab"/g)).toHaveLength(3);
+    // Student, Parent, Admin and (M7) Staff.
+    expect(html.match(/role="tab"/g)).toHaveLength(4);
+    expect(html).toMatch(/role="tab"[^>]*>Staff</);
     expect(html.match(/aria-selected="true"/g)).toHaveLength(1);
     expect(html).toMatch(/aria-selected="true"[^>]*>Parent</);
     expect(html).toContain('role="tabpanel"');

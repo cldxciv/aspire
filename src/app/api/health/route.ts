@@ -1,7 +1,7 @@
 import { connection } from "next/server";
 
 import { showPlaceholderContent } from "@/lib/content-mode";
-import { parseEnquiryDestination } from "@/lib/server/env";
+import { getEnquiryDeliveryStatus } from "@/lib/server/env";
 import { apiItem } from "@/lib/server/http";
 
 /**
@@ -11,11 +11,11 @@ import { apiItem } from "@/lib/server/http";
  */
 export async function GET(): Promise<Response> {
   await connection();
-  const { config } = parseEnquiryDestination(process.env);
   return apiItem({
     status: "ok" as const,
     time: new Date().toISOString(),
-    enquiries: config.kind === "none" ? ("not_configured" as const) : ("connected" as const),
+    // "connected" when enquiries are stored as CRM leads (ENQUIRY_STORE, default) or forwarded to a webhook.
+    enquiries: getEnquiryDeliveryStatus(process.env),
     placeholderContent: showPlaceholderContent(),
   });
 }

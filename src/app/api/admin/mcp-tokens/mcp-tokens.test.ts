@@ -25,7 +25,9 @@ const { MCP_TOKEN_WRITE_LIMIT, resetMcpTokenLimitersForTests } = await import(".
 type Browser = InstanceType<typeof TestBrowser>;
 
 const ADMIN = { role: "admin" as const, loginId: "admin.one", password: "admin-pass-2026", displayName: "Office Admin" };
-const VIEW_KEYS = ["createdAt", "createdByName", "expiresAt", "id", "lastUsedAt", "name", "revokedAt", "scopes", "status"];
+const VIEW_KEYS = ["createdAt", "createdByName", "expiresAt", "id", "lastUsedAt", "name", "revokedAt", "scopeSummary", "scopes", "status"];
+const READ_ALL = ["site:read", "accounts:read", "progress:read", "audit:read", "content:read"];
+const NONE = { site: "none", accounts: "none", progress: "none", audit: "none", content: "none", crm: "none" };
 
 let ipCounter = 0;
 function browser() {
@@ -63,7 +65,16 @@ const api = {
 type Created = {
   token: string;
   mcpUrl: string;
-  record: { id: string; name: string; scopes: string; status: string; expiresAt: string; createdAt: string; revokedAt: string | null };
+  record: {
+    id: string;
+    name: string;
+    scopes: string[];
+    scopeSummary: Record<string, string>;
+    status: string;
+    expiresAt: string;
+    createdAt: string;
+    revokedAt: string | null;
+  };
 };
 
 async function create(b: Browser, body: Record<string, unknown> = { name: "Office laptop", scopes: "read" }): Promise<Created> {
@@ -149,8 +160,16 @@ describe("create: validation", () => {
     ["name with a control character", { name: "bad\u0007name", scopes: "read" }, "name"],
     ["name with a bidi override", { name: `safe${String.fromCharCode(0x202e)}txt.exe`, scopes: "read" }, "name"],
     ["name not a string", { name: 12345, scopes: "read" }, "name"],
-    ["unknown scope", { name: "Laptop", scopes: "write" }, "scopes"],
-    ["scope array", { name: "Laptop", scopes: ["read"] }, "scopes"],
+    ["missing permissions", { name: "Laptop" }, "scopes"],
+    ["no permissions", { name: "Laptop", scopes: [] }, "scopes"],
+    ["an unknown legacy string", { name: "Laptop", scopes: "write" }, "scopes"],
+    ["a bare level in the list", { name: "Laptop", scopes: ["read"] }, "scopes"],
+    ["an unknown service", { name: "Laptop", scopes: ["billing:read"] }, "scopes"],
+    ["write on a read-only service", { name: "Laptop", scopes: ["content:write"] }, "scopes"],
+    ["an unknown level", { name: "Laptop", scopes: ["crm:admin"] }, "scopes"],
+    ["a duplicate permission", { name: "Laptop", scopes: ["site:read", "site:read"] }, "scopes"],
+    ["a non-string permission", { name: "Laptop", scopes: [42] }, "scopes"],
+    ["permissions as an object", { name: "Laptop", scopes: { accounts: "write" } }, "scopes"],
     ["expiry 0", { name: "Laptop", scopes: "read", expiresInDays: 0 }, "expiresInDays"],
     ["expiry 366", { name: "Laptop", scopes: "read", expiresInDays: 366 }, "expiresInDays"],
     ["fractional expiry", { name: "Laptop", scopes: "read", expiresInDays: 1.5 }, "expiresInDays"],
@@ -179,17 +198,25 @@ describe("create: validation", () => {
     expect(getDb().prepare("SELECT COUNT(*) AS n FROM mcp_tokens").get()?.n).toBe(0);
   });
 
-  it("defaults to read-only and 90 days; normalises the name; accepts Hindi names", async () => {
+  it("defaults to 90 days; normalises the name and the permissions (write implies read)", async () => {
     const { b } = await asAdmin();
     const before = Date.now();
-    const { record } = await create(b, { name: "  Office   laptop  " });
-    expect(record.scopes).toBe("read");
+    const { record } = await create(b, { name: "  Office   laptop  ", scopes: ["content:read", "accounts:write"] });
     expect(record.name).toBe("Office laptop");
+    expect(record.scopes).toEqual(["accounts:read", "accounts:write", "content:read"]);
+    expect(record.scopeSummary).toEqual({ ...NONE, accounts: "write", content: "read" });
     const days = (Date.parse(record.expiresAt) - Date.parse(record.createdAt)) / 86_400_000;
     expect(days).toBe(90);
     expect(Date.parse(record.createdAt)).toBeGreaterThanOrEqual(before - 1000);
+  });
+
+  it("still accepts the legacy whole-token strings and Hindi names", async () => {
+    const { b } = await asAdmin();
+    const read = await create(b, { name: "Legacy read", scopes: "read" });
+    expect(read.record.scopes).toEqual(READ_ALL);
     const hindi = await create(b, { name: "ऑफ़िस लैपटॉप", scopes: "read write", expiresInDays: 7 });
-    expect(hindi.record).toMatchObject({ name: "ऑफ़िस लैपटॉप", scopes: "read write", status: "active" });
+    expect(hindi.record).toMatchObject({ name: "ऑफ़िस लैपटॉप", status: "active" });
+    expect(hindi.record.scopeSummary).toEqual({ site: "read", accounts: "write", progress: "read", audit: "read", content: "read", crm: "none" });
   });
 });
 
@@ -200,7 +227,7 @@ describe("create: the token is shown once", () => {
     expect(created.token).toMatch(/^asp_mcp_[A-Za-z0-9_-]{43}$/);
     expect(created.mcpUrl).toBe("http://localhost:3000/api/mcp");
     expect(Object.keys(created.record).sort()).toEqual(VIEW_KEYS);
-    expect(created.record).toMatchObject({ name: "Office laptop", scopes: "read", status: "active", revokedAt: null });
+    expect(created.record).toMatchObject({ name: "Office laptop", scopes: READ_ALL, status: "active", revokedAt: null });
 
     const listResponse = await api.list(b);
     const text = await listResponse.text();
@@ -214,7 +241,7 @@ describe("create: the token is shown once", () => {
     expect(list[0]).toMatchObject({ id: created.record.id, createdByName: ADMIN.displayName, lastUsedAt: null });
 
     // The token really works against the MCP token store.
-    expect(resolveMcpToken(created.token)).toMatchObject({ ok: true, caller: { tokenId: created.record.id, scopes: "read" } });
+    expect(resolveMcpToken(created.token)).toMatchObject({ ok: true, caller: { tokenId: created.record.id, scopes: READ_ALL } });
   });
 
   it("is audited by the token module without the secret", async () => {
@@ -225,14 +252,17 @@ describe("create: the token is shown once", () => {
     expect(JSON.stringify(entries)).not.toContain(created.token);
   });
 
-  it("lists newest first and shows status", async () => {
+  it("lists newest first with status and per-service permission summaries", async () => {
     const { b } = await asAdmin();
-    const first = await create(b, { name: "First token" });
+    const first = await create(b, { name: "First token", scopes: ["audit:read"] });
     await new Promise((resolve) => setTimeout(resolve, 5));
-    const second = await create(b, { name: "Second token", scopes: "read write" });
+    const second = await create(b, { name: "Second token", scopes: ["accounts:write", "progress:read"] });
     const list = (await (await api.list(b)).json()).data as Created["record"][];
     expect(list.map((t) => t.id)).toEqual([second.record.id, first.record.id]);
     expect(list.map((t) => t.status)).toEqual(["active", "active"]);
+    expect(list[0].scopeSummary).toEqual({ ...NONE, accounts: "write", progress: "read" });
+    expect(list[1].scopeSummary).toEqual({ ...NONE, audit: "read" });
+    expect(list[1].scopes).toEqual(["audit:read"]);
   });
 
   it("builds the endpoint from NEXT_PUBLIC_SITE_URL in production", async () => {

@@ -73,7 +73,8 @@ function NoteDetail({ icon: Icon, label, children }: { icon: LucideIcon; label: 
  * The building image is an illustration and is always captioned "Illustrative
  * image". Placeholder centres carry a DEMO badge and "Details pending verification".
  * The article's id is the centre slug so /centres#<slug> links scroll to it.
- * With a `photo` (D-030 / D-031) the card becomes a 50/50 split from `lg`: a stock education photo
+ * With a `photo` (D-030 / D-031) the card becomes a split from `md` (40/60 on tablets, 50/50 from
+ * `lg`; the photo at most `min(100vh − 8rem, 34rem)` tall and sticky while the details scroll): a stock education photo
  * (labelled "Illustrative stock photo", no caption naming a place; never a landscape, never result
  * cards) beside the details, with the small building illustration moved next to the heading.
  * Safe to render from both server and client components.
@@ -112,33 +113,32 @@ export function CentreCard({
   const facilities = centre.facilities ?? [];
   const hasNotes = Boolean(centre.hostelNote || centre.transportNote || travel.length || serves.length);
   const eyebrow = [centre.label, centre.district].filter(Boolean).join(" · ");
+  // The capped photo box (≤ 544px tall) cover-crops a landscape photo to ~544px × its ratio wide.
+  const coverWidth = photo ? Math.min(1200, Math.max(600, Math.round((544 * photo.width) / photo.height))) : 0;
 
   return (
     <article
       id={centre.slug}
       aria-labelledby={headingId}
       className={cn(
-        "scroll-mt-28 overflow-hidden rounded-card border border-line bg-white shadow-soft",
-        photo && "lg:grid lg:grid-cols-2",
+        "scroll-mt-28 overflow-clip rounded-card border border-line bg-white shadow-soft",
+        photo && (photoSide === "right" ? "md:grid md:grid-cols-[3fr_2fr] lg:grid-cols-2" : "md:grid md:grid-cols-[2fr_3fr] lg:grid-cols-2"),
       )}
     >
       {photo && (
-        <figure
-          className={cn(
-            "relative m-0 aspect-16/10 bg-blue-soft lg:aspect-auto lg:min-h-96",
-            photoSide === "right" && "lg:order-2",
-          )}
-        >
-          <Image
-            src={photo.src}
-            alt={photo.alt}
-            fill
-            sizes="(min-width: 1280px) 580px, (min-width: 1024px) 50vw, 100vw"
-            className="object-cover"
-          />
-          <span className="absolute bottom-3 left-3 rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white">
-            {messages.illustrativeStockPhoto}
-          </span>
+        <figure className={cn("relative m-0", photoSide === "right" && "md:order-2")}>
+          <div className="relative aspect-16/10 bg-blue-soft md:sticky md:top-24 md:aspect-auto md:h-full md:max-h-[min(calc(100vh-8rem),34rem)] md:min-h-72">
+            <Image
+              src={photo.src}
+              alt={photo.alt}
+              fill
+              sizes={`(min-width: 768px) ${coverWidth}px, 100vw`}
+              className="object-cover"
+            />
+            <span className="absolute bottom-3 left-3 rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white">
+              {messages.illustrativeStockPhoto}
+            </span>
+          </div>
         </figure>
       )}
       <div className={cn("@container flex min-w-0 flex-col gap-6 p-6 md:p-8 xl:p-10", photo ? "" : "md:flex-row")}>

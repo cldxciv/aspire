@@ -2,22 +2,26 @@
 
 import { Calculator } from "lucide-react";
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { predictorBand, toolEnquiryHref } from "@/components/forms/enquiry-context";
 import { Badge, Button, ButtonLink } from "@/components/ui";
 import { useLocale } from "@/i18n/client";
+import type { Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
 import type { Messages } from "@/i18n/messages/types";
-import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
 import {
   GENDERS,
   HOME_STATES,
   PREDICTOR_CATEGORIES,
+  bucketRange,
   hasSampleData,
   loadedExams,
   matchColleges,
   scoreTableFor,
+  shareBucketFor,
   valueRange,
   type CollegeMatchPrediction,
+  type ExamScoreTable,
   type Gender,
   type HomeState,
   type InputMode,
@@ -316,7 +320,11 @@ export function PredictorApp({
                 })}`
               : ""}
           </div>
-          {result ? <ResultBody result={result} messages={t} sample={sample} /> : <p className="mt-3 text-sm text-muted">{t.result.empty}</p>}
+          {result ? (
+            <ResultBody result={result} messages={t} sample={sample} table={table} />
+          ) : (
+            <p className="mt-3 text-sm text-muted">{t.result.empty}</p>
+          )}
         </section>
 
         {result && (
@@ -334,8 +342,33 @@ export function PredictorApp({
   );
 }
 
-/** Exported for tests. */
-export function ResultBody({ result, messages: t, sample }: { result: CollegeMatchPrediction; messages: PredictorAppMessages; sample: boolean }) {
+/**
+ * "Talk to a counsellor" link (D-039): the enquiry form with `from=predictor`, the exam and the
+ * score/percentile band of the share card (e.g. 180–189 marks) — never the exact value, category,
+ * state, gender or anything personal. The form tells the visitor these are added to the enquiry.
+ */
+export function predictorEnquiryHref(result: CollegeMatchPrediction, table: ExamScoreTable | undefined, locale: Locale): string {
+  if (!table) return toolEnquiryHref("predictor", locale, { exam: result.band.exam });
+  const bucket = shareBucketFor(result.band.input, table);
+  const range = bucketRange(bucket, table);
+  return toolEnquiryHref("predictor", locale, {
+    exam: result.band.exam,
+    band: predictorBand(bucket.mode, Math.floor(range.low), Math.floor(range.high)),
+  });
+}
+
+/** Exported for tests. `table` (the exam's score table) adds the score band to the counsellor link. */
+export function ResultBody({
+  result,
+  messages: t,
+  sample,
+  table,
+}: {
+  result: CollegeMatchPrediction;
+  messages: PredictorAppMessages;
+  sample: boolean;
+  table?: ExamScoreTable;
+}) {
   const locale = useLocale();
   const { band } = result;
   const categoryLabel = t.form.categories[band.input.category];
@@ -400,10 +433,11 @@ export function ResultBody({ result, messages: t, sample }: { result: CollegeMat
         )}
       </div>
 
-      {/* Lead capture = the existing enquiry form (D-033); nothing about the prediction is sent. */}
+      {/* Lead capture = the enquiry form (D-033, D-039): the link carries only the exam + score band, which
+          the form discloses; nothing leaves the browser unless the visitor sends an enquiry. */}
       <div className="flex flex-col gap-3 rounded-control bg-gold-soft p-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm font-semibold text-[#5c4a12]">{t.result.ctaText}</p>
-        <ButtonLink href={localePath("/admissions#enquiry", locale)} size="sm" className="shrink-0">
+        <ButtonLink href={predictorEnquiryHref(result, table, locale)} size="sm" className="shrink-0">
           {t.result.ctaButton}
         </ButtonLink>
       </div>

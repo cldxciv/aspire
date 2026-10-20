@@ -266,6 +266,7 @@ const mocktest: Messages<"mocktest"> = {
     report: "अभिभावकों के लिए रिपोर्ट",
     retake: "टेस्ट फिर से दें",
     leaderboard: "लीडरबोर्ड",
+    counsellor: "काउंसलर से बात करें",
   },
   certificate: {
     heading: "सहभागिता प्रमाणपत्र",

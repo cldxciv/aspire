@@ -46,7 +46,7 @@ export const ARTICLE_FALLBACK_COVER: StockImageKey = "booksAndNotebook";
  * `ARTICLE_PHOTO_FALLBACK` tops a list up when the page already shows some of its photos.
  */
 export const ARTICLE_HERO_EXTRAS: Record<ArticleCategory, readonly StockImageKey[]> = {
-  "study-guidance": ["pocketWatchWorksheet", "notebookSolutions", "booksAndNotebook", "mathsNotebook", "laptopStudy"],
+  "study-guidance": ["pocketWatchWorksheet", "notebookSolutions", "booksAndNotebook", "laptopStudy", "signingForm"],
   "exam-updates": ["pocketWatchWorksheet", "physicsWhiteboard", "stethoscopeTextbooks", "notebookSolutions", "booksAndNotebook"],
   news: ["booksAndNotebook", "classroomDesks", "laptopStudy", "libraryAisle", "notebookPlanning"],
   admissions: ["signingForm", "laptopStudy", "booksAndNotebook", "notebookPlanning", "libraryAisle"],
@@ -62,9 +62,9 @@ export const ARTICLE_PHOTO_FALLBACK = [
   "pocketWatchWorksheet",
   "laptopStudy",
   "notebookPlanning",
-  "mathsNotebook",
   "signingForm",
   "physicsWhiteboard",
+  "chemistryGlassware",
 ] as const satisfies readonly StockImageKey[];
 
 /** Slides per article hero: its cover plus three category (or fallback) photos. */

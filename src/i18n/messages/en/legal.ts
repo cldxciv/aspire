@@ -54,7 +54,9 @@ const legal = {
       also: [
         "which form you used;",
         "the date and time the enquiry, and your agreement to be contacted, were received;",
-        "a reference number, which is shown to you when the enquiry is received.",
+        "a reference number, which is shown to you when the enquiry is received;",
+        "the version of the consent wording you agreed to;",
+        "where the enquiry came from: the page you sent it from, the campaign tags in the link you arrived by (if any), the domain of the website that referred you, and — if you came from one of our student tools — which tool (for the rank predictor, also the exam and score range you chose). These details are kept in your browser only for the visit (no cookies) until you send the form.",
       ],
       hidden:
         "The forms also contain a hidden spam-check field that people do not see or fill in. The forms do not ask for dates of birth, home addresses, identity documents, payment details or academic records.",
@@ -67,7 +69,7 @@ const legal = {
     },
     access: {
       title: "Who can access it",
-      p1: "Enquiries are intended to be seen only by Aspire staff who handle admissions and enquiries.",
+      p1: "Enquiries are stored on the website's own server as admission leads and are seen only by Aspire staff who handle admissions: a counsellor sees the enquiries assigned to them, a centre manager those for their centre, and administrators all of them. Staff can record notes, calls and follow-ups on an enquiry; every view, change and export is logged. Repeat enquiries from the same phone number are combined into one record.",
       p2: "Service providers that deliver or store enquiries on Aspire's behalf: {tbc}",
       p3: "If online enquiries have not been connected yet, the form tells you so on screen, and your details are not sent or stored.",
     },

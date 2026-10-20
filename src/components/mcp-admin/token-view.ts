@@ -6,9 +6,9 @@
  * appears in any of these view types; hashes never leave the token module.
  */
 
-/** Access levels an admin can pick (space-separated, OAuth style). Mirrors `MCP_SCOPES` in src/lib/mcp/tokens.ts. */
-export const MCP_SCOPE_CHOICES = ["read", "read write"] as const;
-export type McpScopeChoice = (typeof MCP_SCOPE_CHOICES)[number];
+import { normalizeScopes, scopesSummary } from "@/lib/mcp/scopes";
+
+import type { McpAccess } from "./permissions";
 
 export const MCP_TOKEN_NAME_LENGTH = { min: 3, max: 60 } as const;
 export const MCP_EXPIRY_DAYS = { min: 1, max: 365, default: 90 } as const;
@@ -26,7 +26,10 @@ export type McpTokenStatus = (typeof MCP_TOKEN_STATUSES)[number];
 export type McpTokenView = {
   id: string;
   name: string;
-  scopes: McpScopeChoice;
+  /** Normalised scope strings, e.g. ["accounts:read", "accounts:write", "content:read"]. */
+  scopes: string[];
+  /** Access per service id (every catalogue service; "none" when not granted). */
+  scopeSummary: Record<string, McpAccess>;
   /** Display name of the admin who created it; null when that account no longer exists. */
   createdByName: string | null;
   /** ISO 8601. */
@@ -67,22 +70,16 @@ export function tokenNameIssue(name: string): TokenNameIssue | null {
   return null;
 }
 
-export function isScopeChoice(value: unknown): value is McpScopeChoice {
-  return typeof value === "string" && (MCP_SCOPE_CHOICES as readonly string[]).includes(value);
-}
-
-export function hasWriteScope(scopes: string): boolean {
-  return scopes.split(" ").includes("write");
-}
-
 /**
  * Explicit field picking from the token module's record, so nothing added to it later (or a
- * secret by mistake) can reach the browser.
+ * secret by mistake) can reach the browser. Scopes are normalised here too, so a legacy
+ * "read" / "read write" token shows as its per-service equivalent.
  */
 export function toMcpTokenView(record: {
   id: string;
   name: string;
-  scopes: McpScopeChoice;
+  scopes: readonly string[] | string;
+  scopeSummary?: Readonly<Record<string, McpAccess>>;
   createdByName: string | null;
   createdAt: string;
   expiresAt: string | null;
@@ -90,10 +87,12 @@ export function toMcpTokenView(record: {
   revokedAt: string | null;
   status: McpTokenStatus;
 }): McpTokenView {
+  const scopes: string[] = normalizeScopes(record.scopes);
   return {
     id: record.id,
     name: record.name,
-    scopes: record.scopes,
+    scopes,
+    scopeSummary: { ...(record.scopeSummary ?? scopesSummary(scopes)) },
     createdByName: record.createdByName,
     createdAt: record.createdAt,
     expiresAt: record.expiresAt,

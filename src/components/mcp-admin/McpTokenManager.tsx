@@ -1,41 +1,29 @@
 "use client";
 
-import { Ban, Copy, KeyRound, LoaderCircle, RefreshCw, ShieldAlert, TriangleAlert } from "lucide-react";
-import { useId, useMemo, useRef, useState, type FormEvent, type Ref } from "react";
-import { describedBy, inputClasses } from "@/components/auth/fields";
+import { Ban, Copy, LoaderCircle, RefreshCw, TriangleAlert } from "lucide-react";
+import { useId, useMemo, useRef, useState, type Ref } from "react";
 import { Badge, Button, EmptyState, Notice, type BadgeVariant } from "@/components/ui";
 import { useLocale } from "@/i18n/client";
 import { htmlLang } from "@/i18n/config";
 import { format } from "@/i18n/format";
 import type { Messages } from "@/i18n/messages/types";
-import { callApi, retryAfterMinutes, type ApiFailure } from "@/lib/auth/client-api";
+import { callApi, type ApiFailure } from "@/lib/auth/client-api";
 import { buildChangePasswordHref, buildLoginHref } from "@/lib/auth/paths";
 import { cn } from "@/lib/cn";
+import { CreateTokenForm, MCP_TOKENS_API } from "./CreateTokenForm";
 import { McpDialog } from "./McpDialog";
-import {
-  claudeCodeCommand,
-  hasWriteScope,
-  MCP_EXPIRY_DAYS,
-  MCP_EXPIRY_OPTIONS,
-  normaliseTokenName,
-  sortTokens,
-  tokenNameIssue,
-  type McpScopeChoice,
-  type McpTokenCreated,
-  type McpTokenStatus,
-  type McpTokenView,
-} from "./token-view";
+import { mcpFailureMessage, permissionSummaryLines, type McpTokenManagerMessages } from "./labels";
+import { PermissionBadges, PermissionList } from "./PermissionBadges";
+import { MCP_SERVICE_VIEWS, type McpServiceView } from "./permissions";
+import { claudeCodeCommand, sortTokens, type McpTokenCreated, type McpTokenStatus, type McpTokenView } from "./token-view";
+
+export type { McpTokenManagerMessages } from "./labels";
+export { expiryLabel, mcpFailureMessage } from "./labels";
 
 type McpT = Messages<"mcp">;
-
-/** Only what the browser needs: the explainer and page copy stay on the server. */
-export type McpTokenManagerMessages = {
-  mcp: Pick<McpT, "create" | "secret" | "list" | "status" | "scopes" | "revoke" | "announce" | "errors">;
-  errors: Messages<"portal">["errors"];
-};
+type M = McpTokenManagerMessages["mcp"];
 
 const PAGE_PATH = "/admin/mcp";
-const API_PATH = "/api/admin/mcp-tokens";
 
 const STATUS_BADGE: Record<McpTokenStatus, BadgeVariant> = {
   active: "success",
@@ -44,52 +32,21 @@ const STATUS_BADGE: Record<McpTokenStatus, BadgeVariant> = {
   creator_inactive: "warning",
 };
 
-/** Localised copy for a failed call (the server's English text is never shown). */
-export function mcpFailureMessage(result: ApiFailure, m: McpTokenManagerMessages, minutes = retryAfterMinutes): string {
-  if (result.error === "unauthenticated") return m.errors.sessionExpired;
-  if (result.known === "passwordChangeRequired") return m.errors.passwordChangeRequired;
-  switch (result.error) {
-    case "forbidden":
-      return m.errors.forbidden;
-    case "not_found":
-      return m.mcp.errors.tokenNotFound;
-    case "not_configured":
-      return m.errors.notConfigured;
-    case "network":
-      return m.errors.network;
-    case "rate_limited":
-      return format(m.errors.rateLimited, { minutes: minutes(result.retryAfterSeconds) });
-    case "validation":
-    case "bad_request":
-      return m.errors.validation;
-    default:
-      return m.errors.server;
-  }
-}
-
-/** Label for a token's scopes ("Read only" / "Read + write"). */
-export function scopeLabel(scopes: string, t: McpT["scopes"]): string {
-  return hasWriteScope(scopes) ? t.readWrite : t.read;
-}
-
-/** Expiry select label: "1 day", "30 days", "90 days (recommended)", "1 year". */
-export function expiryLabel(days: number, t: McpT["create"]): string {
-  const label = days === 1 ? t.expiryOneDay : days === 365 ? t.expiryOneYear : format(t.expiryDays, { days });
-  return days === MCP_EXPIRY_DAYS.default ? format(t.expiryRecommended, { label }) : label;
-}
-
 /**
- * Admin management of MCP access tokens on top of `/api/admin/mcp-tokens/**`: create (the
- * plaintext token is shown ONCE in a dialog with a ready-to-paste Claude Code command, then
- * dropped from memory), list with status badges, and revoke after an in-page confirmation.
- * The server re-checks the admin role on every call and audits each change.
+ * Admin management of MCP access tokens on top of `/api/admin/mcp-tokens/**`: create with
+ * per-service permissions (the plaintext token is shown ONCE in a dialog with its permissions and a
+ * ready-to-paste Claude Code command, then dropped from memory), list with status and permission
+ * badges, and revoke after an in-page confirmation. The server re-checks the admin role on every
+ * call and audits each change.
  */
 export function McpTokenManager({
   initialTokens,
   messages: m,
+  services = MCP_SERVICE_VIEWS,
 }: {
   initialTokens: McpTokenView[];
   messages: McpTokenManagerMessages;
+  services?: readonly McpServiceView[];
 }) {
   const t = m.mcp;
   const locale = useLocale();
@@ -123,7 +80,7 @@ export function McpTokenManager({
 
   async function refresh() {
     setRefreshing(true);
-    const result = await callApi<McpTokenView[]>(API_PATH);
+    const result = await callApi<McpTokenView[]>(MCP_TOKENS_API);
     setRefreshing(false);
     if (result.ok) {
       setTokens(sortTokens(result.data));
@@ -136,7 +93,7 @@ export function McpTokenManager({
     if (!token || revoking) return;
     setRevoking(true);
     setAnnouncement("");
-    const result = await callApi<McpTokenView>(`${API_PATH}/${encodeURIComponent(token.id)}`, { method: "DELETE" });
+    const result = await callApi<McpTokenView>(`${MCP_TOKENS_API}/${encodeURIComponent(token.id)}`, { method: "DELETE" });
     setRevoking(false);
     setConfirm(null);
     if (result.ok) {
@@ -157,6 +114,7 @@ export function McpTokenManager({
     <div className="grid min-w-0 gap-6">
       <CreateTokenForm
         m={m}
+        services={services}
         onCreated={(created) => {
           setSecret(created);
           setTokens((current) => sortTokens([created.record, ...current.filter((item) => item.id !== created.record.id)]));
@@ -166,10 +124,7 @@ export function McpTokenManager({
         onFailure={fail}
       />
 
-      <section
-        aria-labelledby={`${ids}-list`}
-        className="min-w-0 rounded-card border border-line bg-white p-5 shadow-soft md:p-6"
-      >
+      <section aria-labelledby={`${ids}-list`} className="min-w-0 rounded-card border border-line bg-white p-5 shadow-soft md:p-6">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 id={`${ids}-list`} ref={listHeadingRef} tabIndex={-1} className="text-lg font-extrabold text-navy outline-none">
@@ -197,6 +152,7 @@ export function McpTokenManager({
         ) : (
           <TokenTable
             tokens={tokens}
+            services={services}
             t={t}
             formatDate={formatDate}
             disabled={revoking}
@@ -217,6 +173,7 @@ export function McpTokenManager({
 
       <SecretDialog
         created={secret}
+        services={services}
         t={t}
         expires={secret ? formatDate(secret.record.expiresAt) : null}
         onDone={() => setSecret(null)}
@@ -226,260 +183,20 @@ export function McpTokenManager({
 }
 
 // ---------------------------------------------------------------------------
-// Create form
-// ---------------------------------------------------------------------------
-
-type FieldErrors = { name?: string; scopes?: string; expiresInDays?: string };
-
-function CreateTokenForm({
-  m,
-  onCreated,
-  onFailure,
-}: {
-  m: McpTokenManagerMessages;
-  onCreated: (created: McpTokenCreated) => void;
-  onFailure: (result: ApiFailure) => string;
-}) {
-  const t = m.mcp;
-  const id = useId();
-  const [name, setName] = useState("");
-  const [scope, setScope] = useState<McpScopeChoice>("read");
-  const [expiry, setExpiry] = useState<number>(MCP_EXPIRY_DAYS.default);
-  const [errors, setErrors] = useState<FieldErrors>({});
-  const [formError, setFormError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  const nameRef = useRef<HTMLInputElement>(null);
-  const readRef = useRef<HTMLInputElement>(null);
-  const expiryRef = useRef<HTMLSelectElement>(null);
-
-  function focusFirst(next: FieldErrors) {
-    if (next.name) nameRef.current?.focus();
-    else if (next.scopes) readRef.current?.focus();
-    else if (next.expiresInDays) expiryRef.current?.focus();
-  }
-
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (pending) return;
-    const clean = normaliseTokenName(name);
-    const issue = tokenNameIssue(clean);
-    const next: FieldErrors = issue ? { name: t.errors[issue] } : {};
-    setErrors(next);
-    setFormError(null);
-    if (next.name) return focusFirst(next);
-
-    setPending(true);
-    const result = await callApi<McpTokenCreated>(API_PATH, { body: { name: clean, scopes: scope, expiresInDays: expiry } });
-    setPending(false);
-    if (result.ok) {
-      setName("");
-      setScope("read");
-      setExpiry(MCP_EXPIRY_DAYS.default);
-      onCreated(result.data);
-      return;
-    }
-    if (result.error === "validation" && Object.keys(result.fieldErrors).length) {
-      const fields: FieldErrors = {};
-      if ("name" in result.fieldErrors) fields.name = t.errors.nameLength;
-      if ("scopes" in result.fieldErrors) fields.scopes = t.errors.scopeInvalid;
-      if ("expiresInDays" in result.fieldErrors) fields.expiresInDays = t.errors.expiryInvalid;
-      if (fields.name || fields.scopes || fields.expiresInDays) {
-        setErrors(fields);
-        focusFirst(fields);
-        return;
-      }
-    }
-    setFormError(onFailure(result));
-  }
-
-  const write = scope === "read write";
-
-  return (
-    <section aria-labelledby={`${id}-title`} className="min-w-0 rounded-card border border-line bg-white p-5 shadow-soft md:p-6">
-      <h2 id={`${id}-title`} className="text-lg font-extrabold text-navy">
-        {t.create.title}
-      </h2>
-      <p className="mt-1 text-sm text-muted">{t.create.description}</p>
-      <form
-        noValidate
-        onSubmit={onSubmit}
-        aria-busy={pending || undefined}
-        className="mt-4 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,14rem)]"
-      >
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <label htmlFor={`${id}-name`} className="text-sm font-bold text-navy">
-            {t.create.name}
-          </label>
-          <input
-            ref={nameRef}
-            id={`${id}-name`}
-            name="name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            autoComplete="off"
-            maxLength={120}
-            aria-invalid={errors.name ? true : undefined}
-            aria-describedby={describedBy(`${id}-name`, true, Boolean(errors.name))}
-            className={cn(inputClasses, errors.name ? "border-danger" : "border-[#b9cbe0]")}
-          />
-          <p id={`${id}-name-hint`} className="text-xs text-muted">
-            {t.create.nameHint}
-          </p>
-          {errors.name && (
-            <p id={`${id}-name-error`} className="text-sm font-semibold text-danger">
-              {errors.name}
-            </p>
-          )}
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <label htmlFor={`${id}-expiry`} className="text-sm font-bold text-navy">
-            {t.create.expiry}
-          </label>
-          <select
-            ref={expiryRef}
-            id={`${id}-expiry`}
-            name="expiresInDays"
-            value={expiry}
-            onChange={(event) => setExpiry(Number(event.target.value))}
-            aria-invalid={errors.expiresInDays ? true : undefined}
-            aria-describedby={describedBy(`${id}-expiry`, true, Boolean(errors.expiresInDays))}
-            className={cn(inputClasses, errors.expiresInDays ? "border-danger" : "border-[#b9cbe0]")}
-          >
-            {MCP_EXPIRY_OPTIONS.map((days) => (
-              <option key={days} value={days}>
-                {expiryLabel(days, t.create)}
-              </option>
-            ))}
-          </select>
-          <p id={`${id}-expiry-hint`} className="text-xs text-muted">
-            {t.create.expiryHint}
-          </p>
-          {errors.expiresInDays && (
-            <p id={`${id}-expiry-error`} className="text-sm font-semibold text-danger">
-              {errors.expiresInDays}
-            </p>
-          )}
-        </div>
-
-        <fieldset
-          className="min-w-0 lg:col-span-2"
-          aria-describedby={errors.scopes ? `${id}-scope-error` : undefined}
-          aria-invalid={errors.scopes ? true : undefined}
-        >
-          <legend className="text-sm font-bold text-navy">{t.create.scope}</legend>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            <ScopeOption
-              id={`${id}-scope-read`}
-              inputRef={readRef}
-              checked={!write}
-              onSelect={() => setScope("read")}
-              label={t.create.scopeRead}
-              hint={t.create.scopeReadHint}
-            />
-            <ScopeOption
-              id={`${id}-scope-write`}
-              checked={write}
-              onSelect={() => setScope("read write")}
-              label={t.create.scopeWrite}
-              hint={t.create.scopeWriteHint}
-              warning
-            />
-          </div>
-          {errors.scopes && (
-            <p id={`${id}-scope-error`} className="mt-1.5 text-sm font-semibold text-danger">
-              {errors.scopes}
-            </p>
-          )}
-          {write && (
-            <div role="note" className="mt-3 flex gap-2 rounded-control border border-[#f2dfa0] bg-gold-soft p-3 text-sm text-[#5c4a12]">
-              <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-              <p>{t.create.writeWarning}</p>
-            </div>
-          )}
-        </fieldset>
-
-        <div className="min-w-0 lg:col-span-2">
-          {formError && (
-            <Notice variant="error" role="alert" className="mb-3">
-              {formError}
-            </Notice>
-          )}
-          <Button type="submit" variant="dark" disabled={pending}>
-            {pending ? (
-              <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
-            ) : (
-              <KeyRound aria-hidden="true" className="size-4" />
-            )}
-            {pending ? t.create.creating : t.create.submit}
-          </Button>
-        </div>
-      </form>
-    </section>
-  );
-}
-
-function ScopeOption({
-  id,
-  inputRef,
-  checked,
-  onSelect,
-  label,
-  hint,
-  warning = false,
-}: {
-  id: string;
-  inputRef?: Ref<HTMLInputElement>;
-  checked: boolean;
-  onSelect: () => void;
-  label: string;
-  hint: string;
-  warning?: boolean;
-}) {
-  return (
-    <label
-      htmlFor={id}
-      className={cn(
-        "flex min-h-11 cursor-pointer items-start gap-3 rounded-control border p-3 transition-colors",
-        checked ? (warning ? "border-[#d9b64a] bg-gold-soft" : "border-blue bg-[#eef5ff]") : "border-line bg-white hover:border-[#b9cbe0]",
-      )}
-    >
-      <input
-        ref={inputRef}
-        id={id}
-        type="radio"
-        name="scopes"
-        checked={checked}
-        onChange={onSelect}
-        aria-describedby={`${id}-hint`}
-        className="mt-1 size-4 shrink-0 accent-navy"
-      />
-      <span className="min-w-0">
-        <span className="flex items-center gap-1.5 font-bold text-navy">
-          {warning && <ShieldAlert aria-hidden="true" className="size-4 shrink-0 text-[#8b5b00]" />}
-          {label}
-        </span>
-        <span id={`${id}-hint`} className="mt-0.5 block text-sm text-muted">
-          {hint}
-        </span>
-      </span>
-    </label>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Token table (a real table on wide screens; stacked rows on small ones)
 // ---------------------------------------------------------------------------
 
 function TokenTable({
   tokens,
+  services,
   t,
   formatDate,
   disabled,
   onRevoke,
 }: {
   tokens: McpTokenView[];
-  t: McpTokenManagerMessages["mcp"];
+  services: readonly McpServiceView[];
+  t: M;
   formatDate: (iso: string | null, withTime?: boolean) => string | null;
   disabled: boolean;
   onRevoke: (token: McpTokenView) => void;
@@ -493,12 +210,12 @@ function TokenTable({
       <caption className="sr-only">{t.list.caption}</caption>
       <thead role="rowgroup" className="sr-only xl:not-sr-only xl:table-header-group">
         <tr role="row" className="border-b border-line text-left text-xs font-bold text-[#354b66]">
-          <th role="columnheader" scope="col" className="px-3 py-2 xl:w-[22%]">{c.name}</th>
-          <th role="columnheader" scope="col" className="px-3 py-2 xl:w-[13%]">{c.access}</th>
-          <th role="columnheader" scope="col" className="px-3 py-2 xl:w-[13%]">{c.status}</th>
-          <th role="columnheader" scope="col" className="px-3 py-2 xl:w-[14%]">{c.createdBy}</th>
-          <th role="columnheader" scope="col" className="px-3 py-2 xl:w-[13%]">{c.expires}</th>
-          <th role="columnheader" scope="col" className="px-3 py-2 xl:w-[14%]">{c.lastUsed}</th>
+          <th role="columnheader" scope="col" className="px-3 py-2 xl:w-[19%]">{c.name}</th>
+          <th role="columnheader" scope="col" className="px-3 py-2 xl:w-[24%]">{c.access}</th>
+          <th role="columnheader" scope="col" className="px-3 py-2 xl:w-[12%]">{c.status}</th>
+          <th role="columnheader" scope="col" className="px-3 py-2 xl:w-[12%]">{c.createdBy}</th>
+          <th role="columnheader" scope="col" className="px-3 py-2 xl:w-[11%]">{c.expires}</th>
+          <th role="columnheader" scope="col" className="px-3 py-2 xl:w-[11%]">{c.lastUsed}</th>
           <th role="columnheader" scope="col" className="px-3 py-2 xl:w-[11%]">{c.actions}</th>
         </tr>
       </thead>
@@ -532,7 +249,7 @@ function TokenTable({
                 <span aria-hidden="true" className={label}>
                   {c.access}
                 </span>
-                <Badge variant={hasWriteScope(token.scopes) ? "warning" : "info"}>{scopeLabel(token.scopes, t.scopes)}</Badge>
+                <PermissionBadges services={services} summary={token.scopeSummary} m={t} />
               </td>
               <td role="cell" className={cell}>
                 <span aria-hidden="true" className={label}>
@@ -644,12 +361,14 @@ function RevokeDialog({
 
 function SecretDialog({
   created,
+  services,
   t,
   expires,
   onDone,
 }: {
   created: McpTokenCreated | null;
-  t: McpTokenManagerMessages["mcp"];
+  services: readonly McpServiceView[];
+  t: M;
   expires: string | null;
   onDone: () => void;
 }) {
@@ -657,7 +376,18 @@ function SecretDialog({
   const copyRef = useRef<HTMLButtonElement>(null);
   return (
     <McpDialog open={created !== null} titleId={`${id}-title`} descriptionId={`${id}-warning`} onClose={onDone} initialFocus={copyRef}>
-      {created && <SecretContent key={created.record.id} id={id} created={created} t={t} expires={expires} copyRef={copyRef} onDone={onDone} />}
+      {created && (
+        <SecretContent
+          key={created.record.id}
+          id={id}
+          created={created}
+          services={services}
+          t={t}
+          expires={expires}
+          copyRef={copyRef}
+          onDone={onDone}
+        />
+      )}
     </McpDialog>
   );
 }
@@ -667,6 +397,7 @@ type CopyState = { target: "token" | "command"; state: "copied" | "failed" } | n
 function SecretContent({
   id,
   created,
+  services,
   t,
   expires,
   copyRef,
@@ -674,7 +405,8 @@ function SecretContent({
 }: {
   id: string;
   created: McpTokenCreated;
-  t: McpTokenManagerMessages["mcp"];
+  services: readonly McpServiceView[];
+  t: M;
   expires: string | null;
   copyRef: Ref<HTMLButtonElement>;
   onDone: () => void;
@@ -684,6 +416,7 @@ function SecretContent({
   const tokenRef = useRef<HTMLElement>(null);
   const commandRef = useRef<HTMLElement>(null);
   const command = claudeCodeCommand(created.mcpUrl, created.token);
+  const lines = permissionSummaryLines(services, created.record.scopeSummary, t.create, t.services);
 
   async function copyText(target: "token" | "command") {
     const text = target === "token" ? created.token : command;
@@ -718,14 +451,10 @@ function SecretContent({
         <p>{s.warning}</p>
       </div>
 
-      <dl className="mt-4 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
+      <dl className="mt-4 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
         <div className="min-w-0">
           <dt className="text-xs font-bold text-[#354b66]">{s.name}</dt>
           <dd className="break-words text-ink">{created.record.name}</dd>
-        </div>
-        <div>
-          <dt className="text-xs font-bold text-[#354b66]">{s.access}</dt>
-          <dd className="text-ink">{scopeLabel(created.record.scopes, t.scopes)}</dd>
         </div>
         <div>
           <dt className="text-xs font-bold text-[#354b66]">{s.expires}</dt>
@@ -735,17 +464,26 @@ function SecretContent({
         </div>
       </dl>
 
+      <section aria-labelledby={`${id}-permissions`} className="mt-4 rounded-control border border-line p-3">
+        <h3 id={`${id}-permissions`} className="text-xs font-bold text-[#354b66]">
+          {s.permissions}
+        </h3>
+        {lines ? (
+          <p className="mt-1 text-sm text-ink">
+            <span className="block">{lines.read}</span>
+            <span className="block font-semibold">{lines.write}</span>
+          </p>
+        ) : (
+          <p className="mt-1 text-sm text-muted">{t.list.noPermissions}</p>
+        )}
+        <PermissionList services={services} summary={created.record.scopeSummary} m={t} className="mt-2" />
+      </section>
+
       <div className="mt-4">
         <p id={`${id}-token-label`} className="text-xs font-bold text-[#354b66]">
           {s.token}
         </p>
-        <code
-          ref={tokenRef}
-          aria-labelledby={`${id}-token-label`}
-          lang="en"
-          translate="no"
-          className={cn(codeClasses, "mt-1 text-base font-bold")}
-        >
+        <code ref={tokenRef} aria-labelledby={`${id}-token-label`} lang="en" translate="no" className={cn(codeClasses, "mt-1 text-base font-bold")}>
           {created.token}
         </code>
         <Button ref={copyRef} variant="outline" className="mt-2" onClick={() => copyText("token")}>

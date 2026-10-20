@@ -41,3 +41,9 @@
 - Per-question right/wrong for guests lets the MCQ key be inferred in ~3 tries — boards stay labelled "practice"; a fair board needs proctoring or hiding per-question outcomes during the window (owner decision).
 - Practice tests no longer have an all-time leaderboard (their key is public).
 - `docs/api.md`: new `/api/mocktest/start`, `/api/mocktest/verify/:id`, `DELETE /api/admin/mocktest/profile/:userId`, changed score/attempts/leaderboard/profile responses (see MOCK-HARDEN report).
+
+## Before the next deploy (lead)
+- Tools hub: Ask Aspire badge is static "Needs connection" — make it reflect the live config (client fetch of GET /api/ask → Ready / Needs connection), since the key is now set on the server.
+- `src/test/mockup-strings.test.ts` fails on a placeholder phone ("98765 43210") in `src/components/crm/format.ts` (CRM-UI) — must be fixed before deploy.
+- `serviceWrite.crm` / CRM MCP tools: when CRM MCP tools are added, flip `crm.available` in `src/lib/mcp/scopes.ts` and add en + hi texts.
+- Live DB: the `mcp_tokens` table is rebuilt automatically on the first new-format token creation (MCP-CORE) — check once after deploy.

@@ -20,9 +20,11 @@ export type StickyResultsBox = {
  * no visible cards (production today). Photo boxes stay decorative (aria-hidden, alt=""), mosaic
  * boxes keep their labelled list and alt text.
  *
- * Primary box: a 2:1 strip above the content below `lg` (match "4x2"), about square from `lg`
- * (`min(60vh, 560px)` tall; match "3x3"). Secondary box: tall viewports from `lg` only, about 2:1
- * (match "4x2"). Only for general results sections — never beside a centre, campus or hostel.
+ * Primary box: below `lg` a 2:1 strip after the content (match "4x2") when it holds result cards,
+ * and left out when it is only the decorative fallback photo (the hero has one); about square from
+ * `lg` (`min(60vh, 560px)` tall; match "3x3"). Secondary box: viewports at least 760px tall from
+ * `lg` only, sized to the space left under the primary box (match "4x2"). Only for general results
+ * sections — never beside a centre, campus or hostel.
  */
 export function StickyResultsLayout({
   primary,
@@ -39,7 +41,13 @@ export function StickyResultsLayout({
 }) {
   return (
     <div className={cn("grid gap-10 lg:grid-cols-2 lg:gap-16", className)}>
-      <div className={cn("relative min-w-0", imageSide === "left" ? "lg:order-1" : "lg:order-2")}>
+      <div
+        className={cn(
+          "relative min-w-0",
+          imageSide === "left" ? "lg:order-1" : "lg:order-2",
+          primary.media ? "max-lg:order-last" : "max-lg:hidden",
+        )}
+      >
         <div className="flex flex-col gap-5 lg:sticky lg:top-24 lg:gap-6">
           <Box
             box={primary}
@@ -49,7 +57,7 @@ export function StickyResultsLayout({
           {secondary && (
             <Box
               box={secondary}
-              className="hidden lg:h-[min(28vh,260px)] lg:tall:block"
+              className="hidden lg:h-[min(calc(40vh-8.5rem),260px)] lg:tall:block"
               sizes="(min-width: 1280px) 820px, 60vw"
             />
           )}

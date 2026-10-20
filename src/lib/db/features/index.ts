@@ -1,9 +1,9 @@
-import { schema as ask } from "./ask";
-import { schema as crm } from "./crm";
-import { schema as mcp } from "./mcp";
-import { schema as mocktest } from "./mocktest";
-import { schema as planner } from "./planner";
-import { schema as predictor } from "./predictor";
+import { schema as ask } from "./ask.ts";
+import { schema as crm } from "./crm.ts";
+import { schema as mcp } from "./mcp.ts";
+import { schema as mocktest } from "./mocktest.ts";
+import { schema as planner } from "./planner.ts";
+import { schema as predictor } from "./predictor.ts";
 
 /** Feature schemas (M6), applied in this order after the core migrations. Each is idempotent. */
 export const FEATURE_SCHEMAS: readonly { name: string; sql: string }[] = [

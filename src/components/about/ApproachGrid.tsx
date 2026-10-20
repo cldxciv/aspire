@@ -15,11 +15,17 @@ const FEATURE_ICONS = [
 
 /**
  * Approach points from the institute profile, each with a feature icon (≤ its 96px maxWidth).
- * `columns={1}` stacks the cards from `lg` up (two columns on tablets), e.g. beside a photo.
+ * `columns={1}` stacks the cards from `md` up (beside a photo, FillMediaSplit splits from `md`) and
+ * uses two columns from `sm`. An odd last card spans both columns while there are two.
  */
 export function ApproachGrid({ points, columns = 3 }: { points: ApproachPoint[]; columns?: 1 | 3 }) {
   return (
-    <ul className={cn("grid gap-4 sm:grid-cols-2", columns === 3 ? "lg:grid-cols-3" : "lg:grid-cols-1")}>
+    <ul
+      className={cn(
+        "grid gap-4 sm:grid-cols-2",
+        columns === 3 ? "lg:grid-cols-3 sm:max-lg:[&>li:last-child:nth-child(odd)]:col-span-2" : "md:grid-cols-1 sm:max-md:[&>li:last-child:nth-child(odd)]:col-span-2",
+      )}
+    >
       {points.map((point, index) => (
         <li key={point.title}>
           <Card className="flex h-full gap-4 p-5">

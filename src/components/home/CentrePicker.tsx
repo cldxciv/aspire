@@ -94,7 +94,8 @@ export function CentrePicker({
   const pinned = centres.filter((c) => c.pin);
 
   return (
-    <div className="grid gap-8 sm:grid-cols-2 sm:items-start sm:gap-6 md:gap-8">
+    // Tablets (md–lg): the map + wrapped pills column is taller than the card, so the card is centred against it.
+    <div className="grid gap-8 sm:grid-cols-2 sm:items-start sm:gap-6 md:gap-8 md:max-lg:items-center">
       <div>
         <div className="relative aspect-4/3 w-full">
           {map}

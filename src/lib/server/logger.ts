@@ -13,8 +13,8 @@ import type { EnquirySource } from "@/lib/contracts/enquiry";
  */
 
 export type EnquiryLogOutcome =
-  | "received" // destination accepted (201)
-  | "not_configured" // valid, nothing sent (200)
+  | "received" // stored as a lead and/or a destination accepted (201)
+  | "not_configured" // valid, nothing stored or sent (200)
   | "honeypot" // bot trap tripped; nothing sent
   | "delivery_failed" // destination rejected / timed out (500)
   | "forbidden" // origin / CSRF check failed (403)
@@ -23,6 +23,7 @@ export type EnquiryLogOutcome =
   | "bad_request" // malformed body (400)
   | "validation_failed" // 422
   | "rate_limited" // 429
+  | "phone_rate_limited" // 429: per-mobile-number daily cap on lead captures (D-039)
   | "error"; // unexpected exception (500)
 
 /** Short machine codes only — never free text derived from user input or upstream responses. */
@@ -39,7 +40,12 @@ export type EnquiryLogReason =
   | "timeout"
   | "network"
   | `http_${number}`
-  | `exception_${string}`;
+  | `exception_${string}`
+  | `store_${string}`; // lead store failure code (machine code from the CRM sink, never input)
+
+/** What happened to the lead store / the webhook for this enquiry (D-039). Fixed words only. */
+export type EnquiryStoreLog = "stored" | "duplicate" | "failed" | "off";
+export type EnquiryForwardLog = "sent" | "failed" | "none";
 
 export interface EnquiryLogEntry {
   outcome: EnquiryLogOutcome;
@@ -47,9 +53,12 @@ export interface EnquiryLogEntry {
   reference?: string;
   source?: EnquirySource;
   reason?: EnquiryLogReason;
+  store?: EnquiryStoreLog;
+  forward?: EnquiryForwardLog;
 }
 
 export type ConfigWarningCode =
+  | "enquiry_store_unknown"
   | "enquiry_destination_unknown"
   | "enquiry_webhook_url_missing"
   | "enquiry_webhook_url_invalid"
@@ -73,7 +82,7 @@ const warnedCodes = new Set<ConfigWarningCode>();
 
 export const logger: Logger = {
   enquiry(entry) {
-    const { outcome, durationMs, reference, source, reason } = entry;
+    const { outcome, durationMs, reference, source, reason, store, forward } = entry;
     const level =
       outcome === "error" || outcome === "delivery_failed"
         ? "error"
@@ -88,6 +97,8 @@ export const logger: Logger = {
       ...(reference ? { reference } : {}),
       ...(source ? { source } : {}),
       ...(reason ? { reason } : {}),
+      ...(store ? { store } : {}),
+      ...(forward ? { forward } : {}),
     });
   },
   configWarning(code) {

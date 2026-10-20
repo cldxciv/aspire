@@ -106,7 +106,7 @@ const ask = {
   stuck: {
     title: "Still stuck?",
     body: "Talk to an Aspire teacher. Send us an enquiry and the team will contact you about a demo class or a doubt session.",
-    cta: "Send an enquiry",
+    cta: "Talk to a counsellor",
   },
   how: {
     title: "How it works",

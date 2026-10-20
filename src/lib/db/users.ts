@@ -26,7 +26,7 @@ export interface UserRecord {
   updatedAt: number;
 }
 
-const ROLE_VALUES: readonly string[] = ["student", "parent", "admin"];
+const ROLE_VALUES: readonly string[] = ["student", "parent", "admin", "staff"];
 
 type Row = Record<string, SQLOutputValue>;
 
@@ -65,7 +65,7 @@ export function listUsers(db: DatabaseSync, filter: { role?: Role } = {}): UserR
     ? db.prepare(`SELECT ${COLUMNS} FROM users WHERE role = ? ORDER BY display_name COLLATE NOCASE, id`).all(filter.role)
     : db
         .prepare(
-          `SELECT ${COLUMNS} FROM users ORDER BY CASE role WHEN 'admin' THEN 0 WHEN 'parent' THEN 1 ELSE 2 END, display_name COLLATE NOCASE, id`,
+          `SELECT ${COLUMNS} FROM users ORDER BY CASE role WHEN 'admin' THEN 0 WHEN 'staff' THEN 1 WHEN 'parent' THEN 2 ELSE 3 END, display_name COLLATE NOCASE, id`,
         )
         .all();
   return rows.map(mapUser);

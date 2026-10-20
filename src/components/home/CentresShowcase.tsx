@@ -96,7 +96,7 @@ export function CentresShowcase({ centres, locale }: { centres: Centre[]; locale
           >
             {format(count === 1 ? t.titleOne : t.titleMany, { count })}
           </h2>
-          <p className="mt-4 max-w-md leading-relaxed text-[#d3e1f3]">{t.lead}</p>
+          <p className="mt-4 max-w-md leading-relaxed text-[#d3e1f3] md:max-w-xl">{t.lead}</p>
           <ButtonLink href={localePath("/centres", locale)} className="mt-7">
             {t.cta} <ArrowRight aria-hidden="true" className="size-4" />
           </ButtonLink>

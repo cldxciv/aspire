@@ -13,7 +13,7 @@ export const AUTH_MESSAGES = {
   loginIdTaken: "This login ID is already in use.",
   invalidLoginId: `Use ${LOGIN_ID_RULES}`,
   invalidDisplayName: "Enter a display name of up to 100 characters.",
-  invalidRoleFilter: "role must be student, parent or admin.",
+  invalidRoleFilter: "role must be student, parent, admin or staff.",
   invalidUserId: "Invalid user id.",
   userNotFound: "No such user.",
   selfDisable: "You cannot disable your own account.",

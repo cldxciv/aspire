@@ -7,16 +7,20 @@ import { cn } from "@/lib/cn";
 const TONES = { white: "bg-white", surface: "bg-surface" } as const;
 
 /**
- * `sizes` for a carousel in the photo column: the full width below `lg`; from `lg` the column is a
- * tall box (about 50vw × the section height, ~950px on the home page), where a 3:2 photo is
- * cover-cropped from a render about 1.5 × the box height wide.
+ * From `lg` the photo box is about 50vw wide and at most `min(80vh, 40rem)` (640px) tall, so a
+ * landscape photo is cover-cropped from a render up to 640px × its aspect ratio wide.
  */
-const CAROUSEL_SIZES = "(min-width: 1024px) 1440px, 100vw";
+const MAX_BOX_HEIGHT = 640;
+
+/** `sizes` for a carousel in the photo column: the full width below `lg`, a 3:2 cover render from `lg`. */
+const CAROUSEL_SIZES = "(min-width: 1024px) 960px, 100vw";
 
 /**
  * Half-bleed editorial split (D-030 image-rich pages; UPLIFT-A): from `lg` the photo fills one half
- * of the section, panel edge to centre, and its full height, while the copy sits in the other half
- * of the 1200px container. Below `lg` the photo is a full-width 16:10 (2:1 from `sm`) strip above
+ * of the section, panel edge to centre, up to `min(80vh, 40rem)` tall (the full height of shorter
+ * sections; in taller ones it stays in view, sticky, while the copy scrolls — never a stretched
+ * portrait crop), while the copy sits in the other half of the 1200px container. Below `lg` the
+ * photo is a full-width 16:10 (2:1 from `sm`) strip above
  * the copy (or after it with `imageFirstOnMobile={false}`). Renders its own `<section>` as a
  * SECTION_PANEL (rounded floating panel, `overflow-clip`, so the photo ends at the rounded panel
  * edge) — pass `aria-labelledby` and place it directly in the page.
@@ -34,7 +38,7 @@ const CAROUSEL_SIZES = "(min-width: 1024px) 1440px, 100vw";
  * Image rules as for `MediaSplit`: licensed stock or approved assets only (pass `localizeImage`
  * output for Hindi alt), `imageLabel` for stock / AI imagery, never a person image beside a real
  * name, no landscapes (D-031: only the home hero has them), never result cards beside a centre.
- * Lazy-loaded (below the fold); `sizes` = half the viewport from `lg`.
+ * Lazy-loaded (below the fold); `sizes` = the photo's cover width in the capped box from `lg`.
  */
 export function BleedSplit({
   image,
@@ -75,65 +79,74 @@ export function BleedSplit({
   const left = imageSide === "left";
   const hasMedia = media !== undefined && media !== null && media !== false;
   const slides = !hasMedia && carousel && carousel.slides.length > 1 ? carousel.slides : null;
+  // A landscape photo in the capped box renders up to 640px × its ratio wide (never less than ~50vw).
+  const coverWidth = Math.min(1600, Math.max(960, Math.round((MAX_BOX_HEIGHT * image.width) / image.height)));
   return (
     <section className={cn(SECTION_PANEL, "relative flex flex-col lg:block", TONES[tone], className)} {...props}>
-      <figure
+      {/* lg: a full-height rail holds the capped photo, which sticks below the header while the copy scrolls. */}
+      <div
         className={cn(
-          "relative m-0 overflow-hidden lg:absolute lg:inset-y-0 lg:aspect-auto",
-          hasMedia ? "flex aspect-2/1 flex-col bg-surface" : "aspect-16/10 bg-blue-soft sm:aspect-[2/1]",
+          "relative lg:absolute lg:inset-y-0",
           !imageFirstOnMobile && "order-last",
           left ? "lg:left-0 lg:right-[calc(50%+1.5rem)]" : "lg:right-0 lg:left-[calc(50%+1.5rem)]",
         )}
       >
-        {hasMedia ? (
-          <>
-            <div className="relative min-h-0 flex-1">{media}</div>
-            {caption && (
-              <figcaption className="bg-navy px-4 py-2 text-xs font-semibold text-white md:px-6">{caption}</figcaption>
-            )}
-          </>
-        ) : slides && carousel ? (
-          <ImageCarousel
-            slides={slides}
-            labels={carousel.labels}
-            label={carousel.label}
-            aspect="fill"
-            sizes={CAROUSEL_SIZES}
-            tone="light"
-          />
-        ) : (
-          <>
-            <Image
-              src={image.src}
-              alt={decorative ? "" : image.alt}
-              fill
-              sizes="(min-width: 1024px) 50vw, 100vw"
-              className="object-cover"
+        <figure
+          className={cn(
+            "relative m-0 overflow-hidden lg:sticky lg:top-24 lg:aspect-auto lg:h-full lg:max-h-[min(80vh,40rem)]",
+            hasMedia ? "flex aspect-2/1 flex-col bg-surface" : "aspect-16/10 bg-blue-soft sm:aspect-[2/1]",
+          )}
+        >
+          {hasMedia ? (
+            <>
+              <div className="relative min-h-0 flex-1">{media}</div>
+              {caption && (
+                <figcaption className="bg-navy px-4 py-2 text-xs font-semibold text-white md:px-6">{caption}</figcaption>
+              )}
+            </>
+          ) : slides && carousel ? (
+            <ImageCarousel
+              slides={slides}
+              labels={carousel.labels}
+              label={carousel.label}
+              aspect="fill"
+              sizes={CAROUSEL_SIZES}
+              tone="light"
             />
-            {overlay && (
-              <div className="absolute inset-x-0 top-0 bg-linear-to-b from-navy/75 via-navy/25 to-transparent p-5 pb-16 text-white md:p-7 md:pb-20">
-                {overlay}
-              </div>
-            )}
-            {caption && (
-              <figcaption className="absolute inset-x-0 bottom-0 bg-linear-to-t from-navy/85 to-transparent px-4 pb-3 pt-10 text-xs font-semibold text-white md:px-6">
-                {caption}
-              </figcaption>
-            )}
-            {imageLabel && (
-              <span
-                className={cn(
-                  "absolute rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white",
-                  caption ? "top-3" : "bottom-3",
-                  left ? "right-3" : "left-3",
-                )}
-              >
-                {imageLabel}
-              </span>
-            )}
-          </>
-        )}
-      </figure>
+          ) : (
+            <>
+              <Image
+                src={image.src}
+                alt={decorative ? "" : image.alt}
+                fill
+                sizes={`(min-width: 2000px) 50vw, (min-width: 1024px) ${coverWidth}px, 100vw`}
+                className="object-cover"
+              />
+              {overlay && (
+                <div className="absolute inset-x-0 top-0 bg-linear-to-b from-navy/75 via-navy/25 to-transparent p-5 pb-16 text-white md:p-7 md:pb-20">
+                  {overlay}
+                </div>
+              )}
+              {caption && (
+                <figcaption className="absolute inset-x-0 bottom-0 bg-linear-to-t from-navy/85 to-transparent px-4 pb-3 pt-10 text-xs font-semibold text-white md:px-6">
+                  {caption}
+                </figcaption>
+              )}
+              {imageLabel && (
+                <span
+                  className={cn(
+                    "absolute rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white",
+                    caption ? "top-3" : "bottom-3",
+                    left ? "right-3" : "left-3",
+                  )}
+                >
+                  {imageLabel}
+                </span>
+              )}
+            </>
+          )}
+        </figure>
+      </div>
       <Container gutters="section" className="lg:grid lg:grid-cols-2 lg:gap-16">
         <div
           className={cn(

@@ -1,7 +1,10 @@
 import {
   BookOpen,
   Bot,
+  BriefcaseBusiness,
+  CalendarCheck,
   CalendarDays,
+  ChartColumn,
   FileText,
   GraduationCap,
   HeartHandshake,
@@ -11,8 +14,10 @@ import {
   MapPin,
   Megaphone,
   ShieldCheck,
+  SquareKanban,
   TrendingUp,
   Trophy,
+  UserCog,
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
@@ -20,9 +25,22 @@ import type { Messages } from "@/i18n/messages/types";
 import type { Role } from "@/lib/auth/roles";
 
 export type PortalNavKey = Exclude<keyof Messages<"portal">["nav"], "sectionsLabel">;
+/** Staff (CRM) sidebar keys: labels come from the `crm` messages (`crm.nav`). */
+export type CrmNavKey = keyof Messages<"crm">["nav"];
+export type AnyPortalNavKey = PortalNavKey | CrmNavKey;
 
-/** A sidebar item: `href` is LOCALE-FREE (localise with `localePath`), the label comes from `portal.nav`. */
-export type PortalNavItem = { key: PortalNavKey; href: string; icon: LucideIcon };
+/**
+ * Portal areas. `staff` is the admissions CRM at `/crm` (D-038); it joins `Role` once the core
+ * `staff` role exists, and `Role | "staff"` keeps this type stable before and after.
+ */
+export type PortalArea = Role | "staff";
+
+/**
+ * A sidebar item: `href` is LOCALE-FREE (localise with `localePath`), the label comes from
+ * `portal.nav` (or `crm.nav` for the staff area). `managersOnly` items are hidden from
+ * counsellors (the page itself re-checks on the server).
+ */
+export type PortalNavItem = { key: AnyPortalNavKey; href: string; icon: LucideIcon; managersOnly?: boolean };
 
 export interface PortalAreaConfig {
   icon: LucideIcon;
@@ -43,7 +61,7 @@ export interface PortalAreaConfig {
  * and label, so student, parent and staff views are never confused. Labels live in the
  * `portal` messages (`areas.<role>`, `nav.<key>`).
  */
-export const portalAreas: Record<Role, PortalAreaConfig> = {
+export const portalAreas: Record<PortalArea, PortalAreaConfig> = {
   student: {
     icon: GraduationCap,
     nav: [
@@ -82,6 +100,7 @@ export const portalAreas: Record<Role, PortalAreaConfig> = {
       { key: "users", href: "/admin/users", icon: UsersRound },
       { key: "audit", href: "/admin/audit", icon: History },
       { key: "mcp", href: "/admin/mcp", icon: Bot },
+      { key: "crm", href: "/crm", icon: Inbox },
       { key: "enquiries", href: "/admin/enquiries", icon: Inbox },
       { key: "content", href: "/admin/content", icon: FileText },
       { key: "centres", href: "/admin/centres", icon: MapPin },
@@ -95,7 +114,31 @@ export const portalAreas: Record<Role, PortalAreaConfig> = {
     tileAccent: "border-t-gold",
     iconTile: "bg-gold-soft text-[#7a5600]",
   },
+  staff: {
+    icon: BriefcaseBusiness,
+    nav: [
+      { key: "inbox", href: "/crm", icon: Inbox },
+      { key: "today", href: "/crm/today", icon: CalendarCheck },
+      { key: "pipeline", href: "/crm/pipeline", icon: SquareKanban },
+      { key: "reports", href: "/crm/reports", icon: ChartColumn },
+      { key: "staff", href: "/crm/staff", icon: UserCog, managersOnly: true },
+    ],
+    strip: "bg-[#7c5cd6]",
+    badge: "border-[#d9ccf7] bg-[#f3eeff] text-[#5b3cc4]",
+    eyebrow: "text-[#5b3cc4]",
+    sidebar: "bg-navy",
+    activeItem: "border-[#b9a4f5]",
+    tileAccent: "border-t-[#7c5cd6]",
+    iconTile: "bg-[#f3eeff] text-[#5b3cc4]",
+  },
 };
+
+/** Staff nav keys a viewer may see: counsellors don't get the manager-only items. */
+export function visibleStaffNavKeys(canManage: boolean): CrmNavKey[] {
+  return portalAreas.staff.nav
+    .filter((item) => canManage || !item.managersOnly)
+    .map((item) => item.key as CrmNavKey);
+}
 
 /** Whether `href` is the current section for a LOCALE-FREE `pathname`. */
 export function isActivePortalItem(pathname: string | null, href: string, areaHome: string): boolean {

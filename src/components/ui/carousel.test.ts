@@ -115,6 +115,8 @@ describe("carousel helpers", () => {
   it("has a fixed box for every aspect and an absolute fill", () => {
     expect(carouselAspectClass["16/10"]).toContain("aspect-16/10");
     expect(carouselAspectClass["21/9"]).toBe("relative aspect-16/10 md:aspect-[21/9]");
+    // PageHero: 4:3 beside the copy on tablets, 16:10 stacked on phones and at 50/50 from lg.
+    expect(carouselAspectClass.hero).toBe("relative aspect-16/10 md:aspect-4/3 lg:aspect-16/10");
     expect(carouselAspectClass.fill).toBe("absolute inset-0");
   });
 
@@ -245,6 +247,9 @@ describe("PageHero / MediaSplit integration", () => {
     expect(html).toContain('aria-roledescription="carousel"');
     expect(html).toContain('aria-label="Photo gallery"');
     expect(html).toContain("aspect-16/10");
+    expect(html).toContain("md:aspect-4/3");
+    // Copy and media side by side from md (tablet audit R1).
+    expect(html).toContain("md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]");
     expect(html).toContain("ring-white/15");
     expect(preloads(html)).toHaveLength(1);
     expect(preloads(html)[0]).toContain("test-1.jpg");
@@ -268,6 +273,7 @@ describe("PageHero / MediaSplit integration", () => {
     expect(imgTags(html)[0]).toMatch(/fetchPriority="high"/i);
     expect(html).toContain('<figcaption class="absolute bottom-2 left-2');
     expect(html).toContain("aspect-16/10");
+    expect(html).toContain("md:aspect-4/3");
   });
 
   it("puts a fill carousel in MediaSplit's photo box", () => {

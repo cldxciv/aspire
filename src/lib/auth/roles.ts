@@ -6,9 +6,17 @@
  * NEVER read from query strings, request headers, unsigned cookies or client state.
  */
 
-export const ROLES = ["student", "parent", "admin"] as const;
+/**
+ * `staff` (M7, D-038): Aspire counsellors and centre managers. They can use only the CRM
+ * (`/crm/**`, `/api/crm/**`); what they see there depends on their CRM membership
+ * (`crm_staff`, src/lib/crm). Every other portal area and API denies them.
+ */
+export const ROLES = ["student", "parent", "admin", "staff"] as const;
 
 export type Role = (typeof ROLES)[number];
+
+/** Roles whose accounts work for Aspire (admin portal / CRM), as opposed to learners and families. */
+export const STAFF_SIDE_ROLES: readonly Role[] = ["admin", "staff"];
 
 export interface Session {
   /** Stable account id (`users.id`). */

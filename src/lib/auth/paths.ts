@@ -16,7 +16,11 @@ export const PORTAL_HOME: Readonly<Record<Role, string>> = {
   student: "/student",
   parent: "/parent",
   admin: "/admin",
+  staff: "/crm",
 };
+
+/** The CRM workspace (M7): staff accounts only reach this area; admins may open it too. */
+export const CRM_HOME = "/crm";
 
 export const LOGIN_PATH = "/login";
 
@@ -29,13 +33,22 @@ export const FORGOT_PASSWORD_PATH = "/forgot-password";
  */
 export const CHANGE_PASSWORD_PATH = "/account/password";
 
-const PORTAL_PAGE = /^\/(student|parent|admin)(?:\/|$)/;
-const PORTAL_API = /^\/api\/(student|parent|admin)(?:\/|$)/;
+const PORTAL_PAGE = /^\/(student|parent|admin|crm)(?:\/|$)/;
+const PORTAL_API = /^\/api\/(student|parent|admin|crm)(?:\/|$)/;
+const CRM_PAGE = /^\/crm(?:\/|$)/;
+
+/** Which role owns each portal area segment. */
+const AREA_ROLE: Readonly<Record<string, Role>> = { student: "student", parent: "parent", admin: "admin", crm: "staff" };
 const ACCOUNT_PAGE = /^\/account(?:\/|$)/;
 
-/** `/student`, `/parent`, `/admin` and anything below them. */
+/** `/student`, `/parent`, `/admin`, `/crm` and anything below them. */
 export function isPortalPagePath(pathname: string): boolean {
   return PORTAL_PAGE.test(pathname);
+}
+
+/** `/crm` and anything below it (locale-free). No preview mode: always needs a session. */
+export function isCrmPagePath(pathname: string): boolean {
+  return CRM_PAGE.test(pathname);
 }
 
 /** `/account` and anything below it (signed-in account pages shared by every role). */
@@ -43,15 +56,25 @@ export function isAccountPagePath(pathname: string): boolean {
   return ACCOUNT_PAGE.test(pathname);
 }
 
-/** `/api/student`, `/api/parent`, `/api/admin` and anything below them. */
+/** `/api/student`, `/api/parent`, `/api/admin`, `/api/crm` and anything below them. */
 export function isPortalApiPath(pathname: string): boolean {
   return PORTAL_API.test(pathname);
 }
 
-/** Which portal area a page path belongs to, or null for non-portal paths. */
+/** Which portal area a page path belongs to (`/crm` → `staff`), or null for non-portal paths. */
 export function portalRoleForPath(pathname: string): Role | null {
   const match = PORTAL_PAGE.exec(pathname);
-  return match ? (match[1] as Role) : null;
+  return match ? AREA_ROLE[match[1]] : null;
+}
+
+/**
+ * Whether a signed-in `role` may be sent to the portal page `pathname`: its own area, and for
+ * admins also the CRM (`/crm/**`). Staff only ever get `/crm/**`.
+ */
+export function portalPathAllowsRole(pathname: string, role: Role): boolean {
+  const owner = portalRoleForPath(pathname);
+  if (owner === null) return false;
+  return owner === role || (owner === "staff" && role === "admin");
 }
 
 const MAX_NEXT_LENGTH = 512;
@@ -67,11 +90,11 @@ const SENTINEL_ORIGIN = "https://sanitise.invalid";
  * A leading locale segment is accepted and removed (`/hi/student/timetable` and
  * `/en/student/timetable` → `/student/timetable`); the caller re-applies the locale of the
  * page the visitor is on with `localePath()`. The allowlist is unchanged: after the locale
- * segment the path must still be under /student, /parent or /admin.
+ * segment the path must still be under /student, /parent, /admin or /crm.
  *
  * Rejects absolute URLs (`https://evil.com`), protocol-relative URLs (`//evil.com`,
  * `/hi//evil.com`), backslash tricks (`/\evil.com`), control characters, doubled slashes,
- * and anything that normalises outside /student, /parent or /admin.
+ * and anything that normalises outside /student, /parent, /admin or /crm.
  */
 export function sanitizeNextPath(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -106,13 +129,13 @@ export function buildLoginHref(next?: unknown, locale: Locale = defaultLocale): 
 }
 
 /**
- * Where to send a user after sign-in: the sanitised `next` if it is inside their own
- * portal area, otherwise their portal home. Never an off-site or other-role path.
- * Locale-free: the login API returns this as `redirectTo`.
+ * Where to send a user after sign-in: the sanitised `next` if it is inside a portal area the
+ * role may use (`portalPathAllowsRole`), otherwise their portal home. Never an off-site or
+ * other-role path. Locale-free: the login API returns this as `redirectTo`.
  */
 export function postLoginRedirect(role: Role, next?: unknown): string {
   const safe = sanitizeNextPath(next);
-  return safe && portalRoleForPath(safe) === role ? safe : PORTAL_HOME[role];
+  return safe && portalPathAllowsRole(safe, role) ? safe : PORTAL_HOME[role];
 }
 
 /**

@@ -1,4 +1,4 @@
-import { ArrowRight, GraduationCap, HeartHandshake, ShieldCheck } from "lucide-react";
+import { ArrowRight, GraduationCap, HeartHandshake, ShieldCheck, BriefcaseBusiness } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AuthSplit } from "@/components/auth/AuthSplit";
@@ -56,7 +56,7 @@ const HERO_IMAGES = [
 export default async function LoginPage({ searchParams }: PageProps<"/[lang]/login">) {
   const [locale, t, common] = await Promise.all([getLocale(), getMessages("auth"), getMessages("common")]);
   const l = t.login;
-  const roleIcons = { student: GraduationCap, parent: HeartHandshake, admin: ShieldCheck };
+  const roleIcons = { student: GraduationCap, parent: HeartHandshake, staff: BriefcaseBusiness, admin: ShieldCheck };
 
   return (
     <>
@@ -97,7 +97,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/[lang]/log
           </h2>
           <p className="mt-2 text-muted">{l.help.body}</p>
           <ul className="mt-5 grid gap-4">
-            {(["student", "parent", "admin"] as const).map((role) => {
+            {(["student", "parent", "staff", "admin"] as const).map((role) => {
               const Icon = roleIcons[role];
               return (
                 <li key={role} className="flex gap-3">
@@ -157,14 +157,11 @@ async function LoginCard({ searchParams, locale, t }: { searchParams: SearchPara
   }
 
   const roleParam = first(params.role);
-  const initialRole: Role =
-    roleParam === "staff"
-      ? "admin"
-      : isRole(roleParam)
-        ? roleParam
-        : next
-          ? (portalRoleForPath(next) ?? "student")
-          : "student";
+  const initialRole: Role = isRole(roleParam)
+    ? roleParam
+    : next
+      ? (portalRoleForPath(next) ?? "student")
+      : "student";
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- drop server-only copy from the client payload
   const { help, safety, metaTitle, metaDescription, ...login } = t.login;
   const messages: LoginFormMessages = { roles: t.roles, roleHints: t.roleHints, passwordToggle: t.passwordToggle, login };

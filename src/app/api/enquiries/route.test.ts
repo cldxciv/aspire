@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 
+import { CONSENT_VERSION } from "@/lib/contracts/enquiry";
+
 import { ENQUIRY_MESSAGES, resetEnquiryRateLimiterForTests } from "@/lib/server/enquiry-handler";
 import { resetLoggerStateForTests } from "@/lib/server/logger";
 import { WEBHOOK_SIGNATURE_HEADER, signWebhookBody } from "@/lib/server/destinations/webhook";
@@ -28,6 +30,7 @@ const validQuick = {
   programInterest: "jee",
   intent: "scholarship",
   consent: true,
+  consentVersion: CONSENT_VERSION,
   website: "",
 };
 
@@ -74,6 +77,9 @@ function useWebhook() {
 beforeEach(() => {
   resetEnquiryRateLimiterForTests();
   resetLoggerStateForTests();
+  // These tests cover the destination path (ENQUIRY_STORE=off = the pre-M7 behaviour). Lead capture
+  // (the default, ENQUIRY_STORE=crm) is tested with fake sinks in src/lib/server/enquiry-handler.test.ts.
+  vi.stubEnv("ENQUIRY_STORE", "off");
   vi.stubEnv("ENQUIRY_DESTINATION", "");
   vi.stubEnv("ENQUIRY_WEBHOOK_URL", "");
   vi.stubEnv("ENQUIRY_WEBHOOK_SECRET", "");
@@ -129,7 +135,7 @@ describe("POST /api/enquiries — destination none (default)", () => {
     { source: "contact", topic: "scholarship" },
   ])("accepts the $source form", async (extra) => {
     const response = await POST(
-      enquiryRequest({ name: PII.name, phone: "9876543210", consent: true, website: "", ...extra }),
+      enquiryRequest({ name: PII.name, phone: "9876543210", consent: true, consentVersion: CONSENT_VERSION, website: "", ...extra }),
     );
     expect(response.status).toBe(200);
     expect((await response.json()).status).toBe("not_configured");
@@ -166,6 +172,7 @@ describe("POST /api/enquiries — validation", () => {
         name: PII.name,
         phone: "9876543210",
         consent: true,
+        consentVersion: CONSENT_VERSION,
         currentClass: "class-12",
         programInterest: "neet",
         preferredCentre: "Near the bus stand",
@@ -325,6 +332,7 @@ describe("POST /api/enquiries — webhook destination", () => {
     const sent = JSON.parse(init?.body as string);
     expect(sent.reference).toBe(body.reference);
     expect(sent.consentAt).toBe(sent.receivedAt);
+    expect(sent.consentVersion).toBe(CONSENT_VERSION);
     expect(sent.enquiry).toEqual({
       source: "quick",
       name: PII.name,
@@ -397,6 +405,7 @@ const validHero = {
   preferredCentre: "shimla",
   message: PII.message,
   consent: true,
+  consentVersion: CONSENT_VERSION,
   website: "",
 };
 
@@ -498,7 +507,14 @@ describe("POST /api/enquiries — hero form", () => {
 
   it("returns 422 with the missing step fields when only step 1 was filled", async () => {
     const response = await POST(
-      enquiryRequest({ source: "hero", name: PII.name, classOrExam: "jee-class-11", phone: "", website: "" }),
+      enquiryRequest({
+        source: "hero",
+        name: PII.name,
+        classOrExam: "jee-class-11",
+        phone: "",
+        consentVersion: CONSENT_VERSION,
+        website: "",
+      }),
     );
     expect(response.status).toBe(422);
     expect(Object.keys((await response.json()).fieldErrors).sort()).toEqual(["consent", "guardianName", "phone"]);
@@ -529,6 +545,53 @@ describe("POST /api/enquiries — hero form", () => {
     };
     expect(new TextEncoder().encode(JSON.stringify(payload)).length).toBeLessThan(10 * 1024);
     const response = await POST(enquiryRequest(payload));
+    expect(response.status).toBe(200);
+    expect((await response.json()).status).toBe("not_configured");
+  });
+});
+
+// ── M7 lead capture (D-039) on the destination path ─────────────────────────
+
+describe("POST /api/enquiries — consent version and context (D-039)", () => {
+  it("rejects a submission without consentVersion (a page from before the consent change) with 422", async () => {
+    const { consentVersion: _version, ...stale } = validHero;
+    void _version;
+    const response = await POST(enquiryRequest(stale));
+    expect(response.status).toBe(422);
+    expect(Object.keys((await response.json()).fieldErrors)).toEqual(["consentVersion"]);
+  });
+
+  it("forwards the validated context at the top level of the webhook payload, never inside `enquiry`", async () => {
+    useWebhook();
+    const fetchSpy = vi.fn<typeof fetch>(async () => new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const context = {
+      page: "/hi/admissions",
+      locale: "hi",
+      utm_source: "facebook",
+      tool: "predictor",
+      toolExam: "jee-main",
+      toolBand: "score-180-189",
+      referrer: "https://www.google.com/search?q=x", // not a host → dropped
+      phone: PII.phone, // unknown key → stripped
+    };
+    const response = await POST(enquiryRequest({ ...validHero, context }));
+    expect(response.status).toBe(201);
+    const sent = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
+    expect(sent.context).toEqual({
+      page: "/hi/admissions",
+      locale: "hi",
+      utm_source: "facebook",
+      tool: "predictor",
+      toolExam: "jee-main",
+      toolBand: "score-180-189",
+    });
+    expect(sent.enquiry).not.toHaveProperty("context");
+    expect(sent.enquiry).not.toHaveProperty("consentVersion");
+  });
+
+  it("never rejects an enquiry because of its context", async () => {
+    const response = await POST(enquiryRequest({ ...validQuick, context: { page: "x".repeat(500), utm_source: "<b>" } }));
     expect(response.status).toBe(200);
     expect((await response.json()).status).toBe("not_configured");
   });

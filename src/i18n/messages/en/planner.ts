@@ -118,6 +118,11 @@ const planner = {
       examDateFar: "Choose a date within the next three years.",
     },
   },
+  /** D-039: "Talk to a counsellor" → the enquiry form with `from=planner` (nothing from the plan is passed). */
+  counsellor: {
+    text: "Want help with your preparation plan? Aspire's counsellors can guide you.",
+    cta: "Talk to a counsellor",
+  },
   overview: {
     title: "Plan overview",
     days: "{days} days to go",

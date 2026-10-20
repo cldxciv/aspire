@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { defaultLocale, type Locale } from "@/i18n/config";
 import { isNonLocalizedPath, splitLocale } from "@/i18n/paths";
 import { isPortalPreviewEnabled, ROBOTS_NOINDEX, SESSION_COOKIE_NAME } from "@/lib/auth/config";
-import { buildLoginHref, isAccountPagePath, isPortalApiPath, isPortalPagePath } from "@/lib/auth/paths";
+import { buildLoginHref, isAccountPagePath, isCrmPagePath, isPortalApiPath, isPortalPagePath } from "@/lib/auth/paths";
 import { isPreviewAuthorized, previewAccessPassword, previewChallenge } from "@/lib/auth/preview-gate";
 import { portalApiError } from "@/lib/auth/responses";
 
@@ -19,6 +19,7 @@ import { portalApiError } from "@/lib/auth/responses";
  * 5. Portal pages (D-011), checked on the locale-free path: every response carries
  *    `X-Robots-Tag: noindex, nofollow`; without previews or a session hint they redirect to
  *    the login page in the same locale (`/login?next=/student`, `/hi/login?next=/student`).
+ *    The CRM (`/crm/**`, M7) has no preview: without a session hint it always redirects.
  * 6. Account pages (`/account/**`, e.g. the change-password page): same `X-Robots-Tag`; without
  *    a session hint they always redirect to the login page in the same locale (no preview).
  *
@@ -50,6 +51,7 @@ export function proxy(request: NextRequest) {
 
   const { locale: prefix, path } = splitLocale(pathname);
   const portalPage = isPortalPagePath(path);
+  const previewablePage = portalPage && !isCrmPagePath(path);
   const accountPage = isAccountPagePath(path);
   const privatePage = portalPage || accountPage;
 
@@ -66,7 +68,8 @@ export function proxy(request: NextRequest) {
 
   const locale: Locale = prefix ?? defaultLocale;
 
-  const needsLogin = portalPage ? !isPortalPreviewEnabled() && !hasSessionHint(request) : accountPage && !hasSessionHint(request);
+  const previewOpen = previewablePage && isPortalPreviewEnabled();
+  const needsLogin = privatePage && !previewOpen && !hasSessionHint(request);
   if (needsLogin) {
     // `next` stays locale-free (sanitizeNextPath only accepts portal paths, so account pages carry none);
     // the login page is localized.

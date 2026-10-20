@@ -145,6 +145,22 @@ export default async function PrivacyPage() {
       ),
     },
     {
+      // Mirrors the M6 tools (predictor, mock tests, planner, Ask Aspire) — see the `legal` messages.
+      id: "student-tools",
+      title: p.tools.title,
+      body: (
+        <>
+          <p>{p.tools.intro}</p>
+          <ul>
+            {p.tools.items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+          <p>{richText(p.tools.p2, { tbc })}</p>
+        </>
+      ),
+    },
+    {
       id: "retention",
       title: p.retention.title,
       body: <p>{richText(p.retention.p1, { tbc })}</p>,

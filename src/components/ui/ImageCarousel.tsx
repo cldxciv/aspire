@@ -131,7 +131,8 @@ const isToggle = (el: EventTarget | null) => el instanceof HTMLElement && el.has
  *   dots (a "3 of 12" counter instead when there are more than 5 slides). Arrow / Home / End keys
  *   work anywhere inside.
  * - Fixed aspect box (no layout shift); `aspect="fill"` absolutely fills a positioned parent and
- *   then requires `sizes`. The `21/9` band is 16/10 below `md`.
+ *   then requires `sizes`. The `21/9` band is 16/10 below `md`; `hero` (PageHero) is 4/3 on tablets
+ *   (`md`) and 16/10 otherwise.
  * - Autoplay (default on, 6 s) never starts under `prefers-reduced-motion`, and pauses on mouse
  *   hover, while keyboard focus is inside (not on the pause / play button), while the tab is hidden
  *   and while scrolled out of view; taps and clicks do not pause it. The visible pause / play

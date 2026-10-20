@@ -10,11 +10,12 @@ import {
 } from "./accounts";
 import { listAuditLog } from "./audit";
 import { listCentres, listPrograms, listResults } from "./content";
+import { CRM_TOOLS } from "./crm";
 import { getStudentProgress } from "./progress";
 import { siteStatus } from "./status";
 import type { AspireTool } from "./types";
 
-/** Every MCP tool, in the order `tools/list` returns them (reads first). */
+/** Every MCP tool. `tools/list` returns the allowed ones in service-catalogue order (src/lib/mcp/scopes.ts). */
 export const MCP_TOOLS: readonly AspireTool[] = [
   siteStatus,
   listAccounts,
@@ -28,6 +29,7 @@ export const MCP_TOOLS: readonly AspireTool[] = [
   linkParentStudent,
   unlinkParentStudent,
   setAccountDisabled,
+  ...CRM_TOOLS,
 ] as unknown as readonly AspireTool[];
 
 export const MCP_TOOL_NAMES: ReadonlySet<string> = new Set(MCP_TOOLS.map((tool) => tool.name));

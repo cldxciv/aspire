@@ -193,3 +193,6 @@ Login IDs, display names of accounts (as entered by staff), "Aspire", exam/progr
 - The predictor share card is English-only (no Devanagari font bundled for image rendering).
 - Portal tool panels: `hi/portal.ts` → `tools.*`, `blocks.toolDataBadge` and the updated student/parent copy (PORTAL-INTEGRATION, M6). Doubt-topic labels are AI-generated English (`lang="en"`).
 - MCP admin page: `hi/mcp.ts` and `hi/portal.ts` → `nav.mcp` ("AI एजेंट एक्सेस") — machine draft.
+- MCP permission matrix: `hi/mcp.ts` → `services`, `serviceWrite`, `access`, matrix / preset / summary keys (MCP-ADMIN, per-service scopes) — machine draft.
+- CRM capture: `hi/forms.ts` (v2 consent line, `wait.hours`, `receivedBody`, `rateLimitedBody`, `fromPredictor`), "काउंसलर से बात करें" CTA labels in `hi/{predictor,ask,mocktest,planner}.ts`, updated `hi/predictor.ts` privacy line, `hi/legal.ts` enquiry access + attribution items — machine draft; consent line also needs legal review.
+- CRM (M7): `hi/crm.ts` (staff workspace — inbox, lead detail, today, pipeline, reports, staff & rules), `hi/auth.ts` → `roles.staff`, `roleHints.staff`, `help.staff`, `hi/portal.ts` → `nav.crm` ("लीड और प्रवेश") — machine draft; staff-facing, so lower priority than public pages.

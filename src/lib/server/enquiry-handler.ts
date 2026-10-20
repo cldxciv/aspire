@@ -5,9 +5,11 @@ import { z } from "zod";
 import { enquirySchema, type EnquiryResponse } from "@/lib/contracts/enquiry";
 
 import { createDestination } from "./destinations";
-import { getSiteOrigin, parseEnquiryDestination, type Env } from "./env";
+import { getSiteOrigin, parseEnquiryDestination, parseEnquiryStore, type Env } from "./env";
+import { captureEnquiry, createPhoneCaptureLimiter } from "./enquiry-capture";
 import { checkPreferredCentre, submitEnquiry } from "./enquiry-service";
 import { apiError, jsonResponse } from "./http";
+import { getLeadSink, type LeadSink } from "./lead-sink";
 import { exceptionReason, logger as defaultLogger, type EnquiryLogEntry, type Logger } from "./logger";
 import { ENQUIRY_RATE_LIMIT, SlidingWindowRateLimiter } from "./rate-limit";
 import { checkSameOrigin, getClientIp, isJsonContentType, readBodyWithLimit } from "./request-guards";
@@ -26,12 +28,18 @@ export const ENQUIRY_MESSAGES = {
   validation: "Please check the highlighted fields.",
   rateLimited: (minutes: number) =>
     `Too many enquiries from this connection. Please try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+  phoneRateLimited:
+    "Several enquiries were already sent for this mobile number today. Please try again tomorrow or contact Aspire directly.",
   serverError:
     "We could not send your enquiry right now. Nothing was submitted. Please try again later or contact Aspire directly.",
 } as const;
 
 export interface EnquiryHandlerDeps {
   rateLimiter: SlidingWindowRateLimiter;
+  /** Per-mobile-number daily cap on lead captures (ENQUIRY_STORE=crm only). */
+  phoneLimiter: SlidingWindowRateLimiter;
+  /** CRM lead store adapter (lead-sink.ts). Read per request. */
+  getLeadSink: () => LeadSink;
   getEnv: () => Env;
   logger: Logger;
   now: () => Date;
@@ -42,12 +50,14 @@ export interface EnquiryHandlerDeps {
   maxBodyBytes: number;
 }
 
-/** Process-wide limiter for the real route (single instance only — see rate-limit.ts). */
+/** Process-wide limiters for the real route (single instance only — see rate-limit.ts). */
 const sharedRateLimiter = new SlidingWindowRateLimiter(ENQUIRY_RATE_LIMIT);
+const sharedPhoneLimiter = createPhoneCaptureLimiter();
 
-/** Test helper: clears the shared limiter used by the real route. */
+/** Test helper: clears the shared limiters used by the real route. */
 export function resetEnquiryRateLimiterForTests(): void {
   sharedRateLimiter.reset();
+  sharedPhoneLimiter.reset();
 }
 
 function respond(body: EnquiryResponse, status: number, headers?: HeadersInit): Response {
@@ -57,11 +67,16 @@ function respond(body: EnquiryResponse, status: number, headers?: HeadersInit): 
 /**
  * Builds the POST /api/enquiries handler. Order of checks:
  * origin (403) → content type (415) → rate limit (429) → body size (413) →
- * JSON (400) → schema + preferredCentre (422) → honeypot → destination (200/201/500).
+ * JSON (400) → schema + preferredCentre (422) → honeypot →
+ *   ENQUIRY_STORE=crm (default, D-039): per-phone cap (429) → store as a CRM lead AND forward to
+ *     the webhook when configured → 201 if either kept it, else 500;
+ *   ENQUIRY_STORE=off: the destination only, exactly as before (200 not_configured / 201 / 500).
  */
 export function createEnquiryHandler(overrides: Partial<EnquiryHandlerDeps> = {}) {
   const deps: EnquiryHandlerDeps = {
     rateLimiter: sharedRateLimiter,
+    phoneLimiter: sharedPhoneLimiter,
+    getLeadSink,
     getEnv: () => process.env,
     logger: defaultLogger,
     now: () => new Date(),
@@ -139,13 +154,63 @@ export function createEnquiryHandler(overrides: Partial<EnquiryHandlerDeps> = {}
         return apiError(422, "validation", ENQUIRY_MESSAGES.validation, { fieldErrors: centreErrors });
       }
 
-      // 7. Destination (+ honeypot inside submitEnquiry)
+      // 7. Store and/or destination (+ honeypot inside captureEnquiry / submitEnquiry)
+      const store = parseEnquiryStore(env);
       const { config, warnings } = parseEnquiryDestination(env);
-      for (const code of warnings) deps.logger.configWarning(code);
+      for (const code of [...store.warnings, ...warnings]) deps.logger.configWarning(code);
       const destination = createDestination(config, {
         fetchImpl: deps.fetchImpl,
         webhookTimeoutMs: deps.webhookTimeoutMs,
       });
+      const received = (reference: string) =>
+        respond({ ok: true, status: "received", reference, message: ENQUIRY_MESSAGES.received }, 201);
+
+      if (store.mode === "crm") {
+        const outcome = await captureEnquiry(enquiry, {
+          leadSink: deps.getLeadSink(),
+          destination,
+          phoneLimiter: deps.phoneLimiter,
+          now: deps.now,
+          generateReference: deps.generateReference,
+        });
+        switch (outcome.kind) {
+          case "received":
+            if (outcome.honeypot) {
+              log({ outcome: "honeypot", reference: outcome.reference, source: enquiry.source });
+            } else {
+              log({
+                outcome: "received",
+                reference: outcome.reference,
+                source: enquiry.source,
+                store: outcome.store,
+                forward: outcome.forward,
+                // A store failure covered by the webhook (or a webhook failure covered by the store) keeps its code.
+                ...(outcome.storeCode
+                  ? { reason: `store_${outcome.storeCode}` as const }
+                  : outcome.forwardReason
+                    ? { reason: forwardReasonCode(outcome.forwardReason, outcome.httpStatus) }
+                    : {}),
+              });
+            }
+            return received(outcome.reference);
+          case "phone_capped":
+            log({ outcome: "phone_rate_limited", source: enquiry.source });
+            return apiError(429, "rate_limited", ENQUIRY_MESSAGES.phoneRateLimited, {
+              headers: { "Retry-After": String(outcome.retryAfterSeconds) },
+            });
+          case "failed":
+            log({
+              outcome: "delivery_failed",
+              reference: outcome.reference,
+              source: enquiry.source,
+              store: "failed",
+              forward: outcome.forward,
+              reason: `store_${outcome.storeCode}`,
+            });
+            return apiError(500, "server_error", ENQUIRY_MESSAGES.serverError);
+        }
+      }
+
       const outcome = await submitEnquiry(enquiry, {
         destination,
         now: deps.now,
@@ -155,10 +220,7 @@ export function createEnquiryHandler(overrides: Partial<EnquiryHandlerDeps> = {}
       switch (outcome.kind) {
         case "received":
           log({ outcome: outcome.honeypot ? "honeypot" : "received", reference: outcome.reference, source: enquiry.source });
-          return respond(
-            { ok: true, status: "received", reference: outcome.reference, message: ENQUIRY_MESSAGES.received },
-            201,
-          );
+          return received(outcome.reference);
         case "not_configured":
           log({ outcome: outcome.honeypot ? "honeypot" : "not_configured", source: enquiry.source });
           return respond({ ok: true, status: "not_configured", message: ENQUIRY_MESSAGES.notConfigured }, 200);
@@ -167,7 +229,7 @@ export function createEnquiryHandler(overrides: Partial<EnquiryHandlerDeps> = {}
             outcome: "delivery_failed",
             reference: outcome.reference,
             source: enquiry.source,
-            reason: outcome.reason === "http_status" ? `http_${outcome.httpStatus ?? 0}` : outcome.reason,
+            reason: forwardReasonCode(outcome.reason, outcome.httpStatus),
           });
           return apiError(500, "server_error", ENQUIRY_MESSAGES.serverError);
       }
@@ -176,6 +238,10 @@ export function createEnquiryHandler(overrides: Partial<EnquiryHandlerDeps> = {}
       return apiError(500, "server_error", ENQUIRY_MESSAGES.serverError);
     }
   };
+}
+
+function forwardReasonCode(reason: "timeout" | "network" | "http_status", httpStatus?: number) {
+  return reason === "http_status" ? (`http_${httpStatus ?? 0}` as const) : reason;
 }
 
 /** The handler used by src/app/api/enquiries/route.ts. */

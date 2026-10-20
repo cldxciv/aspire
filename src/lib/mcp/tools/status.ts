@@ -7,9 +7,10 @@ import { adminListUsers } from "@/lib/auth/accounts";
 import { isPortalPreviewEnabled } from "@/lib/auth/config";
 import { previewAccessPassword } from "@/lib/auth/preview-gate";
 import { showPlaceholderContent } from "@/lib/content-mode";
-import { getEnquiryDeliveryStatus, getSiteOrigin } from "@/lib/server/env";
+import { getEnquiryDeliveryStatus, getSiteOrigin, parseEnquiryDestination, parseEnquiryStore } from "@/lib/server/env";
 
 import { MCP_SERVER_NAME, MCP_SERVER_VERSION } from "../info";
+import { allowedTools, MCP_SERVICES, scopesSummary } from "../scopes";
 import { listMcpTokens } from "../tokens";
 import { defineTool, READ_ONLY } from "./types";
 
@@ -21,20 +22,27 @@ export const siteStatus = defineTool({
   name: "site_status",
   title: "Site status",
   description:
-    "Reports the Aspire website's current configuration as non-secret facts: content mode (demo vs production), whether enquiries are delivered " +
-    "(the site never stores enquiries; when delivery is 'connected' each enquiry is forwarded to a configured webhook, otherwise visitors see a " +
-    "'not connected' note and should phone or visit), whether Ask Aspire (AI doubt solver) has an API key, preview/password gates, account counts, " +
-    "and this MCP token's name, scopes and expiry. Call it first to understand what data is real and what is DEMO.",
+    "Reports the Aspire website's current configuration as non-secret facts: content mode (demo vs production), where enquiries go " +
+    "(stored as CRM leads and/or forwarded to a webhook, or 'not_configured' when neither; leads are reachable through the 'crm' service tools " +
+    "when this token has crm permissions), whether Ask Aspire (AI doubt solver) has an API key, preview/password gates, account counts, " +
+    "and this MCP token's name, expiry and permissions per service (none / read / write) with the tools it may use. " +
+    "Call it first to understand what data is real and what is DEMO, and what this token can do.",
   scope: "read",
   inputSchema: z.object({}),
   annotations: READ_ONLY,
   run(_args, ctx) {
     const placeholders = showPlaceholderContent();
     const enquiryDelivery = getEnquiryDeliveryStatus();
+    const storedAsLeads = parseEnquiryStore(process.env).mode === "crm";
+    const webhook = parseEnquiryDestination(process.env).config.kind === "webhook";
     const ask = getAskConfig();
     const users = adminListUsers();
     const count = (role: string) => users.filter((u) => u.role === role && !u.disabled).length;
     const activeTokens = listMcpTokens(ctx.now).filter((t) => t.status === "active").length;
+    const access = scopesSummary(ctx.caller.scopes);
+    const granted = MCP_SERVICES.filter((service) => access[service.id] !== "none")
+      .map((service) => `${service.id}=${access[service.id]}`)
+      .join(", ");
 
     const data = {
       server: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION, environment: process.env.NODE_ENV ?? "unknown" },
@@ -48,12 +56,15 @@ export const siteStatus = defineTool({
           : "Production mode: only published, verified records are visible.",
       },
       enquiries: {
-        stored: false,
         delivery: enquiryDelivery,
-        note:
-          enquiryDelivery === "connected"
-            ? "Enquiry form submissions are forwarded to the configured webhook destination; the website keeps no copy, so there is no enquiry tool."
-            : "No enquiry destination is configured: the form validates input and tells visitors online enquiries are not connected. Nothing is stored or sent.",
+        storedAsCrmLeads: storedAsLeads,
+        webhook: webhook ? "connected" : "not_configured",
+        availableViaMcp: storedAsLeads,
+        note: !storedAsLeads && !webhook
+          ? "Enquiries are neither stored nor forwarded: the form validates input and tells visitors online enquiries are not connected."
+          : `${storedAsLeads ? "Each enquiry is stored as a CRM lead (admin portal)" : "Enquiries are not stored"}` +
+            `${webhook ? " and forwarded to the configured webhook" : ""}.` +
+            (storedAsLeads ? " Leads are available through the 'crm' service tools (crm:read / crm:write)." : ""),
       },
       askAspire: { configured: ask.configured, model: ask.model },
       portal: { previewShells: isPortalPreviewEnabled() },
@@ -68,16 +79,24 @@ export const siteStatus = defineTool({
         thisToken: {
           name: ctx.caller.tokenName,
           scopes: ctx.caller.scopes,
+          access,
+          tools: allowedTools(ctx.caller.scopes),
           expiresAt: new Date(ctx.caller.expiresAt).toISOString(),
         },
+        services: MCP_SERVICES.map((service) => ({
+          id: service.id,
+          available: service.available,
+          readTools: [...service.tools.read],
+          writeTools: [...service.tools.write],
+        })),
         activeTokens,
       },
     };
     return {
       ok: true,
       summary:
-        `Aspire website ${MCP_SERVER_VERSION}: ${data.contentMode.mode} mode; enquiries ${enquiryDelivery} (never stored); ` +
-        `Ask Aspire ${ask.configured ? "configured" : "not configured"}; token "${ctx.caller.tokenName}" (${ctx.caller.scopes}).`,
+        `Aspire website ${MCP_SERVER_VERSION}: ${data.contentMode.mode} mode; enquiries ${enquiryDelivery}${storedAsLeads ? " (stored as CRM leads)" : ""}; ` +
+        `Ask Aspire ${ask.configured ? "configured" : "not configured"}; token "${ctx.caller.tokenName}" can use: ${granted || "nothing"}.`,
       data,
     };
   },

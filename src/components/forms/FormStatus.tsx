@@ -60,9 +60,11 @@ export function DirectContact({
   );
 }
 
-function waitText(t: FormStatusMessages["wait"], seconds?: number): string {
+/** Exported for tests. Waits over 90 minutes (the per-mobile-number daily limit) are given in hours. */
+export function waitText(t: FormStatusMessages["wait"], seconds?: number): string {
   if (!seconds) return t.fewMinutes;
   const minutes = Math.max(1, Math.ceil(seconds / 60));
+  if (minutes > 90) return t.hours.replace("{count}", String(Math.ceil(minutes / 60)));
   return minutes === 1 ? t.oneMinute : t.minutes.replace("{count}", String(minutes));
 }
 

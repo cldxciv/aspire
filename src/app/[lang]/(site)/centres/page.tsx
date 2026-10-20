@@ -23,7 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 /**
  * Centres (D-030 image-rich, D-031): every image is a labelled, non-nature stock education photo —
- * hero (seminar), one per centre card (classroom, notes, library, discussion; a note under the
+ * hero (teacher at a chalkboard; /programs has the seminar), one per centre card (classroom, notes, library, discussion; a note under the
  * directory says they are not taken at the centres), districts (planning notebook) and the
  * closing split (counselling conversation). No landscapes, and never result cards: the data does
  * not say where a student studied. No photo repeats on the page. With no visible centres
@@ -73,7 +73,7 @@ export default async function CentresPage() {
         crumbs={[{ label: t.crumb }]}
         homeLabel={common.labels.home}
         homeHref={localePath("/", locale)}
-        image={localizeImage(stockImages.seminarFromBehind, locale)}
+        image={localizeImage(stockImages.teacherChalkboard, locale)}
         imageLabel={stockLabel}
       />
 
@@ -121,6 +121,7 @@ export default async function CentresPage() {
           id="centre-districts-title"
           title={t.districts.title}
           description={servesListed ? t.districts.leadListed : t.districts.leadUnlisted}
+          stack="lg"
           action={servesListed && centres.some(isPlaceholder) ? <DemoBadge label={common.labels.demoPending} /> : undefined}
         />
         <DistrictsServed centres={centres} />

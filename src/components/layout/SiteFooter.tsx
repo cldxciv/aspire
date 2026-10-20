@@ -98,7 +98,7 @@ export async function SiteFooter() {
           </div>
 
           <nav aria-label={t.footer.navLabel} className="lg:pt-1">
-            <ul className="grid grid-cols-2 gap-x-6 sm:grid-cols-3 lg:grid-cols-5 lg:gap-x-4">
+            <ul className="grid grid-cols-2 gap-x-6 sm:grid-cols-3 lg:gap-x-4 xl:grid-cols-4">
               {siteLinks.map((link) => (
                 <li key={link.href}>
                   <Link

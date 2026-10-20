@@ -92,6 +92,7 @@ export default async function ResourcesPage() {
             labels={t.downloadCard}
             demoLabel={isPlaceholder(profile) ? tc.labels.demoPending : undefined}
             initialCount={DOWNLOADS_SHOWN}
+            columns="3md"
             more={t.downloads}
           />
         </Section>

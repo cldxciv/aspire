@@ -117,6 +117,10 @@ const planner: Messages<"planner"> = {
       examDateFar: "अगले तीन वर्षों के भीतर की तारीख चुनें।",
     },
   },
+  counsellor: {
+    text: "अपनी तैयारी की योजना में मदद चाहिए? Aspire के काउंसलर आपका मार्गदर्शन कर सकते हैं।",
+    cta: "काउंसलर से बात करें",
+  },
   overview: {
     title: "योजना का सार",
     days: "{days} दिन बाकी",

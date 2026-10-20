@@ -12,16 +12,24 @@ import { Container, HERO_PANEL } from "./Layout";
 
 export type Crumb = { label: string; href?: string };
 
-const HERO_SIZES = "(min-width: 1200px) 560px, (min-width: 1024px) 46vw, 100vw";
+/** Rendered media width: half the 1200px container from 1200, ~46vw at lg, ~44vw beside the copy on tablets (md). */
+const HERO_SIZES = "(min-width: 1200px) 560px, (min-width: 1024px) 46vw, (min-width: 768px) 44vw, 100vw";
+
+/**
+ * Copy beside the media from `md`: about 55/45 on tablets (a 4:3 media box), 50/50 from `lg` (16:10),
+ * so a portrait tablet never gets a strip of copy over a full-width photo (tablet audit R1).
+ */
+const SPLIT = "grid items-center gap-8 md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] md:gap-10 lg:grid-cols-2 lg:gap-14";
 
 /**
  * Interior-page hero with breadcrumbs (Home is prepended automatically). Renders the page's only <h1>.
  *
- * With `image` (D-030) it becomes a 50/50 split on `lg+`: copy on the left, a rounded photo on the
- * right (stacked under the copy on smaller screens). `imageLabel` adds a visible caption pill
+ * With `image` (D-030) it becomes a split from `md`: copy on the left, a rounded photo on the right
+ * (4:3 beside the copy on tablets, 16:10 at 50/50 from `lg`; stacked under the copy on phones).
+ * `imageLabel` adds a visible caption pill
  * (e.g. "Illustrative stock photo") — use it for stock or AI imagery.
  *
- * With `slides` (2+), the right-hand media is an `ImageCarousel` in the same 16/10 rounded box,
+ * With `slides` (2+), the right-hand media is an `ImageCarousel` in the same rounded box (`aspect="hero"`),
  * slide 1 preloaded at high fetch priority (`imagePriority`). Each slide carries its own visible
  * `label`. One slide renders as a static photo. `slides` wins over `image` when both are given.
  * Build slides with `heroSlides(images, label, locale)` from `@/components/ui/hero-slides`.
@@ -71,7 +79,7 @@ export function PageHero({
   const hasMedia = hasSlides || Boolean(image);
 
   const copy = (
-    <div className={cn(hasMedia && "lg:py-4")}>
+    <div className={cn(hasMedia && "md:py-2 lg:py-4")}>
       <nav aria-label={navLabel} className="mb-3 text-xs text-[#b9d3f3]">
         <ol className="flex flex-wrap items-center gap-1.5">
           {trail.map((crumb, i) => {
@@ -91,7 +99,15 @@ export function PageHero({
           })}
         </ol>
       </nav>
-      <h1 className="font-serif text-[clamp(2rem,4.5vw,2.75rem)] font-semibold leading-tight tracking-tight">{title}</h1>
+      {/* Beside media the h1 follows its column, not the viewport (~32px on tablets, ~34px at 1024, 44px from ~1330). */}
+      <h1
+        className={cn(
+          "font-serif text-[clamp(2rem,4.5vw,2.75rem)] font-semibold leading-tight tracking-tight text-balance",
+          hasMedia && "md:text-[clamp(2rem,3.6vw,2.5rem)] lg:text-[clamp(2rem,3.3vw,2.75rem)]",
+        )}
+      >
+        {title}
+      </h1>
       {lead && <div className="mt-4 max-w-3xl text-[#dbe8f7]">{lead}</div>}
       {children && <div className="mt-7 flex flex-wrap gap-3">{children}</div>}
     </div>
@@ -101,12 +117,12 @@ export function PageHero({
     <div data-surface="dark" className={cn(HERO_PANEL, "bg-linear-to-r from-navy to-navy-2 py-12 text-white md:py-16 lg:py-20")}>
       <Container gutters="section">
         {hasSlides ? (
-          <div className="grid items-center gap-8 md:gap-10 lg:grid-cols-2 lg:gap-14">
+          <div className={SPLIT}>
             {copy}
             <ImageCarousel
               slides={slides ?? []}
               labels={carouselLabels ?? common.carousel}
-              aspect="16/10"
+              aspect="hero"
               priority={imagePriority}
               tone="dark"
               sizes={HERO_SIZES}
@@ -114,10 +130,10 @@ export function PageHero({
             />
           </div>
         ) : image ? (
-          <div className="grid items-center gap-8 md:gap-10 lg:grid-cols-2 lg:gap-14">
+          <div className={SPLIT}>
             {copy}
             <figure className="relative">
-              <div className="relative aspect-16/10 overflow-hidden rounded-card shadow-card ring-1 ring-white/15">
+              <div className="relative aspect-16/10 overflow-hidden rounded-card shadow-card ring-1 ring-white/15 md:aspect-4/3 lg:aspect-16/10">
                 <Image
                   src={image.src}
                   alt={image.alt}

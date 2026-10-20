@@ -151,6 +151,8 @@ export default async function ProgramPage({ params }: PageProps<"/[lang]/program
         tone={tone("schedule")}
         image={photos.highlights}
         imageSide="left"
+        // Below lg the overview photo comes last, so this one follows its copy too (never photo, photo).
+        imageFirstOnMobile={false}
         imageLabel={stockLabel}
       >
         {program.highlights.length > 0 && (

@@ -7,12 +7,15 @@ import type { StockImageKey } from "@/content/images";
  * (contact-photos.test.ts checks it).
  */
 
-/** Hero carousel, in slide order: a class taking notes, an enquiry form, planning at a desk, practice. */
+/**
+ * Hero carousel, in slide order: a student taking notes, an enquiry form, planning at a desk, worked
+ * practice (1600px 3:2 sources where possible, so the hero stays sharp on DPR-2 tablets).
+ */
 export const CONTACT_HERO_KEYS = [
-  "studentsTakingNotes",
+  "youngStudentNotebook",
   "signingForm",
   "notebookPlanning",
-  "mathsNotebook",
+  "notebookSolutions",
 ] as const satisfies readonly StockImageKey[];
 
 /** Beside the enquiry form. */
