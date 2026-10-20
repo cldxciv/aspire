@@ -1,20 +1,25 @@
 /**
- * Portal auth configuration (docs/auth-and-portals.md, decision D-011).
- * Safe to import from the proxy, route handlers and server components.
+ * Portal auth configuration (docs/auth-and-portals.md, decisions D-011 and D-029).
+ * Safe to import from the proxy, route handlers and server components: no I/O and
+ * no database imports here.
  */
 
 /** Sent on every portal page and portal API response. */
 export const ROBOTS_NOINDEX = "noindex, nofollow";
 
+/** The session cookie set by `POST /api/auth/login` (HttpOnly, SameSite=Lax, Secure in production). */
+export const AUTH_COOKIE_NAME = "aspire_session";
+
 /**
- * Name of the identity provider's session cookie. The proxy uses it ONLY as an
- * optimistic "might be signed in" hint; pages and route handlers always verify
- * the session again through `getSession()`.
+ * Name of the session cookie, as seen by the proxy. The proxy uses it ONLY as an
+ * optimistic "might be signed in" hint; pages and route handlers always verify the
+ * session again through `getSession()`, which looks the token up in the database.
+ * Presence of the cookie grants nothing on its own.
  *
- * `null` = no identity provider is integrated, so the proxy treats every request
- * as signed out. Set this when a provider is connected (see the docs).
+ * Typed `string | null` on purpose: `null` would switch the hint off again (every
+ * request treated as signed out by the proxy).
  */
-export const SESSION_COOKIE_NAME: string | null = null;
+export const SESSION_COOKIE_NAME: string | null = AUTH_COOKIE_NAME;
 
 /**
  * Data-free portal preview shells.

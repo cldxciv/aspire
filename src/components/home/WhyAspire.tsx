@@ -1,75 +1,132 @@
-import { ArrowRight } from "lucide-react";
-import Link from "next/link";
-import { AspireImage, DemoBadge, Section, SectionHeading, type SectionTone } from "@/components/ui";
-import { aspireAssets } from "@/content/aspire-assets";
+import {
+  ArrowRight,
+  GraduationCap,
+  Lightbulb,
+  ListChecks,
+  MessageCircle,
+  Repeat,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
+import { ButtonLink, DemoBadge, type SectionTone } from "@/components/ui";
+import { stockImages } from "@/content/images";
+import type { Locale } from "@/i18n/config";
+import { messagesFor } from "@/i18n/messages";
+import { localePath } from "@/i18n/paths";
 import type { InstituteProfile } from "@/lib/types";
+import { BleedSplit } from "./BleedSplit";
+
+type Point = { title: string; detail: string; Icon: LucideIcon };
 
 /**
- * Feature icons (crop: "top-square", max 96px) assigned to approach points in order.
- * The source lists five points: micro-batches, resident mentorship, doubt clinic,
- * parent updates, faculty hours. Extra points reuse the list from the start.
+ * Honest fallback while no institute profile is publishable (production today): the
+ * About page's approach pillars (copy in `home.why.fallbackPoints`, mirroring the About
+ * page). Duplicated on purpose — keep both in sync. Wording needs Aspire's approval like
+ * the About copy.
  */
-const APPROACH_ICONS = [
-  aspireAssets.iconPersonalized,
-  aspireAssets.iconMentorship,
-  aspireAssets.iconExpertFaculty,
-  aspireAssets.iconStudentSupport,
-  aspireAssets.iconLearningCentres,
-];
+const FALLBACK_ICONS = { clarity: Lightbulb, practice: Repeat, feedback: ListChecks, guidance: MessageCircle } as const;
+
+/** Decorative icons for the profile's first four approach points, by position. */
+const PROFILE_ICONS: LucideIcon[] = [Users, GraduationCap, MessageCircle, ListChecks];
 
 /**
- * "Why Aspire" — the institute profile's approach points with the Aspire feature icons.
- * Rendered only when getInstituteProfile() returns a profile with approach points; the
- * whole profile is one record, so the section carries one DEMO badge while it is a placeholder.
+ * First sentence (or first clause before a semicolon) of a description, for "title plus
+ * one line"; the whole text when it has no break. Words are never changed.
  */
-export function WhyAspire({ profile, tone = "surface" }: { profile: InstituteProfile; tone?: SectionTone }) {
-  const placeholder = profile.status === "placeholder";
+function firstSentence(text: string): string {
+  const match = text.trim().match(/^.*?(?:[.!?](?=\s|$)|;)/);
+  return (match ? match[0] : text).trim().replace(/;$/, ".");
+}
+
+/**
+ * Why Aspire / story (plan §4.5, D-030): a half-bleed stock Himalayan photo (labelled) with a
+ * decorative serif-italic line, the profile's mission and summary with an "Our story" link to
+ * /about, and four gold-circle points from `profile.approach`. The profile is one
+ * record, so the section carries one DEMO badge while it is a placeholder. With no
+ * profile (production today) it shows generic copy and the About page's four neutral
+ * approach points. Designed for light tones.
+ */
+export function WhyAspire({
+  profile,
+  locale,
+  tone = "white",
+}: {
+  profile: InstituteProfile | null;
+  locale: Locale;
+  tone?: SectionTone;
+}) {
+  const t = messagesFor(locale, "home").why;
+  const common = messagesFor(locale, "common");
+  const fallbackPoints: Point[] = (Object.keys(FALLBACK_ICONS) as (keyof typeof FALLBACK_ICONS)[]).map((key) => ({
+    Icon: FALLBACK_ICONS[key],
+    ...t.fallbackPoints[key],
+  }));
+  const points: Point[] =
+    profile && profile.approach.length > 0
+      ? profile.approach.slice(0, 4).map((point, index) => ({
+          title: point.title,
+          detail: firstSentence(point.description),
+          Icon: PROFILE_ICONS[index],
+        }))
+      : fallbackPoints;
 
   return (
-    <Section tone={tone} aria-labelledby="home-approach-title">
-      <SectionHeading
-        id="home-approach-title"
-        eyebrow="Why Aspire"
-        title="How learning works at Aspire"
-        description={
+    <BleedSplit
+      aria-labelledby="home-approach-title"
+      tone={tone === "surface" ? "surface" : "white"}
+      imageSide="left"
+      image={stockImages.himalayaBlueRidge}
+      imageLabel={common.labels.illustrativeStockPhoto}
+      decorative
+      overlay={
+        <p
+          aria-hidden="true"
+          className="font-serif text-3xl leading-tight text-white italic md:text-4xl lg:text-5xl [&:lang(hi)]:not-italic [&:lang(hi)]:leading-snug"
+        >
+          {t.imageLine1}
+          <br />
+          {t.imageLine2}
+        </p>
+      }
+    >
+      <div>
+        <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#7a5600]">{t.eyebrow}</p>
+        <h2
+          id="home-approach-title"
+          className="mt-2 font-serif text-[clamp(1.75rem,3.2vw,2.5rem)] font-semibold leading-[1.12] tracking-tight text-navy [&:lang(hi)]:leading-[1.3]"
+        >
+          {t.title}
+        </h2>
+        {profile ? (
           <>
-            {profile.mission.title}
-            {placeholder && (
-              <>
-                {" "}
-                <DemoBadge className="align-middle" />
-              </>
-            )}
+            <p className="mt-4 text-lg font-semibold leading-snug text-navy">{profile.mission.title}</p>
+            <p className="mt-3 text-muted">{profile.summary}</p>
+            {profile.status === "placeholder" && <DemoBadge label={common.labels.demoPending} className="mt-3" />}
           </>
-        }
-      />
-      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {profile.approach.map((point, index) => (
-          <li key={point.title} className="flex gap-4 rounded-card border border-line bg-white p-5 shadow-soft">
-            <AspireImage
-              asset={APPROACH_ICONS[index % APPROACH_ICONS.length]}
-              rounded
-              className="w-14 shrink-0"
-            />
-            <div>
-              <h3 className="font-bold leading-snug text-navy">{point.title}</h3>
-              <p className="mt-1 text-sm text-muted">{point.description}</p>
+        ) : (
+          <p className="mt-4 text-muted">{t.fallbackLead}</p>
+        )}
+        <ButtonLink href={localePath("/about", locale)} className="mt-6">
+          {t.cta} <ArrowRight aria-hidden="true" className="size-4" />
+        </ButtonLink>
+      </div>
+
+      <ul className="mt-8 grid gap-5 sm:grid-cols-2">
+        {points.map(({ title, detail, Icon }) => (
+          <li key={title} className="flex gap-4">
+            <span
+              aria-hidden="true"
+              className="grid size-12 shrink-0 place-items-center rounded-full border-2 border-gold bg-gold-soft text-[#8a6100]"
+            >
+              <Icon className="size-5" strokeWidth={1.8} />
+            </span>
+            <div className="min-w-0">
+              <h3 className="font-serif text-lg font-semibold leading-snug text-navy">{title}</h3>
+              <p className="mt-0.5 text-sm text-muted">{detail}</p>
             </div>
           </li>
         ))}
-        <li className="flex">
-          <Link
-            href="/about"
-            className="flex min-h-11 w-full flex-col justify-center rounded-card border border-dashed border-[#b9cbe0] bg-[#f8fbff] p-5 text-navy transition hover:border-blue hover:bg-[#edf5ff]"
-          >
-            <span className="font-bold">The story behind the approach</span>
-            <span className="mt-1 text-sm text-muted">Read how and why Aspire began.</span>
-            <span className="mt-3 inline-flex items-center gap-1 text-sm font-extrabold text-blue">
-              About Aspire <ArrowRight aria-hidden="true" className="size-4" />
-            </span>
-          </Link>
-        </li>
       </ul>
-    </Section>
+    </BleedSplit>
   );
 }

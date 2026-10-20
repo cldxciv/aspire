@@ -1,0 +1,113 @@
+import type { Messages } from "../types";
+
+/**
+ * Namespace "common" — Hindi. MACHINE DRAFT (D-028): needs native review before launch
+ * (see the Hindi review register). Brand names (Aspire IIT & Medical, IIT JEE, NEET) stay in Latin script.
+ */
+const common: Messages<"common"> = {
+  meta: {
+    defaultTitle: "Aspire IIT & Medical — IIT JEE, NEET और फ़ाउंडेशन कोचिंग",
+    description: "हिमाचल प्रदेश के विद्यार्थियों के लिए IIT JEE, NEET, फ़ाउंडेशन और एकीकृत स्कूल प्रोग्राम।",
+  },
+  skipLink: "मुख्य सामग्री पर जाएँ",
+  logo: {
+    homeLabel: "Aspire IIT & Medical — होम पेज",
+  },
+  previewBanner: {
+    shortTitle: "प्रीव्यू",
+    shortDetail: "डेमो आइटम अभी सत्यापित नहीं हैं",
+    longTitle: "प्रीव्यू बिल्ड",
+    longDetail: "‘डेमो’ चिह्नित आइटम अस्थायी हैं — Aspire द्वारा इनका सत्यापन बाकी है।",
+  },
+  nav: {
+    mainLabel: "मुख्य",
+    items: {
+      home: "होम",
+      programs: "प्रोग्राम",
+      allPrograms: "सभी प्रोग्राम",
+      admissions: "प्रवेश",
+      results: "परिणाम",
+      centres: "केंद्र",
+      hostels: "हॉस्टल",
+      about: "परिचय",
+      resources: "संसाधन",
+      allResources: "सभी संसाधन",
+      articles: "लेख और मार्गदर्शन",
+      downloads: "डाउनलोड",
+      admissionsFaqs: "प्रवेश संबंधी प्रश्न",
+      contact: "संपर्क",
+      studentLogin: "विद्यार्थी लॉगिन",
+      parentLogin: "अभिभावक लॉगिन",
+    },
+    descriptions: {
+      allPrograms: "IIT-JEE, NEET, फ़ाउंडेशन और ड्रॉपर प्रोग्राम",
+      admissions: "पूछताछ कैसे करें और आगे क्या होता है",
+    },
+    currentSection: "(वर्तमान अनुभाग)",
+    openMenu: "मेन्यू खोलें",
+    closeMenu: "मेन्यू बंद करें",
+    portalLogin: "पोर्टल लॉगिन",
+    enquireNow: "पूछताछ करें",
+    loginLabel: "विद्यार्थी और अभिभावक लॉगिन",
+  },
+  languageSwitcher: {
+    // Bilingual on purpose: a visitor who cannot read Hindi can still find the switcher.
+    label: "भाषा (Language)",
+  },
+  footer: {
+    blurb: "स्पष्टता, मेहनत और सही मार्गदर्शन के साथ विद्यार्थियों को आगे बढ़ने में मदद।",
+    navLabel: "फ़ुटर",
+    legalNavLabel: "कानूनी और पोर्टल लिंक",
+    followUs: "Aspire को फ़ॉलो करें",
+    socialLink: "{platform} पर Aspire",
+    whatsapp: "WhatsApp {number}",
+    contactDemo: "डेमो · संपर्क विवरण का सत्यापन बाकी है",
+    socialDemo: "डेमो · सोशल लिंक का सत्यापन बाकी है",
+    privacy: "गोपनीयता",
+    terms: "नियम व शर्तें",
+    sitemap: "साइटमैप",
+  },
+  notFound: {
+    metaTitle: "पेज नहीं मिला",
+    eyebrow: "404",
+    title: "हमें यह पेज नहीं मिला",
+    body: "हो सकता है पेज हटा दिया गया हो, या लिंक गलत हो।",
+    home: "होम पेज पर जाएँ",
+    contact: "संपर्क करें",
+  },
+  errorPage: {
+    eyebrow: "कुछ गड़बड़ हो गई",
+    title: "हम यह पेज लोड नहीं कर सके",
+    body: "आमतौर पर यह समस्या थोड़ी देर की होती है। कृपया फिर से कोशिश करें — अगर ऐसा बार-बार हो, तो कुछ देर बाद दोबारा आएँ।",
+  },
+  buttons: {
+    enquireNow: "पूछताछ करें",
+    bookCounselling: "काउंसलिंग बुक करें",
+    contactUs: "संपर्क करें",
+    goHome: "होम पेज पर जाएँ",
+    tryAgain: "फिर से कोशिश करें",
+    readMore: "और पढ़ें",
+    learnMore: "और जानें",
+    viewAll: "सभी देखें",
+    back: "पीछे",
+    next: "आगे",
+    previous: "पिछला",
+    close: "बंद करें",
+    submit: "जमा करें",
+  },
+  labels: {
+    home: "होम",
+    breadcrumb: "ब्रेडक्रम्ब",
+    demo: "डेमो",
+    demoPending: "डेमो · सत्यापन बाकी",
+    illustrativeImage: "सांकेतिक चित्र",
+    illustrativeStockPhoto: "सांकेतिक स्टॉक फ़ोटो",
+    illustration: "चित्रांकन",
+    opensInNewTab: "(नए टैब में खुलता है)",
+    loading: "लोड हो रहा है…",
+    required: "आवश्यक",
+    optional: "वैकल्पिक",
+  },
+};
+
+export default common;

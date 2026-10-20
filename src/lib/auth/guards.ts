@@ -8,8 +8,14 @@ import { getSession } from "./session";
 
 export type GuardResult = { ok: true; session: Session } | { ok: false; response: NextResponse<ApiError> };
 
+export const PASSWORD_CHANGE_REQUIRED_MESSAGE = "Please change your temporary password before continuing.";
+
 function toGuardResult(decision: AuthDecision): GuardResult {
-  return decision.ok ? decision : { ok: false, response: portalApiError(decision.error) };
+  if (decision.ok) return decision;
+  if (decision.error === "password_change_required") {
+    return { ok: false, response: portalApiError("forbidden", PASSWORD_CHANGE_REQUIRED_MESSAGE) };
+  }
+  return { ok: false, response: portalApiError(decision.error) };
 }
 
 /**

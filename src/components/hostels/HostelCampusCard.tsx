@@ -1,7 +1,11 @@
 import { ArrowRight, Phone } from "lucide-react";
 import Link from "next/link";
-import { telHref } from "@/components/centres/contact-links";
+import { telHref } from "@/components/contact/contact-links";
 import { Badge, DemoBadge } from "@/components/ui";
+import type { Locale } from "@/i18n/config";
+import { format } from "@/i18n/format";
+import type { Messages } from "@/i18n/messages/types";
+import { localePath } from "@/i18n/paths";
 import type { CampusHostel } from "@/lib/types";
 
 /**
@@ -13,13 +17,18 @@ import type { CampusHostel } from "@/lib/types";
 export function HostelCampusCard({
   campus,
   centreName,
-  placeholder,
+  locale,
+  messages,
+  demoLabel,
 }: {
   campus: CampusHostel;
   centreName: string;
-  placeholder: boolean;
+  locale: Locale;
+  messages: Messages<"hostels">["card"];
+  /** DEMO badge label (localised) for placeholder content; omitted for verified content. */
+  demoLabel?: string;
 }) {
-  const tel = telHref(campus.wardenPhone);
+  const tel = campus.wardenPhone ? telHref(campus.wardenPhone) : null;
   const headingId = `hostel-${campus.centreSlug}-name`;
 
   return (
@@ -35,24 +44,24 @@ export function HostelCampusCard({
           </h3>
           <p className="text-sm font-semibold text-blue">{campus.note}</p>
         </div>
-        {placeholder && <DemoBadge label="Demo" />}
+        {demoLabel && <DemoBadge label={demoLabel} />}
       </div>
 
       {campus.blocks.length > 0 && (
         <ul className="mt-4 space-y-3">
           {campus.blocks.map((block) => {
             const details = [
-              { label: "Distance", value: block.distance },
-              { label: "Rooms", value: block.rooms },
-              { label: "Supervision", value: block.supervision },
-              { label: "Capacity", value: block.capacity },
+              { label: messages.distance, value: block.distance },
+              { label: messages.rooms, value: block.rooms },
+              { label: messages.supervision, value: block.supervision },
+              { label: messages.capacity, value: block.capacity },
             ].filter((d): d is { label: string; value: string } => Boolean(d.value?.trim()));
             return (
               <li key={block.name} className="rounded-control border border-line bg-surface p-3.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-bold text-navy">{block.name}</p>
                   <Badge variant={block.available ? "success" : "neutral"}>
-                    {block.available ? "Available" : "Not available"}
+                    {block.available ? messages.available : messages.notAvailable}
                   </Badge>
                 </div>
                 {details.length > 0 && (
@@ -75,14 +84,15 @@ export function HostelCampusCard({
         {tel && campus.wardenPhone && (
           <a href={tel} className="inline-flex min-h-11 items-center gap-1.5 font-bold text-navy hover:underline">
             <Phone aria-hidden="true" className="size-4 text-blue" />
-            Warden desk: {campus.wardenPhone}
+            {format(messages.wardenDesk, { phone: campus.wardenPhone })}
           </a>
         )}
         <Link
-          href={`/centres#${campus.centreSlug}`}
+          href={localePath(`/centres#${campus.centreSlug}`, locale)}
           className="inline-flex min-h-11 items-center gap-1 font-bold text-blue hover:underline"
         >
-          Campus details<span className="sr-only"> for {centreName}</span>
+          {messages.campusDetails}
+          <span className="sr-only">{format(messages.campusDetailsFor, { centre: centreName })}</span>
           <ArrowRight aria-hidden="true" className="size-4" />
         </Link>
       </div>

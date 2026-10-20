@@ -1,73 +1,51 @@
-import { MapPin, Phone } from "lucide-react";
-import Link from "next/link";
 import { Suspense } from "react";
-import { ButtonLink } from "@/components/ui/Button";
 import { Container } from "@/components/ui/Layout";
-import { portalNav, siteConfig } from "@/config/site";
+import { getLocale, getMessages } from "@/i18n/server";
 import { showPlaceholderContent } from "@/lib/content-mode";
-import { getContactDetails } from "@/lib/data";
 import { Logo } from "./Logo";
-import { DesktopNavLinks, MainNav } from "./MainNav";
+import { HeaderNav, MainNav, type HeaderMessages } from "./MainNav";
 
+/**
+ * Site header per the approved design (reference/homepage/01, D-022): one sticky
+ * navy bar (72px from md, 64px below) — logo, main nav with Programs/Resources
+ * disclosures from xl, Enquire Now, language switcher, login icon, hamburger below xl.
+ * Gold focus rings come from `data-surface="dark"` (D-024). Strings come from the
+ * `common` messages of the current locale (D-028).
+ *
+ * Preview builds get a slim, non-sticky banner above the bar.
+ */
 export async function SiteHeader() {
+  const [locale, t] = await Promise.all([getLocale(), getMessages("common")]);
   const preview = showPlaceholderContent();
-  // Imported contact details are placeholders: getContactDetails() returns null in production until verified.
-  const contact = await getContactDetails();
-  const verifiedPhone = siteConfig.contact.phone;
-  const phone = contact?.phone ?? (verifiedPhone ? { display: verifiedPhone, tel: verifiedPhone.replace(/\s/g, "") } : null);
+  const navMessages: HeaderMessages = { nav: t.nav, languageSwitcher: t.languageSwitcher };
 
   return (
     <>
       {preview && (
-        <p className="bg-gold-soft px-4 py-1.5 text-center text-xs text-[#5c4a12]">
-          <strong>Preview build.</strong> Items marked DEMO are placeholders awaiting verification by Aspire.
+        <p
+          role="note"
+          className="h-6 overflow-hidden text-ellipsis whitespace-nowrap bg-gold-soft px-4 text-center text-[11px] leading-6 text-[#5c4a12] sm:text-xs sm:leading-6"
+        >
+          <span className="sm:hidden">
+            <strong>{t.previewBanner.shortTitle}</strong> · {t.previewBanner.shortDetail}
+          </span>
+          <span className="hidden sm:inline">
+            <strong>{t.previewBanner.longTitle}</strong> · {t.previewBanner.longDetail}
+          </span>
         </p>
       )}
 
-      <div className="bg-navy text-xs text-[#eaf2ff]">
-        <Container className="flex flex-wrap items-center justify-between gap-x-4 py-0.5">
-          <span className="hidden sm:inline">{siteConfig.tagline}</span>
-          <span className="flex items-center gap-3">
-            <span className="flex items-center gap-1">
-              <MapPin aria-hidden="true" className="size-3.5" /> {siteConfig.region}
-            </span>
-            {phone && (
-              <a href={`tel:${phone.tel}`} className="inline-flex min-h-9 items-center gap-1 hover:underline">
-                <Phone aria-hidden="true" className="size-3.5" /> {phone.display}
-              </a>
-            )}
-          </span>
-          <nav aria-label="Portal and admissions links" className="flex items-center gap-1">
-            {portalNav.map((item) => (
-              <Link key={item.href} href={item.href} className="inline-flex min-h-9 items-center px-1.5 hover:underline">
-                {item.label}
-              </Link>
-            ))}
-            <Link href="/admissions" className="inline-flex min-h-9 items-center px-1.5 hover:underline">
-              Admissions
-            </Link>
-          </nav>
+      <header
+        data-surface="dark"
+        className="sticky top-0 z-40 bg-navy text-white shadow-[0_4px_18px_rgb(3_16_32/0.18)]"
+      >
+        <Container className="flex h-16 items-center gap-3 md:h-[72px] xl:gap-5">
+          <Logo tone="dark" locale={locale} label={t.logo.homeLabel} className="shrink-0" />
+          {/* usePathname may suspend while prerendering routes with unknown params: same layout, no active state. */}
+          <Suspense fallback={<HeaderNav pathname={null} locale={locale} messages={navMessages} />}>
+            <MainNav locale={locale} messages={navMessages} />
+          </Suspense>
         </Container>
-      </div>
-
-      <header className="sticky top-0 z-30 border-b border-line bg-white shadow-[0_3px_12px_rgb(9_40_75/0.04)]">
-        <nav aria-label="Main" className="relative">
-          <Container className="flex items-center gap-6 py-3">
-            <Logo className="shrink-0" />
-            {/* usePathname may suspend during prerender; fall back to links without active state. */}
-            <Suspense fallback={<DesktopNavLinks pathname={null} />}>
-              <MainNav />
-            </Suspense>
-            <div className="hidden items-center gap-3 lg:flex">
-              <Link href="/login" className="text-[13px] font-extrabold text-blue hover:underline">
-                Login
-              </Link>
-              <ButtonLink href="/admissions#enquiry" size="sm">
-                Enquire Now
-              </ButtonLink>
-            </div>
-          </Container>
-        </nav>
       </header>
     </>
   );

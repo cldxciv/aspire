@@ -1,3 +1,5 @@
+import type { Messages } from "@/i18n/messages/types";
+
 /**
  * Site-wide configuration. Contact fields stay `null` until Aspire verifies
  * them (see docs/content-verification.md) — UI must hide null fields rather
@@ -19,52 +21,50 @@ export const siteConfig = {
   },
 } as const;
 
-export type NavItem = { label: string; href: string };
+/** Label keys: `common.nav.items` / `common.nav.descriptions` in src/i18n/messages/<locale>/common.ts. */
+export type NavLabelKey = keyof Messages<"common">["nav"]["items"];
+export type NavDescriptionKey = keyof Messages<"common">["nav"]["descriptions"];
 
+/**
+ * A navigation entry. `href` is the locale-free path; render it through `localePath(href, locale)`
+ * and the label through the current locale's `common` messages (D-028).
+ */
+export type NavItem = {
+  labelKey: NavLabelKey;
+  href: string;
+  /** Optional dropdown links (rendered as an accessible disclosure, not role=menu). */
+  children?: { labelKey: NavLabelKey; href: string; descriptionKey?: NavDescriptionKey }[];
+};
+
+/** Main navigation per the approved homepage design (D-022). Order matters. */
 export const mainNav: NavItem[] = [
-  { label: "Programs", href: "/programs" },
-  { label: "About", href: "/about" },
-  { label: "Results", href: "/results" },
-  { label: "Faculty", href: "/faculty" },
-  { label: "Centres", href: "/centres" },
-  { label: "Admissions", href: "/admissions" },
-  { label: "Resources", href: "/resources" },
-  { label: "Contact", href: "/contact" },
+  { labelKey: "home", href: "/" },
+  {
+    labelKey: "programs",
+    href: "/programs",
+    children: [
+      { labelKey: "allPrograms", href: "/programs", descriptionKey: "allPrograms" },
+      { labelKey: "admissions", href: "/admissions", descriptionKey: "admissions" },
+    ],
+  },
+  { labelKey: "results", href: "/results" },
+  { labelKey: "centres", href: "/centres" },
+  { labelKey: "hostels", href: "/hostels" },
+  { labelKey: "about", href: "/about" },
+  {
+    labelKey: "resources",
+    href: "/resources",
+    children: [
+      { labelKey: "allResources", href: "/resources" },
+      { labelKey: "articles", href: "/resources#articles" },
+      { labelKey: "downloads", href: "/resources#downloads" },
+      { labelKey: "admissionsFaqs", href: "/admissions#faqs" },
+    ],
+  },
+  { labelKey: "contact", href: "/contact" },
 ];
 
 export const portalNav: NavItem[] = [
-  { label: "Student Login", href: "/login?role=student" },
-  { label: "Parent Login", href: "/login?role=parent" },
-];
-
-export const footerNav: { title: string; items: NavItem[] }[] = [
-  {
-    title: "Explore",
-    items: [
-      { label: "Programs", href: "/programs" },
-      { label: "Results archive", href: "/results" },
-      { label: "Our story", href: "/about" },
-      { label: "Faculty", href: "/faculty" },
-      { label: "Centre directory", href: "/centres" },
-      { label: "Hostels", href: "/hostels" },
-    ],
-  },
-  {
-    title: "Students & parents",
-    items: [
-      { label: "Admissions", href: "/admissions" },
-      { label: "Resources", href: "/resources" },
-      { label: "Student portal", href: "/student" },
-      { label: "Parent portal", href: "/parent" },
-    ],
-  },
-  {
-    title: "Connect",
-    items: [
-      { label: "Contact us", href: "/contact" },
-      { label: "Book counselling", href: "/admissions#enquiry" },
-      { label: "Privacy notice", href: "/privacy" },
-      { label: "Terms", href: "/terms" },
-    ],
-  },
+  { labelKey: "studentLogin", href: "/login?role=student" },
+  { labelKey: "parentLogin", href: "/login?role=parent" },
 ];

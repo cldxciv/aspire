@@ -1,9 +1,10 @@
+import { cn } from "@/lib/cn";
 import type { ApproachPoint } from "@/lib/types";
 
 /** Teaching principles ("what we value") as an ordered list of gold-edged notes (mockup `.milestone`). */
-export function PrinciplesList({ principles }: { principles: ApproachPoint[] }) {
+export function PrinciplesList({ principles, columns = 2 }: { principles: ApproachPoint[]; columns?: 1 | 2 }) {
   return (
-    <ol className="grid gap-3 sm:grid-cols-2">
+    <ol className={cn("grid gap-3", columns === 2 && "sm:grid-cols-2")}>
       {principles.map((principle, index) => (
         <li
           key={principle.title}

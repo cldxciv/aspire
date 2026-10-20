@@ -15,6 +15,7 @@ const PII = {
   phone: "+91 98765 43210",
   email: "pii-check@example.com",
   message: "Private message marker 7f3a",
+  guardianName: "Guardian Marker Quokka",
 };
 
 const validQuick = {
@@ -89,7 +90,7 @@ beforeEach(() => {
 afterEach(() => {
   // PII must never reach the logs, whatever the outcome of the test.
   const text = loggedText();
-  for (const value of [PII.name, PII.email, PII.message, "98765", "9876543210", "198.51.100."]) {
+  for (const value of [PII.name, PII.email, PII.message, PII.guardianName, "98765", "9876543210", "198.51.100."]) {
     expect(text).not.toContain(value);
   }
   expect(text).not.toContain(WEBHOOK_URL);
@@ -381,5 +382,154 @@ describe("POST /api/enquiries — webhook destination", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     const warnings = loggedEntries().filter((entry) => entry.event === "config");
     expect(warnings).toEqual([expect.objectContaining({ code: "enquiry_webhook_secret_missing", level: "warn" })]);
+  });
+});
+
+// ── hero: 3-step home page form (D-021) ──────────────────────────────────────
+
+const validHero = {
+  source: "hero",
+  name: PII.name,
+  classOrExam: "neet-dropper",
+  guardianName: PII.guardianName,
+  phone: PII.phone,
+  email: PII.email,
+  preferredCentre: "shimla",
+  message: PII.message,
+  consent: true,
+  website: "",
+};
+
+describe("POST /api/enquiries — hero form", () => {
+  it("validates and answers 200 not_configured without sending anything", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const response = await POST(enquiryRequest(validHero));
+    expect(response.status).toBe(200);
+    expect(await expectNoStoreJson(response)).toEqual({
+      ok: true,
+      status: "not_configured",
+      message: ENQUIRY_MESSAGES.notConfigured,
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(loggedEntries()).toContainEqual(
+      expect.objectContaining({ event: "enquiry", outcome: "not_configured", source: "hero" }),
+    );
+  });
+
+  it("forwards currentClass + programInterest (not classOrExam) to the webhook and answers 201", async () => {
+    useWebhook();
+    const fetchSpy = vi.fn<typeof fetch>(async () => new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const response = await POST(enquiryRequest(validHero));
+    expect(response.status).toBe(201);
+    const body = await expectNoStoreJson(response);
+    expect(body).toMatchObject({ ok: true, status: "received", message: ENQUIRY_MESSAGES.received });
+    expect(body.reference).toMatch(/^ENQ-[0-9A-Z]{10}$/);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [, init] = fetchSpy.mock.calls[0];
+    const sent = JSON.parse(init?.body as string);
+    expect(sent.reference).toBe(body.reference);
+    expect(sent.enquiry).toEqual({
+      source: "hero",
+      name: PII.name,
+      guardianName: PII.guardianName,
+      phone: "+919876543210",
+      email: PII.email,
+      preferredCentre: "shimla",
+      message: PII.message,
+      consent: true,
+      currentClass: "dropper",
+      programInterest: "neet",
+    });
+    expect(new Headers(init?.headers).get(WEBHOOK_SIGNATURE_HEADER)).toBe(
+      signWebhookBody(init?.body as string, WEBHOOK_SECRET),
+    );
+    expect(loggedEntries()).toContainEqual(
+      expect.objectContaining({ outcome: "received", reference: body.reference, source: "hero" }),
+    );
+  });
+
+  it("does not forward a blank centre, email or message (the hero UI sends no email)", async () => {
+    useWebhook();
+    const fetchSpy = vi.fn<typeof fetch>(async () => new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const { email: _email, ...withoutEmail } = validHero;
+    void _email;
+    const response = await POST(enquiryRequest({ ...withoutEmail, preferredCentre: "", message: "" }));
+    expect(response.status).toBe(201);
+    const sent = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
+    expect(Object.keys(sent.enquiry).sort()).toEqual(
+      ["consent", "currentClass", "guardianName", "name", "phone", "programInterest", "source"].sort(),
+    );
+  });
+
+  it("returns 422 on classOrExam for a combination that is not offered", async () => {
+    const response = await POST(enquiryRequest({ ...validHero, classOrExam: "neet-class-6-8" }));
+    expect(response.status).toBe(422);
+    expect((await expectNoStoreJson(response)).fieldErrors).toEqual({
+      classOrExam: ["Select a class / target exam"],
+    });
+  });
+
+  it.each([undefined, "", "   ", "Q"])("returns 422 on guardianName when it is %j (required for hero)", async (guardianName) => {
+    const response = await POST(enquiryRequest({ ...validHero, guardianName }));
+    expect(response.status).toBe(422);
+    expect((await response.json()).fieldErrors).toEqual({ guardianName: ["Enter the parent or guardian's name"] });
+  });
+
+  it("returns 422 when preferredCentre is free text", async () => {
+    const response = await POST(enquiryRequest({ ...validHero, preferredCentre: "Near the bus stand" }));
+    expect(response.status).toBe(422);
+    expect((await response.json()).fieldErrors).toEqual({ preferredCentre: ["Select a centre from the list"] });
+  });
+
+  it("returns 422 when preferredCentre is a centre that is not published", async () => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "false"); // placeholder centres such as "shimla" are hidden
+    const response = await POST(enquiryRequest(validHero));
+    expect(response.status).toBe(422);
+    expect((await response.json()).fieldErrors).toEqual({ preferredCentre: ["Select a centre from the list"] });
+    expect(loggedEntries()).toContainEqual(expect.objectContaining({ outcome: "validation_failed", source: "hero" }));
+  });
+
+  it("returns 422 with the missing step fields when only step 1 was filled", async () => {
+    const response = await POST(
+      enquiryRequest({ source: "hero", name: PII.name, classOrExam: "jee-class-11", phone: "", website: "" }),
+    );
+    expect(response.status).toBe(422);
+    expect(Object.keys((await response.json()).fieldErrors).sort()).toEqual(["consent", "guardianName", "phone"]);
+  });
+
+  it("honeypot: mirrors the genuine response and never calls the webhook", async () => {
+    const spam = { ...validHero, website: "http://spam.example" };
+    const none = await POST(enquiryRequest(spam));
+    expect(none.status).toBe(200);
+    expect((await none.json()).status).toBe("not_configured");
+
+    useWebhook();
+    const fetchSpy = vi.fn<typeof fetch>(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const webhook = await POST(enquiryRequest(spam));
+    expect(webhook.status).toBe(201);
+    expect((await webhook.json()).reference).toMatch(/^ENQ-[0-9A-Z]{10}$/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(loggedEntries().filter((entry) => entry.outcome === "honeypot")).toHaveLength(2);
+  });
+
+  it("accepts a worst-case hero payload, which stays under the 10 KB limit", async () => {
+    const payload = {
+      ...validHero,
+      name: "अ".repeat(80),
+      guardianName: "ब".repeat(80),
+      message: "म".repeat(1000),
+    };
+    expect(new TextEncoder().encode(JSON.stringify(payload)).length).toBeLessThan(10 * 1024);
+    const response = await POST(enquiryRequest(payload));
+    expect(response.status).toBe(200);
+    expect((await response.json()).status).toBe("not_configured");
   });
 });

@@ -11,7 +11,7 @@ vi.mock("next/navigation", () => ({
 
 const { getSession } = await import("./session");
 const { requireRole, requireStudentRecord } = await import("./guards");
-const { requirePortalAccess } = await import("./portal-access");
+const { requirePortalAccess, requireSignedIn } = await import("./portal-access");
 
 const mockedGetSession = vi.mocked(getSession);
 
@@ -116,5 +116,55 @@ describe("requirePortalAccess (portal pages)", () => {
     vi.stubEnv("PORTAL_PREVIEW", "false");
     signedInAs(parent);
     await expect(requirePortalAccess("parent", "/parent")).resolves.toEqual({ kind: "session", session: parent });
+  });
+
+  it("redirects Hindi portal pages to the Hindi login with a locale-free next", async () => {
+    vi.stubEnv("PORTAL_PREVIEW", "false");
+    signedInAs(null);
+    await expect(requirePortalAccess("student", "/student/timetable", "hi")).rejects.toThrow(
+      "NEXT_REDIRECT /hi/login?next=%2Fstudent%2Ftimetable",
+    );
+    await expect(requirePortalAccess("admin", "/admin", "en")).rejects.toThrow("NEXT_REDIRECT /login?next=%2Fadmin");
+  });
+});
+
+describe("temporary passwords", () => {
+  it("requireRole answers 403 until a temporary password is changed", async () => {
+    signedInAs({ ...admin, mustChangePassword: true });
+    const result = await requireRole("admin");
+    await expectError(result, 403, "forbidden");
+  });
+
+  it("requireStudentRecord also holds back a parent with a temporary password", async () => {
+    signedInAs({ ...parent, mustChangePassword: true });
+    await expectError(await requireStudentRecord("learner-1", "parent"), 403, "forbidden");
+  });
+
+  it("portal pages send the account to the change-password page (with next), previews on or off", async () => {
+    vi.stubEnv("PORTAL_PREVIEW", "false");
+    signedInAs({ ...student, mustChangePassword: true });
+    await expect(requirePortalAccess("student", "/student")).rejects.toThrow(
+      "NEXT_REDIRECT /account/password?next=%2Fstudent",
+    );
+    vi.stubEnv("PORTAL_PREVIEW", "true");
+    await expect(requirePortalAccess("student", "/student/progress", "hi")).rejects.toThrow(
+      "NEXT_REDIRECT /hi/account/password?next=%2Fstudent%2Fprogress",
+    );
+    // Even another area's preview shell is held back until the password is changed.
+    await expect(requirePortalAccess("admin", "/admin")).rejects.toThrow("NEXT_REDIRECT /account/password?next=%2Fadmin");
+  });
+});
+
+describe("requireSignedIn (account pages)", () => {
+  it("returns any verified session, including one with a temporary password", async () => {
+    signedInAs({ ...admin, mustChangePassword: true });
+    await expect(requireSignedIn("en")).resolves.toEqual({ ...admin, mustChangePassword: true });
+  });
+
+  it("redirects signed-out visitors to the login page of their locale, previews on or off", async () => {
+    vi.stubEnv("PORTAL_PREVIEW", "true");
+    signedInAs(null);
+    await expect(requireSignedIn("hi")).rejects.toThrow("NEXT_REDIRECT /hi/login");
+    await expect(requireSignedIn()).rejects.toThrow("NEXT_REDIRECT /login");
   });
 });

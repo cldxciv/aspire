@@ -2,10 +2,23 @@ import { ArrowRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { AspireImage, ButtonLink, Card, DemoBadge } from "@/components/ui";
+import type { Locale } from "@/i18n/config";
+import { format } from "@/i18n/format";
+import type { Messages } from "@/i18n/messages/types";
+import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
 import type { Program } from "@/lib/types";
-import { EXAM_META, programTracks } from "./exam-meta";
+import { EXAM_META, programTracks, trackLabel } from "./exam-meta";
 import { cardFacts } from "./program-facts";
+
+/**
+ * The `programs` messages a card reads (plus the DEMO label and, for the stock banner photo,
+ * the visible "Illustrative stock photo" label from `common`, D-030).
+ */
+export type ProgramCardMessages = Pick<Messages<"programs">, "card" | "units" | "tracks"> & {
+  demoLabel: string;
+  stockPhotoLabel?: string;
+};
 
 /** Card-level focus ring, shown when the stretched title link has keyboard focus. */
 const cardFocus =
@@ -21,14 +34,19 @@ const CARD_IMAGE_SIZES = "(min-width: 1024px) 380px, (min-width: 640px) 50vw, 10
  * decorative here (alt="") because the card's title and summary carry the meaning.
  * The track illustration (Aspire asset, 64px — well under its maxWidth) replaces the
  * old line icon. Course facts (class, duration, daily teaching, batch size) render
- * only when present. Safe to render from both server and client components.
+ * only when present. Safe to render from both server and client components; copy and
+ * links follow `t` / `locale`.
  */
 export function ProgramCard({
   program,
+  t,
+  locale,
   showEnquire = false,
   showFacts = true,
 }: {
   program: Program;
+  t: ProgramCardMessages;
+  locale: Locale;
   /** Adds an "Enquire" button (programs directory). */
   showEnquire?: boolean;
   /** Shows the class / duration / daily teaching / batch size facts when the record has them. */
@@ -38,7 +56,7 @@ export function ProgramCard({
   const placeholder = program.status === "placeholder";
   const { image } = program;
   const tracks = programTracks(program);
-  const facts = showFacts ? cardFacts(program) : [];
+  const facts = showFacts ? cardFacts(program, t.card.facts, t.units) : [];
 
   return (
     <Card tint={tint} interactive className={cn("group relative flex h-full flex-col", cardFocus)}>
@@ -51,6 +69,11 @@ export function ProgramCard({
             sizes={CARD_IMAGE_SIZES}
             className="object-cover transition-transform duration-300 motion-safe:group-hover:scale-[1.03]"
           />
+          {t.stockPhotoLabel && (
+            <span className="absolute left-2 top-2 rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white">
+              {t.stockPhotoLabel}
+            </span>
+          )}
         </div>
       )}
       <div className="flex flex-1 flex-col p-5">
@@ -63,11 +86,11 @@ export function ProgramCard({
           >
             <AspireImage asset={illustration} />
           </span>
-          {placeholder && <DemoBadge label="Demo" />}
+          {placeholder && <DemoBadge label={t.demoLabel} />}
         </div>
         <h3 className="text-lg font-bold leading-snug text-navy">
           <Link
-            href={`/programs/${program.slug}`}
+            href={localePath(`/programs/${program.slug}`, locale)}
             className="card-link after:absolute after:inset-0 after:content-[''] focus-visible:outline-hidden"
           >
             {program.title}
@@ -75,8 +98,8 @@ export function ProgramCard({
         </h3>
         {tracks.length > 0 && (
           <p className="mt-1 text-xs font-bold text-blue">
-            <span className="sr-only">Prepares for: </span>
-            {tracks.map((track) => EXAM_META[track].label).join(" · ")}
+            <span className="sr-only">{t.card.preparesFor} </span>
+            {tracks.map((track) => trackLabel(track, t.tracks)).join(" · ")}
           </p>
         )}
         <p className="mt-1.5 flex-1 text-sm text-muted">{program.shortDescription}</p>
@@ -92,11 +115,12 @@ export function ProgramCard({
         )}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <span aria-hidden="true" className="inline-flex items-center gap-1 text-sm font-extrabold text-blue">
-            Learn more <ArrowRight className="size-4" />
+            {t.card.learnMore} <ArrowRight className="size-4" />
           </span>
           {showEnquire && (
-            <ButtonLink href="/admissions#enquiry" variant="dark" className="relative z-10">
-              Enquire<span className="sr-only"> about {program.title}</span>
+            <ButtonLink href={localePath("/admissions#enquiry", locale)} variant="dark" className="relative z-10">
+              {t.card.enquire}
+              <span className="sr-only"> {format(t.card.enquireSuffix, { title: program.title })}</span>
             </ButtonLink>
           )}
         </div>

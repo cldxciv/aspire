@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkSameOrigin, getClientIp, isJsonContentType, readBodyWithLimit } from "./request-guards";
+import { checkSameOrigin, getClientIp, isJsonContentType, readBodyWithLimit, trustedProxyHops } from "./request-guards";
 
 function req(headers: Record<string, string>, url = "http://localhost:3000/api/enquiries") {
   return new Request(url, { method: "POST", headers });
@@ -107,8 +107,30 @@ describe("isJsonContentType", () => {
 });
 
 describe("getClientIp", () => {
-  it("uses the first X-Forwarded-For hop", () => {
-    expect(getClientIp(new Headers({ "x-forwarded-for": "203.0.113.7, 10.0.0.1" }))).toBe("203.0.113.7");
+  it("uses the entry appended by the trusted proxy (rightmost by default)", () => {
+    expect(getClientIp(new Headers({ "x-forwarded-for": "203.0.113.7" }))).toBe("203.0.113.7");
+    expect(getClientIp(new Headers({ "x-forwarded-for": "10.9.9.9, 203.0.113.7" }), 1)).toBe("203.0.113.7");
+  });
+
+  it("ignores client-forged entries to the left (cannot pick its own rate-limit bucket)", () => {
+    const forged = (spoof: string) => new Headers({ "x-forwarded-for": `${spoof}, 198.51.100.9` });
+    expect(getClientIp(forged("1.1.1.1"), 1)).toBe("198.51.100.9");
+    expect(getClientIp(forged("2.2.2.2"), 1)).toBe("198.51.100.9");
+  });
+
+  it("counts TRUSTED_PROXY_HOPS from the right", () => {
+    const chain = new Headers({ "x-forwarded-for": "6.6.6.6, 203.0.113.7, 10.0.0.1" });
+    expect(getClientIp(chain, 2)).toBe("203.0.113.7");
+    expect(getClientIp(chain, 3)).toBe("6.6.6.6");
+    expect(getClientIp(chain, 9)).toBe("6.6.6.6");
+  });
+
+  it("reads TRUSTED_PROXY_HOPS with a safe default of 1", () => {
+    expect(trustedProxyHops({})).toBe(1);
+    expect(trustedProxyHops({ TRUSTED_PROXY_HOPS: "2" })).toBe(2);
+    expect(trustedProxyHops({ TRUSTED_PROXY_HOPS: "0" })).toBe(1);
+    expect(trustedProxyHops({ TRUSTED_PROXY_HOPS: "abc" })).toBe(1);
+    expect(trustedProxyHops({ TRUSTED_PROXY_HOPS: "99" })).toBe(1);
   });
 
   it("falls back to X-Real-IP", () => {

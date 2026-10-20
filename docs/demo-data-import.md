@@ -123,7 +123,7 @@ The full list is in `docs/content-verification.md`. In summary:
 
 ## Data anomalies (beyond conflicts)
 
-- Rankers 358 and 359 are exact duplicates (Mayank Thakur, AIIMS Jammu, NEET 2025, AIR 3238). Both are kept so the count matches the demo's 715.
+- **7 exact duplicate pairs** in the rankers list (corrected 2026-10-20; previously only 358/359 were noted): Pratyush Thakur (IIT Bombay, JEE 2025), Aryan (MBBS · Chamba, NEET 2025), Mayank Thakur (AIIMS Jammu, NEET 2025, rows 358/359), Aditi (IGMC, NEET 2023), Muskan (Tanda, NEET 2022), Rohan (Nahan, NEET 2022), Gaurav (Nahan, NEET 2021). All rows are kept so the count matches the demo's 715 (708 unique); `getRankerYearCounts()` counts duplicates once (C31).
 - Ranker 736 (Ravishta) is listed as NEET 2016 at NIT Hamirpur, an engineering institute.
 - Two rankers have no institution (68 Shaurya Sharma, 79 Suryansh Thakur, both JEE 2025).
 - The ranker names and result-card file names look like real students' results. Because consent is pending, they must not appear on any publicly reachable preview without Aspire's confirmation.

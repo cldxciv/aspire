@@ -13,6 +13,11 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   poweredByHeader: false,
+  experimental: {
+    // D-028: the root layout lives under app/[lang], so URLs matching no route use
+    // app/global-not-found.tsx (bilingual) instead of a layout-less default 404.
+    globalNotFound: true,
+  },
   turbopack: {
     rules: {
       "*.css": {
@@ -20,6 +25,13 @@ const nextConfig: NextConfig = {
         as: "*.css",
       },
     },
+  },
+  // /faculty was removed (owner instruction 2026-10-20); keep old links working (both locales, D-028).
+  async redirects() {
+    return [
+      { source: "/faculty", destination: "/about", permanent: false },
+      { source: "/hi/faculty", destination: "/hi/about", permanent: false },
+    ];
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

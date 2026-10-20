@@ -3,33 +3,41 @@
 import { Check } from "lucide-react";
 import { useId, useState } from "react";
 import { Button, EmptyState } from "@/components/ui";
+import { useLocale } from "@/i18n/client";
+import { format } from "@/i18n/format";
+import type { Messages } from "@/i18n/messages/types";
 import { cn } from "@/lib/cn";
 import type { ExamTrack, Program } from "@/lib/types";
-import { EXAM_META, EXAM_ORDER, programTracks } from "./exam-meta";
+import { EXAM_ORDER, programTracks, trackLabel } from "./exam-meta";
+import type { ProgramCardMessages } from "./ProgramCard";
 import { ProgramGrid } from "./ProgramGrid";
 
 type ExamFilter = ExamTrack | "all";
+
+export type ProgramDirectoryMessages = ProgramCardMessages & Pick<Messages<"programs">, "directory">;
 
 /**
  * Programs directory with an exam filter (toggle buttons with aria-pressed).
  * A program matches when it prepares for the chosen exam (any of its `tracks`),
  * so dual JEE / NEET courses appear under both. Filters the server-provided list
- * in the browser; nothing is fetched.
+ * in the browser; nothing is fetched. Copy comes from the `programs` messages.
  */
-export function ProgramDirectory({ programs }: { programs: Program[] }) {
+export function ProgramDirectory({ programs, messages }: { programs: Program[]; messages: ProgramDirectoryMessages }) {
+  const locale = useLocale();
+  const t = messages.directory;
   const [exam, setExam] = useState<ExamFilter>("all");
   const listId = useId();
 
   const exams = EXAM_ORDER.filter((e) => programs.some((p) => programTracks(p).includes(e)));
   const options: { value: ExamFilter; label: string }[] = [
-    { value: "all", label: "All programs" },
-    ...exams.map((e) => ({ value: e, label: EXAM_META[e].label })),
+    { value: "all", label: t.all },
+    ...exams.map((e) => ({ value: e, label: trackLabel(e, messages.tracks) })),
   ];
   const visible = exam === "all" ? programs : programs.filter((p) => programTracks(p).includes(exam));
 
   return (
     <div>
-      <div role="group" aria-label="Filter programs by exam" className="mb-3 flex flex-wrap gap-2">
+      <div role="group" aria-label={t.filterLabel} className="mb-3 flex flex-wrap gap-2">
         {options.map((option) => {
           const pressed = exam === option.value;
           return (
@@ -54,19 +62,19 @@ export function ProgramDirectory({ programs }: { programs: Program[] }) {
       </div>
       {/* Includes the filter name so the announcement changes even when the count doesn't. */}
       <p role="status" className="mb-5 text-sm text-muted">
-        {visible.length === 1 ? "Showing 1 program" : `Showing ${visible.length} programs`}
-        {exam !== "all" && ` that prepare for ${EXAM_META[exam].label}`}
+        {visible.length === 1 ? t.showingOne : format(t.showingMany, { count: visible.length })}
+        {exam !== "all" && ` ${format(t.forTrack, { track: trackLabel(exam, messages.tracks) })}`}
       </p>
       {visible.length > 0 ? (
-        <ProgramGrid id={listId} programs={visible} showEnquire />
+        <ProgramGrid id={listId} programs={visible} t={messages} locale={locale} showEnquire />
       ) : (
         <div id={listId}>
           <EmptyState
-            title="No programs match this filter"
-            description="Choose another exam, or ask a counsellor which pathway suits the learner."
+            title={t.emptyTitle}
+            description={t.emptyBody}
             action={
               <Button variant="outline" onClick={() => setExam("all")}>
-                Show all programs
+                {t.showAll}
               </Button>
             }
           />

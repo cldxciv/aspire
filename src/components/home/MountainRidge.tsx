@@ -2,8 +2,11 @@
  * Decorative Himachal mountain-ridge silhouette for the home hero. Sits behind
  * the hero photo as a fallback if the image fails to load (or before it paints).
  * Purely presentational: hidden from assistive technology.
- * Gradient ids are unique because the hero renders once per page.
+ * Colours come from the theme tokens (D-026) via inline `style`, because SVG presentation
+ * attributes don't resolve CSS variables. Gradient ids are unique because the hero renders once per page.
  */
+const token = (name: "navy" | "navy-2" | "navy-deep" | "blue" | "gold") => `var(--color-${name})`;
+
 export function MountainRidge({ className }: { className?: string }) {
   return (
     <svg
@@ -15,16 +18,16 @@ export function MountainRidge({ className }: { className?: string }) {
     >
       <defs>
         <linearGradient id="home-ridge-far" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#3a7cc4" stopOpacity="0.38" />
-          <stop offset="1" stopColor="#123e70" stopOpacity="0.1" />
+          <stop offset="0" style={{ stopColor: token("blue"), stopOpacity: 0.38 }} />
+          <stop offset="1" style={{ stopColor: token("navy-2"), stopOpacity: 0.1 }} />
         </linearGradient>
         <linearGradient id="home-ridge-near" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#0b2f57" />
-          <stop offset="1" stopColor="#061e39" />
+          <stop offset="0" style={{ stopColor: token("navy") }} />
+          <stop offset="1" style={{ stopColor: token("navy-deep") }} />
         </linearGradient>
         <radialGradient id="home-ridge-glow" cx="0.78" cy="0.25" r="0.35">
-          <stop offset="0" stopColor="#ffc629" stopOpacity="0.22" />
-          <stop offset="1" stopColor="#ffc629" stopOpacity="0" />
+          <stop offset="0" style={{ stopColor: token("gold"), stopOpacity: 0.22 }} />
+          <stop offset="1" style={{ stopColor: token("gold"), stopOpacity: 0 }} />
         </radialGradient>
       </defs>
       <rect width="1440" height="320" fill="url(#home-ridge-glow)" />
@@ -40,8 +43,7 @@ export function MountainRidge({ className }: { className?: string }) {
       />
       {/* Middle range */}
       <path
-        fill="#0f3561"
-        fillOpacity="0.72"
+        style={{ fill: token("navy-2"), fillOpacity: 0.72 }}
         d="M0 252 L105 206 L195 238 L300 182 L398 228 L505 190 L612 242 L718 196 L818 234 L930 178 L1040 224 L1150 190 L1262 234 L1362 200 L1440 220 V320 H0 Z"
       />
       {/* Near ridge */}

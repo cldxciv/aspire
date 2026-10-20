@@ -1,13 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import CentresPage from "@/app/(site)/centres/page";
-import FacultyPage from "@/app/(site)/faculty/page";
-import HostelsPage from "@/app/(site)/hostels/page";
-import ProgramPage from "@/app/(site)/programs/[slug]/page";
-import ProgramsPage from "@/app/(site)/programs/page";
-import ResultsPage from "@/app/(site)/results/page";
-import { getCentres, getFaculty, getFeaturedResults, getPrograms, getRankers } from "@/lib/data";
+import CentresPage from "@/app/[lang]/(site)/centres/page";
+import HostelsPage from "@/app/[lang]/(site)/hostels/page";
+import ProgramPage from "@/app/[lang]/(site)/programs/[slug]/page";
+import ProgramsPage from "@/app/[lang]/(site)/programs/page";
+import ResultsPage from "@/app/[lang]/(site)/results/page";
+import { getCentres, getFeaturedResults, getPrograms, getRankers } from "@/lib/data";
 import type { RankerRecord } from "@/lib/types";
 import { toRankerRows } from "./server-view";
 
@@ -15,9 +14,9 @@ const PERSON_ASSET_FILES = ["hero-students", "students-group-study", "student-st
 
 function programProps(slug: string) {
   return {
-    params: Promise.resolve({ slug }),
+    params: Promise.resolve({ lang: "en", slug }),
     searchParams: Promise.resolve({}),
-  } as unknown as PageProps<"/programs/[slug]">;
+  } as unknown as PageProps<"/[lang]/programs/[slug]">;
 }
 
 function count(html: string, needle: string): number {
@@ -75,32 +74,32 @@ describe("discovery pages with placeholder content (development / preview)", () 
       expect(html).toContain(`id="${centre.slug}"`);
       if (centre.phone) expect(html).toContain(`href="tel:${centre.phone.replace(/[^\d+]/g, "")}"`);
     }
-    // next/image renders encoded /_next/image URLs, so count <img> tags (only campus illustrations here).
+    // next/image renders encoded /_next/image URLs, so count <img> tags: campus illustrations plus
+    // region stock photos (D-030) — every one carries a visible label.
     const images = count(html, "<img");
-    expect(images).toBeGreaterThan(0);
-    expect(count(html, ">Illustrative image<")).toBe(images);
+    expect(count(html, ">Illustrative image<")).toBeGreaterThan(0);
+    expect(count(html, ">Illustrative image<") + count(html, ">Illustrative stock photo<")).toBe(images);
+    // Region landscapes are captioned as the region, never as a centre or campus.
+    expect(html).toContain("Shimla region");
+    expect(html).not.toMatch(/>[^<]*(centre|campus) (photo|building)[^<]*</i);
     expect(html).toContain('href="/hostels#hostel-shimla"');
-    expect(html).toContain('href="/faculty#er-raman-sharma"');
+    // Faculty info removed (2026-10-20): no campus heads or faculty links.
+    expect(html).not.toContain('href="/faculty');
+    expect(html).not.toContain("Raman Sharma");
   });
 
-  it("faculty page uses initials avatars, never person photos", async () => {
-    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
-    const html = renderToStaticMarkup(await FacultyPage());
-    const faculty = await getFaculty();
-    for (const member of faculty) expect(html).toContain(`id="${member.slug}"`);
-    expect(count(html, ">Demo<")).toBe(faculty.length);
-    for (const file of PERSON_ASSET_FILES) expect(html).not.toContain(file);
-    expect(html).not.toContain("<img alt=\"A smiling student\"");
-  });
-
-  it("hostels page lists each campus and labels its illustrations", async () => {
+  it("hostels page lists each campus and labels its photos", async () => {
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
     const html = renderToStaticMarkup(await HostelsPage());
     expect(html).toContain('id="hostel-shimla"');
-    expect(html).toContain("Illustrative image — not an Aspire hostel or campus");
+    // D-030: every image is a labelled stock photo; the in-page photos also say they are not Aspire's hostels.
     const images = count(html, "<img");
-    expect(images).toBeGreaterThan(0);
-    expect(images).toBe(count(html, "Illustrative image — not an Aspire hostel or campus"));
+    expect(images).toBeGreaterThan(4);
+    expect(count(html, ">Illustrative stock photo<")).toBe(images);
+    expect(html).toContain("Stock photo for illustration — not an Aspire hostel or campus.");
+    // Region landscapes are captioned with the region, never as a centre or campus.
+    expect(html).toContain("Shimla region");
+    expect(html).not.toMatch(/(?:centre|campus)<\/figcaption>/i);
   });
 });
 
@@ -113,7 +112,6 @@ describe("discovery pages render no missing-value artefacts", () => {
       ProgramPage(programProps(program.slug)),
       ResultsPage(),
       CentresPage(),
-      FacultyPage(),
       HostelsPage(),
     ]);
     for (const page of pages) {
@@ -126,11 +124,10 @@ describe("discovery pages render no missing-value artefacts", () => {
 describe("discovery pages in production (placeholders hidden)", () => {
   it("render honest empty states and no imported names", async () => {
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "false");
-    const [programs, results, centres, faculty, hostels] = await Promise.all([
+    const [programs, results, centres, hostels] = await Promise.all([
       ProgramsPage(),
       ResultsPage(),
       CentresPage(),
-      FacultyPage(),
       HostelsPage(),
     ]).then((pages) => pages.map((page) => renderToStaticMarkup(page)));
 
@@ -139,10 +136,8 @@ describe("discovery pages in production (placeholders hidden)", () => {
     expect(results).not.toContain("Rankers list");
     expect(results).not.toContain("Pradyun Dharma");
     expect(centres).toContain("Verified centre locations will be listed here");
-    expect(faculty).toContain("Faculty profiles will be published after verification");
-    expect(faculty).not.toContain("Raman Sharma");
     expect(hostels).toContain("Hostel details will be published after verification");
-    for (const html of [programs, results, centres, faculty, hostels]) expect(html).not.toContain(">Demo<");
+    for (const html of [programs, results, centres, hostels]) expect(html).not.toContain(">Demo<");
   });
 
   it("strips ranker names that may not be shown before they reach the client", () => {

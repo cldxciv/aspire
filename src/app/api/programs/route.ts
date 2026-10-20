@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { getPrograms } from "@/lib/data";
 import { apiList } from "@/lib/server/http";
-import { parseQuery, programsQuerySchema } from "@/lib/server/public-content";
+import { parseQuery, programsQuerySchema, withoutInternalFields } from "@/lib/server/public-content";
 
 /**
  * GET /api/programs?exam=JEE|NEET|Foundation|Integrated
@@ -13,5 +13,5 @@ import { parseQuery, programsQuerySchema } from "@/lib/server/public-content";
 export async function GET(request: NextRequest): Promise<Response> {
   const query = parseQuery(request.nextUrl.searchParams, programsQuerySchema);
   if (!query.ok) return query.response;
-  return apiList(await getPrograms({ exam: query.data.exam }));
+  return apiList((await getPrograms({ exam: query.data.exam })).map(withoutInternalFields));
 }

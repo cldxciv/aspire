@@ -9,18 +9,21 @@
  * rounded-control, shadow-card, max-w-content, font-sans.
  */
 @theme {
-  --color-navy: #09284b;
-  --color-navy-2: #123e70;
-  --color-navy-deep: #061e39;
+  /* Palette from the approved design-details board (D-026). */
+  --color-navy: #0b2d5b; /* Primary Navy */
+  --color-navy-2: #123a73; /* Secondary Navy */
+  --color-navy-deep: #08223f;
   --color-blue: #1768d4;
   --color-blue-soft: #e8f1ff;
-  --color-gold: #ffc629;
-  --color-gold-2: #f5b900;
+  --color-gold: #f4c44e; /* Accent Gold */
+  --color-gold-2: #e9b431;
   --color-gold-soft: #fff7df;
-  --color-ink: #14253d;
+  --color-ink: #0f172a; /* Text Primary */
+  /* Design "Text Secondary" #64748B is 4.34:1 on the section background (< AA); keep D-004's #5A6A7F (5.03:1). */
   --color-muted: #5a6a7f;
   --color-line: #e2eaf3;
-  --color-surface: #f3f7fc;
+  --color-surface: #eef5ff; /* Section BG */
+  --color-page: #f8fafc; /* Background */
   --color-success: #14845a;
   --color-success-soft: #e7f7ee;
   --color-danger: #b42318;
@@ -37,11 +40,47 @@
 
 @theme inline {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Display serif (D-022): headings, stat numbers, card titles. Use `font-serif`. */
+  --font-serif: var(--font-source-serif), Georgia, "Times New Roman", serif;
 }
+
+/*
+ * Hindi (D-028): Devanagari glyphs use Noto Sans / Noto Serif Devanagari, Latin text keeps
+ * Inter / Source Serif. The Noto variables are only set on <html> for `hi` pages (src/app/fonts.ts).
+ * Unlayered on purpose so it overrides the `font-sans` / `font-serif` utilities, whose values
+ * `@theme inline` bakes in.
+ */
+:lang(hi).font-sans,
+:lang(hi) .font-sans {
+  font-family:
+    var(--font-inter), var(--font-noto-sans-devanagari, "Noto Sans Devanagari"), ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", sans-serif;
+}
+
+:lang(hi) .font-serif {
+  font-family:
+    var(--font-source-serif), var(--font-noto-serif-devanagari, "Noto Serif Devanagari"), Georgia,
+    "Times New Roman", serif;
+}
+
+/* Letter-spacing splits Devanagari conjuncts and the headline stroke: Hindi text uses normal spacing.
+   Latin text that must keep its tracking carries lang="en" (e.g. the logo wordmark). */
+:lang(hi)[class*="tracking-"] {
+  letter-spacing: normal;
+}
+
+/*
+ * Height-based variants for first-fold tuning (homepage plan §4.1):
+ * `short:` = viewport ≤ 679px tall (e.g. 1280×600 in Chrome), `tall:` = ≥ 760px tall.
+ */
+@custom-variant short (@media (max-height: 679px));
+@custom-variant tall (@media (min-height: 760px));
 
 @layer base {
   html {
     scroll-behavior: smooth;
+    /* Keep anchor targets and focused fields clear of the sticky header (D-024). */
+    scroll-padding-top: 88px;
   }
 
   body {
@@ -53,6 +92,19 @@
   :focus-visible {
     outline: 3px solid var(--color-blue);
     outline-offset: 2px;
+  }
+
+  /*
+   * Dark surfaces (navy header, hero, navy panels, CTA photo band): the blue ring is only
+   * 2.80:1 on navy, so use gold (9.4:1). Mark the surface with data-surface="dark".
+   * A light card inside a dark surface (e.g. the hero form) resets with data-surface="light".
+   */
+  [data-surface="dark"] :focus-visible {
+    outline-color: var(--color-gold);
+  }
+
+  [data-surface="light"] :focus-visible {
+    outline-color: var(--color-blue);
   }
 
   @media (prefers-reduced-motion: reduce) {

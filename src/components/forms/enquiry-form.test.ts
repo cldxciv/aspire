@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { enquirySchema } from "@/lib/contracts/enquiry";
-import { FIELD_ORDER, buildPayload, pickErrors } from "./enquiry-payload";
+import { enquirySchema, heroStepOfField, validateHeroStep } from "@/lib/contracts/enquiry";
+import { FIELD_ORDER, buildHeroPayload, buildPayload, pickErrors } from "./enquiry-payload";
+import { firstHeroError, pickHeroErrors } from "./hero-steps";
 import { submitEnquiry } from "./submit-enquiry";
 
 function formData(entries: Record<string, string>) {
@@ -70,6 +71,49 @@ describe("buildPayload", () => {
   });
 });
 
+describe("buildHeroPayload (home hero, D-021)", () => {
+  const validHero = {
+    name: "Test Student",
+    classOrExam: "jee-class-11",
+    guardianName: "Parent Name",
+    phone: "+91 98765 43210",
+    preferredCentre: "not-sure",
+    consent: "on",
+    website: "",
+  };
+
+  it("builds a valid hero payload with no intent and no mapped fields", () => {
+    const payload = buildHeroPayload(formData(validHero), true);
+    expect(payload).toMatchObject({ source: "hero", classOrExam: "jee-class-11", consent: true });
+    expect("intent" in payload).toBe(false);
+    expect(enquirySchema.safeParse(payload).success).toBe(true);
+  });
+
+  it("sends blank required fields as empty strings so the server reports them", () => {
+    const payload = buildHeroPayload(formData({}), false);
+    expect(payload).toMatchObject({ name: "", classOrExam: "", guardianName: "", phone: "", consent: false });
+    const result = enquirySchema.safeParse(payload);
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    const errors = pickHeroErrors(z.flattenError(result.error).fieldErrors as Record<string, string[] | undefined>);
+    expect(Object.keys(errors)).toEqual(["name", "classOrExam", "guardianName", "phone", "consent"]);
+    expect(firstHeroError(errors)).toEqual({ field: "name", step: 0 });
+  });
+
+  it("maps every field to the step that renders it", () => {
+    expect(["name", "classOrExam"].map(heroStepOfField)).toEqual([0, 0]);
+    expect(["guardianName", "phone"].map(heroStepOfField)).toEqual([1, 1]);
+    expect(["preferredCentre", "message", "consent"].map(heroStepOfField)).toEqual([2, 2, 2]);
+  });
+
+  it("passes each step on its own before the full schema", () => {
+    const payload = buildHeroPayload(formData(validHero), true);
+    expect(validateHeroStep(0, payload)).toBeNull();
+    expect(validateHeroStep(1, payload)).toBeNull();
+    expect(validateHeroStep(2, payload)).toBeNull();
+  });
+});
+
 describe("pickErrors", () => {
   it("maps zod field errors to the variant's fields in DOM order", () => {
     const payload = buildPayload("admissions", formData({ phone: "123", email: "nope" }), "enquiry", true);
@@ -111,6 +155,32 @@ describe("submitEnquiry", () => {
     expect(init.method).toBe("POST");
     expect(init.headers).toEqual({ "Content-Type": "application/json" });
     expect(init.body).toBe(JSON.stringify({ source: "quick" }));
+  });
+
+  it("POSTs the raw hero payload, including classOrExam", async () => {
+    const fetchMock = respond({ ok: true, status: "not_configured", message: "x" }, 200);
+    const payload = buildHeroPayload(
+      formData({
+        name: "Asha",
+        classOrExam: "foundation-class-9",
+        guardianName: "Parent Name",
+        phone: "9876543210",
+        consent: "on",
+      }),
+      false,
+    );
+    await submitEnquiry(payload);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      source: "hero",
+      name: "Asha",
+      classOrExam: "foundation-class-9",
+      guardianName: "Parent Name",
+      phone: "9876543210",
+      consent: true,
+      website: "",
+    });
   });
 
   it("reports received only with a reference on a 2xx response", async () => {

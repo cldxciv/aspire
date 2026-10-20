@@ -11,4 +11,6 @@ export {
   type NoticeVariant,
 } from "./Feedback";
 export { Container, Section, SectionHeading, type SectionTone } from "./Layout";
+export { MediaSplit, PhotoStrip } from "./MediaSplit";
 export { PageHero, type Crumb } from "./PageHero";
+export { PhotoBand, StickyMediaLayout } from "./PhotoBand";

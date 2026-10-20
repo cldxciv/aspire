@@ -10,10 +10,16 @@ import type { CentreNames, RankerRow } from "./result-view";
  * canShowStudentName() allows them, so they are never serialised to the browser.
  */
 
-/** The record with `studentDisplayName` removed when its name may not be shown. */
+/**
+ * Client-safe projection of a result for the archive: drops fields no client
+ * component renders (internal `sourceRef`, `quote`, `verifiedBy`, `featured`)
+ * and, when the name may not be shown, the name and school (a quasi-identifier).
+ */
 export function withPermittedName(result: ResultRecord): ResultRecord {
-  if (canShowStudentName(result)) return result;
-  return { ...result, studentDisplayName: undefined };
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally not sent to the browser.
+  const { sourceRef, quote, verifiedBy, featured, ...visible } = result;
+  if (canShowStudentName(result)) return visible;
+  return { ...visible, studentDisplayName: undefined, school: undefined };
 }
 
 export function toRankerRows(rankers: RankerRecord[]): RankerRow[] {

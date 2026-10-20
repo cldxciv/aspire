@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Notice } from "@/components/ui";
 import { siteConfig } from "@/config/site";
+import type { Messages } from "@/i18n/messages/types";
+import { formatNodes } from "./format-nodes";
 import type { SubmitOutcome } from "./submit-enquiry";
 
 export type FormState =
@@ -11,129 +13,136 @@ export type FormState =
   | { kind: "invalid"; count: number; origin: "client" | "server" }
   | Exclude<SubmitOutcome, { kind: "validation" }>;
 
+/** The `forms.shared` messages FormStatus and DirectContact read. */
+export type FormStatusMessages = Pick<Messages<"forms">["shared"], "status" | "directContact" | "wait">;
+
 /**
  * How to reach Aspire when the form can't deliver. Shows verified contact details
  * only when they exist in siteConfig (all null until Aspire verifies them).
+ * Exported for the hero form's "not connected yet" notice. `contactHref` is the
+ * locale-aware contact page URL (`localePath("/contact", locale)`).
  */
-function DirectContact({ onContactPage }: { onContactPage: boolean }) {
+export function DirectContact({
+  onContactPage,
+  messages,
+  contactHref = "/contact",
+}: {
+  onContactPage: boolean;
+  messages: FormStatusMessages["directContact"];
+  contactHref?: string;
+}) {
   const { phone, email } = siteConfig.contact;
-  if (phone || email) {
-    return (
-      <>
-        Please contact Aspire directly
-        {phone && (
-          <>
-            {" "}
-            by phone on{" "}
-            <a href={`tel:${phone.replace(/\s/g, "")}`} className="font-bold underline">
-              {phone}
-            </a>
-          </>
-        )}
-        {phone && email && " or"}
-        {email && (
-          <>
-            {" "}
-            by email at{" "}
-            <a href={`mailto:${email}`} className="font-bold underline">
-              {email}
-            </a>
-          </>
-        )}
-        .
-      </>
-    );
-  }
-  if (onContactPage) {
-    return <>Please contact Aspire directly. Official contact details will be listed on this page once verified.</>;
-  }
+  const phoneLink = phone ? (
+    <a href={`tel:${phone.replace(/\s/g, "")}`} className="font-bold underline">
+      {phone}
+    </a>
+  ) : null;
+  const emailLink = email ? (
+    <a href={`mailto:${email}`} className="font-bold underline">
+      {email}
+    </a>
+  ) : null;
+
+  if (phoneLink && emailLink) return <>{formatNodes(messages.byPhoneOrEmail, { phone: phoneLink, email: emailLink })}</>;
+  if (phoneLink) return <>{formatNodes(messages.byPhone, { phone: phoneLink })}</>;
+  if (emailLink) return <>{formatNodes(messages.byEmail, { email: emailLink })}</>;
+  if (onContactPage) return <>{messages.onContactPage}</>;
   return (
     <>
-      Please contact Aspire directly — see the{" "}
-      <Link href="/contact" className="font-bold underline">
-        contact page
-      </Link>
-      .
+      {formatNodes(messages.seeContactPage, {
+        link: (
+          <Link href={contactHref} className="font-bold underline">
+            {messages.contactPageLink}
+          </Link>
+        ),
+      })}
     </>
   );
 }
 
-function minutesFrom(seconds?: number) {
-  if (!seconds) return "a few minutes";
+function waitText(t: FormStatusMessages["wait"], seconds?: number): string {
+  if (!seconds) return t.fewMinutes;
   const minutes = Math.max(1, Math.ceil(seconds / 60));
-  return minutes === 1 ? "about a minute" : `about ${minutes} minutes`;
+  return minutes === 1 ? t.oneMinute : t.minutes.replace("{count}", String(minutes));
 }
 
-function StatusMessage({ state, onContactPage }: { state: FormState; onContactPage: boolean }): ReactNode {
-  const contact = <DirectContact onContactPage={onContactPage} />;
+function StatusMessage({
+  state,
+  onContactPage,
+  messages,
+  contactHref,
+}: {
+  state: FormState;
+  onContactPage: boolean;
+  messages: FormStatusMessages;
+  contactHref?: string;
+}): ReactNode {
+  const t = messages.status;
+  const contact = <DirectContact onContactPage={onContactPage} messages={messages.directContact} contactHref={contactHref} />;
 
   switch (state.kind) {
     case "idle":
       return null;
     case "submitting":
-      return <p className="sr-only">Sending your enquiry, please wait.</p>;
-    case "invalid":
+      return <p className="sr-only">{t.submitting}</p>;
+    case "invalid": {
+      const count = String(state.count);
       return state.origin === "client" ? (
-        <Notice variant="error" title="Please check the highlighted fields">
-          {state.count === 1 ? "1 field needs" : `${state.count} fields need`} attention. Nothing has been sent yet.
+        <Notice variant="error" title={t.invalidClientTitle}>
+          {state.count === 1 ? t.invalidClientOne : t.invalidClientMany.replace("{count}", count)}
         </Notice>
       ) : (
-        <Notice variant="error" title="Some details need correcting">
-          Your enquiry was not sent. {state.count === 1 ? "1 field was" : `${state.count} fields were`} not accepted
-          — please check the highlighted fields and try again.
+        <Notice variant="error" title={t.invalidServerTitle}>
+          {state.count === 1 ? t.invalidServerOne : t.invalidServerMany.replace("{count}", count)}
         </Notice>
       );
+    }
     case "received":
       return (
-        <Notice variant="success" title="Enquiry received">
-          Thank you — Aspire has received your enquiry. Your reference is{" "}
-          <strong className="font-extrabold">{state.reference}</strong>. Please keep it for any follow-up.
+        <Notice variant="success" title={t.receivedTitle}>
+          {formatNodes(t.receivedBody, { reference: <strong className="font-extrabold">{state.reference}</strong> })}
         </Notice>
       );
     case "not_configured":
       return (
-        <Notice variant="warning" title="Your enquiry has not been sent">
-          Your details passed our checks, but online enquiries aren&apos;t connected yet, so nothing was sent or
-          stored. {contact} Your details are still in the form.
+        <Notice variant="warning" title={t.notConfiguredTitle}>
+          {formatNodes(t.notConfiguredBody, { contact })}
         </Notice>
       );
     case "rate_limited":
       return (
-        <Notice variant="error" title="Too many attempts">
-          Your enquiry was not sent because several enquiries came from this connection recently. Please wait{" "}
-          {minutesFrom(state.retryAfterSeconds)} and try again. Your details are still in the form.
+        <Notice variant="error" title={t.rateLimitedTitle}>
+          {formatNodes(t.rateLimitedBody, { wait: waitText(messages.wait, state.retryAfterSeconds) })}
         </Notice>
       );
     case "rejected":
       return (
-        <Notice variant="error" title="Your enquiry couldn't be sent">
-          The request couldn&apos;t be verified, so nothing was sent. Please refresh the page and try again. {contact}
+        <Notice variant="error" title={t.rejectedTitle}>
+          {formatNodes(t.rejectedBody, { contact })}
         </Notice>
       );
     case "unavailable":
       return (
-        <Notice variant="error" title="Online enquiries are unavailable right now">
-          We couldn&apos;t reach the enquiry service, so nothing was sent. Please try again later. {contact}
+        <Notice variant="error" title={t.unavailableTitle}>
+          {formatNodes(t.unavailableBody, { contact })}
         </Notice>
       );
     case "server_error":
       return (
-        <Notice variant="error" title="Something went wrong">
-          We couldn&apos;t confirm that your enquiry was received. Please try again in a few minutes. {contact}
+        <Notice variant="error" title={t.serverErrorTitle}>
+          {formatNodes(t.serverErrorBody, { contact })}
         </Notice>
       );
     case "timeout":
       return (
-        <Notice variant="error" title="No response from the server">
-          The server took too long to reply, so we can&apos;t confirm that your enquiry was received. Please try
-          again in a moment. Your details are still in the form.
+        <Notice variant="error" title={t.timeoutTitle}>
+          {t.timeoutBody}
         </Notice>
       );
     case "network":
       return (
-        <Notice variant="error" title="Connection problem">
-          We couldn&apos;t connect to the server, so your enquiry may not have been sent. Check your internet
-          connection and try again. Your details are still in the form.
+        <Notice variant="error" title={t.networkTitle}>
+          {t.networkBody}
         </Notice>
       );
   }
@@ -141,12 +150,23 @@ function StatusMessage({ state, onContactPage }: { state: FormState; onContactPa
 
 /**
  * Persistent polite live region: it is always in the DOM so screen readers
- * reliably announce each new status.
+ * reliably announce each new status. Copy comes from `forms.shared` (chosen by the
+ * outcome kind, never the server's English `message`).
  */
-export function FormStatus({ state, onContactPage }: { state: FormState; onContactPage: boolean }) {
+export function FormStatus({
+  state,
+  onContactPage,
+  messages,
+  contactHref,
+}: {
+  state: FormState;
+  onContactPage: boolean;
+  messages: FormStatusMessages;
+  contactHref?: string;
+}) {
   return (
     <div aria-live="polite" aria-atomic="true" className="[&>*]:mt-4">
-      <StatusMessage state={state} onContactPage={onContactPage} />
+      <StatusMessage state={state} onContactPage={onContactPage} messages={messages} contactHref={contactHref} />
     </div>
   );
 }

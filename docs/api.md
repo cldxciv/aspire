@@ -33,7 +33,7 @@ Every response is JSON in the shared envelope, with a matching HTTP status:
 
 ## POST /api/enquiries
 
-Accepts the three enquiry forms (home "quick" card, `/admissions`, `/contact`) and passes valid ones to the configured destination. **The API only answers `received` when a configured destination accepted the enquiry.**
+Accepts the enquiry forms (the 3-step home page "hero" form, `/admissions`, `/contact`, plus the former single-step home "quick" card, still accepted for pages loaded before the hero form shipped — D-021) and passes valid ones to the configured destination. **The API only answers `received` when a configured destination accepted the enquiry.**
 
 ### Request
 
@@ -42,22 +42,28 @@ Accepts the three enquiry forms (home "quick" card, `/admissions`, `/contact`) a
 - Must come from this site (see [Origin check](#origin-check-csrf)).
 - Body: one of the `enquirySchema` variants, discriminated by `source`:
 
-| Field | quick | admissions | contact | Rules |
-|---|---|---|---|---|
-| `source` | `"quick"` | `"admissions"` | `"contact"` | required |
-| `name` | ✓ | ✓ | ✓ | 2–80 chars, trimmed |
-| `phone` | ✓ | ✓ | ✓ | Indian mobile: optional `+91`/`91`/`0`, then 10 digits starting 6–9; spaces/hyphens ignored (`+91 98765 43210` ok) |
-| `email` | opt | opt | opt | valid email or `""` |
-| `message` | opt | opt | opt | ≤ 1000 chars |
-| `consent` | ✓ | ✓ | ✓ | must be `true` |
-| `website` | opt | opt | opt | **honeypot** — leave empty |
-| `currentClass` | ✓ | ✓ | – | `class-6-8`, `class-9`, `class-10`, `class-11`, `class-12`, `dropper` |
-| `programInterest` | ✓ | ✓ | – | `jee`, `neet`, `foundation`, `integrated`, `not-sure` |
-| `intent` | opt | – | – | `enquiry` (default) or `scholarship` |
-| `preferredCentre` | – | opt | – | `"not-sure"`, `""`, or the slug of a centre `getCentres()` currently publishes (enforced server-side; free text → 422) |
-| `topic` | – | – | ✓ | `course-information`, `admissions`, `scholarship`, `centre-information`, `other` |
+| Field | hero | admissions | contact | quick | Rules |
+|---|---|---|---|---|---|
+| `source` | `"hero"` | `"admissions"` | `"contact"` | `"quick"` | required |
+| `name` | ✓ | ✓ | ✓ | ✓ | 2–80 chars, trimmed (the student's name except on contact) |
+| `classOrExam` | ✓ | – | – | – | one of the 12 values in `HERO_CLASS_EXAM_OPTIONS` (e.g. `jee-class-11`, `neet-dropper`, `foundation-class-9`, `not-sure-class-12`). **Input only:** after validation it is replaced by `currentClass` + `programInterest` (see below) |
+| `guardianName` | ✓ | – | – | – | parent/guardian name: 2–80 chars, trimmed (D-021a). Missing, blank or 1 char → "Enter the parent or guardian's name"; > 80 → "Parent or guardian name is too long" |
+| `phone` | ✓ | ✓ | ✓ | ✓ | Indian mobile: optional `+91`/`91`/`0`, then 10 digits starting 6–9; spaces/hyphens ignored (`+91 98765 43210` ok) |
+| `email` | opt¹ | opt | opt | opt | valid email or `""` |
+| `message` | opt | opt | opt | opt | ≤ 1000 chars |
+| `consent` | ✓ | ✓ | ✓ | ✓ | must be `true` |
+| `website` | opt | opt | opt | opt | **honeypot** — leave empty |
+| `currentClass` | (derived) | ✓ | – | ✓ | `class-6-8`, `class-9`, `class-10`, `class-11`, `class-12`, `dropper` |
+| `programInterest` | (derived) | ✓ | – | ✓ | `jee`, `neet`, `foundation`, `integrated`, `not-sure` |
+| `intent` | – | – | – | opt | `enquiry` (default) or `scholarship` |
+| `preferredCentre` | opt | opt | – | – | `"not-sure"`, `""`, or the slug of a centre `getCentres()` currently publishes (enforced server-side; free text or an unpublished centre → 422) |
+| `topic` | – | – | ✓ | – | `course-information`, `admissions`, `scholarship`, `centre-information`, `other` |
 
-Unknown keys are dropped.
+¹ Accepted by the contract, but the hero form does not ask for an email address (D-021a), so hero enquiries normally arrive without one.
+
+Unknown keys are dropped. For `hero`, any `currentClass` / `programInterest` the client sends is ignored: the pair always comes from `classOrExam`, so a combination that is not offered (e.g. NEET for Class 6–8) can't be submitted.
+
+**Hero form steps.** The contract exports one schema per step (`heroStudentStepSchema`: `name`, `classOrExam`; `heroContactStepSchema`: `guardianName` and `phone` (required), `email` (optional, not rendered by the hero UI); `heroDetailsStepSchema`: `preferredCentre`, `message`, `consent`) plus `validateHeroStep(step, payload)` and `heroStepOfField(field)`. The client validates one step at a time with them and POSTs **once**, at final submit; the server validates the whole `hero` variant. A 422's `fieldErrors` keys are the field names above, so `heroStepOfField(key)` gives the step to return to.
 
 ### Processing order
 
@@ -152,7 +158,29 @@ X-Aspire-Enquiry-Reference: ENQ-XXXXXXXXXX
 }
 ```
 
-- `enquiry` is the validated, normalised enquiry: the phone has its spaces and hyphens stripped, `intent` defaults to `enquiry`, and the honeypot and empty optional fields are removed.
+- `enquiry` is the validated, normalised enquiry: the phone has its spaces and hyphens stripped, `intent` defaults to `enquiry` (quick only), and the honeypot and empty optional fields are removed. For `hero`, `classOrExam` is replaced by `currentClass` + `programInterest`, so every source that asks about class and program forwards the same two fields.
+
+Hero example (`enquiry` only; the envelope is identical):
+
+```json
+{
+  "source": "hero",
+  "name": "…",
+  "guardianName": "…",
+  "phone": "+919876543210",
+  "preferredCentre": "not-sure",
+  "message": "…",
+  "consent": true,
+  "currentClass": "dropper",
+  "programInterest": "neet"
+}
+```
+
+**Payload changes** (the envelope, signature scheme and `User-Agent: AspireWeb-Enquiries/1` are unchanged; all changes are additive):
+
+| Date | Change |
+|---|---|
+| 2026-10-20 (D-021, D-021a) | New `source` value `"hero"`; new key `guardianName` (hero only, always present for hero). Hero enquiries carry `currentClass` + `programInterest` like quick/admissions, never `classOrExam`, and normally no `email`. |
 - `consentAt` is the server time of the submission. The schema requires `consent: true`.
 - Any **2xx** means accepted (→ `201 received`). Any other status, a redirect (redirects are **not followed**), a network error or more than **8 s** → `500 server_error`. There are no retries, because the visitor is waiting for the response.
 
@@ -177,6 +205,7 @@ Receiver recommendations:
 - Deduplicate on `reference`.
 - Respond 2xx only after the enquiry is durably stored.
 - Treat all fields as untrusted text. If they land in a spreadsheet, neutralise values starting with `=`, `+`, `-` or `@` (formula injection).
+- Treat `source` as an open set and ignore keys you don't recognise: new form variants and optional fields are added without a version bump (see "Payload changes").
 
 ### Logging
 
@@ -187,7 +216,7 @@ Receiver recommendations:
 ```
 
 - Allowed fields: `outcome`, `durationMs`, `reference`, `source` and a short `reason` code (for example `origin_mismatch`, `invalid_json`, `timeout`, `http_503`, `exception_TypeError`).
-- Never logged: name, phone, email, message, IP address, request body, webhook URL or secret, or any `Error.message` (JSON and fetch errors can echo input or URLs).
+- Never logged: name, parent/guardian name, phone, email, message, IP address, request body, webhook URL or secret, or any `Error.message` (JSON and fetch errors can echo input or URLs).
 - Config warnings are logged once per process: `{"event":"config","code":"enquiry_webhook_secret_missing"}`.
 
 ---
@@ -233,7 +262,7 @@ Only records `getResults()` publishes are returned: published, and consent not p
 { "ok": true, "data": { "status": "ok", "time": "2026-10-19T10:00:00.000Z", "enquiries": "not_configured", "placeholderContent": false } }
 ```
 
-`enquiries` is `connected` when a valid webhook destination is configured, otherwise `not_configured`. `placeholderContent` mirrors `showPlaceholderContent()`; it should be `false` in production. The response never includes URLs, secrets or versions.
+`enquiries` is `connected` when a valid webhook destination is configured, otherwise `not_configured`. Server components can get the same status word with `getEnquiryDeliveryStatus()` (`src/lib/server/env.ts`; never returns the URL or secret). A prerendered page reads it at build time, so it can be stale after an environment change — forms must still branch on the actual API response. `placeholderContent` mirrors `showPlaceholderContent()`; it should be `false` in production. The response never includes URLs, secrets or versions.
 
 ---
 
@@ -273,16 +302,17 @@ All of these are listed in `.env.example`. Only `NEXT_PUBLIC_SITE_URL` is public
 ## Tests
 
 ```bash
-npx vitest run src/lib/contracts/enquiry.test.ts src/lib/server src/app/api/enquiries src/app/api/content-routes.test.ts
+npx vitest run src/lib/contracts/enquiry.test.ts src/lib/server src/app/api/enquiries src/app/api/content-routes.test.ts src/test
 ```
 
 | Area | Test file |
 |---|---|
-| Schema cases per source (phone formats, consent, email) | `src/lib/contracts/enquiry.test.ts` |
+| Schema cases per source (phone formats, consent, email); hero variant, `classOrExam` mapping, step schemas and step/full-schema parity | `src/lib/contracts/enquiry.test.ts` |
 | Rate limiter window | `src/lib/server/rate-limit.test.ts` |
 | Origin guard, content type, client IP, body limit | `src/lib/server/request-guards.test.ts` |
-| Destination config parsing | `src/lib/server/env.test.ts` |
+| Destination config parsing, `getEnquiryDeliveryStatus` | `src/lib/server/env.test.ts` |
 | Webhook signing, timeout and failures | `src/lib/server/destinations/webhook.test.ts` |
-| Service: reference, honeypot, payload, centre check | `src/lib/server/enquiry-service.test.ts` |
-| POST handler end to end, including a no-PII-in-logs assertion on every test | `src/app/api/enquiries/route.test.ts` |
+| Service: reference, honeypot, payload, centre check (admissions + hero) | `src/lib/server/enquiry-service.test.ts` |
+| POST handler end to end (all sources), including a no-PII-in-logs assertion on every test | `src/app/api/enquiries/route.test.ts` |
 | GET routes and health | `src/app/api/content-routes.test.ts` |
+| No mockup placeholder strings (fake phone, centres, stats, names) in `src/components` / `src/app` | `src/test/mockup-strings.test.ts` |

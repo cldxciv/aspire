@@ -28,11 +28,9 @@ export const contactDetails: ContactDetails = {
   // Gate, New Shimla, Himachal Pradesh 171009" — logged as a conflict).
   address: headOffice?.address,
   headOfficeCentreSlug: headOffice?.slug,
-  responseTimes: [
-    "Callback within 2 working hours of a form submission or missed call.",
-    "Email: reply within one working day.",
-    "WhatsApp: replies within working hours.",
-  ],
+  // Response-time promises from the demo ("callback within 2 working hours…") are withheld:
+  // they must not appear while enquiries are not connected (docs/content-verification.md).
+  responseTimes: undefined,
   languages: "Hindi, English and Pahari dialects at all campuses; Punjabi at Hamirpur and Kullu.",
   campusContacts: centres.map((c) => ({
     centreSlug: c.slug,

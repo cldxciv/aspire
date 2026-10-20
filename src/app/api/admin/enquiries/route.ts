@@ -3,12 +3,12 @@ import { portalApiError } from "@/lib/auth/responses";
 
 /**
  * GET /api/admin/enquiries — staff-only enquiry list.
- * Always 401 today: no identity provider is integrated (getSession() → null).
- * Even with a valid admin session it returns 503 until an enquiry store with
- * audit logging is connected; no enquiry data is ever returned from here yet.
+ * 401 signed out, 403 for other roles. Even a signed-in admin gets 503
+ * `not_configured`: enquiries are validated and (optionally) forwarded to a webhook,
+ * but never stored, so there is no enquiry data to list (docs/api.md).
  */
 export async function GET() {
   const auth = await requireRole("admin");
   if (!auth.ok) return auth.response;
-  return portalApiError("not_configured", "No enquiry store is connected yet.");
+  return portalApiError("not_configured", "Enquiries are not stored on this website, so there is nothing to list.");
 }

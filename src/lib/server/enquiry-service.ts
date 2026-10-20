@@ -7,19 +7,19 @@ import { getCentres } from "@/lib/data";
 
 import type { EnquiryDestination, EnquiryPayload, ForwardedEnquiry } from "./destinations";
 
-/** Value the admissions form sends for "Not sure yet" (contract comment on `preferredCentre`). */
+/** Value the admissions and hero forms send for "Not sure yet" (contract comment on `preferredCentre`). */
 export const PREFERRED_CENTRE_NOT_SURE = "not-sure";
 export const PREFERRED_CENTRE_ERROR = "Select a centre from the list";
 
 /**
  * Server-side enforcement of the contract note "Centre slug or 'not-sure'.
- * Free text is not accepted" — the shared schema only limits length. Allowed:
- * absent/empty, "not-sure", or the slug of a centre getCentres() currently
- * publishes (the same list the form's options are built from).
- * Returns field errors, or null when valid.
+ * Free text is not accepted" (D-016) for the admissions and hero forms — the
+ * shared schema only checks the slug shape. Allowed: absent/empty, "not-sure",
+ * or the slug of a centre getCentres() currently publishes (the same list the
+ * forms' options are built from). Returns field errors, or null when valid.
  */
 export async function checkPreferredCentre(enquiry: Enquiry): Promise<Record<string, string[]> | null> {
-  if (enquiry.source !== "admissions") return null;
+  if (enquiry.source !== "admissions" && enquiry.source !== "hero") return null;
   const value = enquiry.preferredCentre;
   if (!value || value === PREFERRED_CENTRE_NOT_SURE) return null;
   const centres = await getCentres();

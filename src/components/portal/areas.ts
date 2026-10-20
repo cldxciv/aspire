@@ -4,6 +4,7 @@ import {
   FileText,
   GraduationCap,
   HeartHandshake,
+  History,
   Inbox,
   LayoutDashboard,
   MapPin,
@@ -11,17 +12,18 @@ import {
   ShieldCheck,
   TrendingUp,
   Trophy,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
+import type { Messages } from "@/i18n/messages/types";
 import type { Role } from "@/lib/auth/roles";
 
-export type PortalNavItem = { label: string; href: string; icon: LucideIcon };
+export type PortalNavKey = Exclude<keyof Messages<"portal">["nav"], "sectionsLabel">;
+
+/** A sidebar item: `href` is LOCALE-FREE (localise with `localePath`), the label comes from `portal.nav`. */
+export type PortalNavItem = { key: PortalNavKey; href: string; icon: LucideIcon };
 
 export interface PortalAreaConfig {
-  /** Role badge / eyebrow text. */
-  label: string;
-  /** Uppercase title at the top of the sidebar (desktop). */
-  sidebarTitle: string;
   icon: LucideIcon;
   /** Area home is matched exactly; every other item also matches its sub-paths. */
   nav: PortalNavItem[];
@@ -37,18 +39,17 @@ export interface PortalAreaConfig {
 
 /**
  * Visual identity per portal area: same layout, different accent colour, icon
- * and label, so student, parent and staff views are never confused.
+ * and label, so student, parent and staff views are never confused. Labels live in the
+ * `portal` messages (`areas.<role>`, `nav.<key>`).
  */
 export const portalAreas: Record<Role, PortalAreaConfig> = {
   student: {
-    label: "Student portal",
-    sidebarTitle: "Aspire Student",
     icon: GraduationCap,
     nav: [
-      { label: "Overview", href: "/student", icon: LayoutDashboard },
-      { label: "Timetable", href: "/student/timetable", icon: CalendarDays },
-      { label: "Resources", href: "/student/resources", icon: BookOpen },
-      { label: "Progress", href: "/student/progress", icon: TrendingUp },
+      { key: "overview", href: "/student", icon: LayoutDashboard },
+      { key: "timetable", href: "/student/timetable", icon: CalendarDays },
+      { key: "resources", href: "/student/resources", icon: BookOpen },
+      { key: "progress", href: "/student/progress", icon: TrendingUp },
     ],
     strip: "bg-blue",
     badge: "border-[#bcd6fb] bg-blue-soft text-[#0755b5]",
@@ -59,13 +60,11 @@ export const portalAreas: Record<Role, PortalAreaConfig> = {
     iconTile: "bg-blue-soft text-blue",
   },
   parent: {
-    label: "Parent portal",
-    sidebarTitle: "Aspire Parent",
     icon: HeartHandshake,
     nav: [
-      { label: "Overview", href: "/parent", icon: LayoutDashboard },
-      { label: "Updates", href: "/parent/updates", icon: Megaphone },
-      { label: "Progress", href: "/parent/progress", icon: TrendingUp },
+      { key: "overview", href: "/parent", icon: LayoutDashboard },
+      { key: "updates", href: "/parent/updates", icon: Megaphone },
+      { key: "progress", href: "/parent/progress", icon: TrendingUp },
     ],
     strip: "bg-success",
     badge: "border-[#bfe5cf] bg-success-soft text-[#0f5a3c]",
@@ -76,15 +75,15 @@ export const portalAreas: Record<Role, PortalAreaConfig> = {
     iconTile: "bg-success-soft text-[#0f6b48]",
   },
   admin: {
-    label: "Staff admin",
-    sidebarTitle: "Aspire Admin",
     icon: ShieldCheck,
     nav: [
-      { label: "Overview", href: "/admin", icon: LayoutDashboard },
-      { label: "Enquiries", href: "/admin/enquiries", icon: Inbox },
-      { label: "Content", href: "/admin/content", icon: FileText },
-      { label: "Centres", href: "/admin/centres", icon: MapPin },
-      { label: "Results", href: "/admin/results", icon: Trophy },
+      { key: "overview", href: "/admin", icon: LayoutDashboard },
+      { key: "users", href: "/admin/users", icon: UsersRound },
+      { key: "audit", href: "/admin/audit", icon: History },
+      { key: "enquiries", href: "/admin/enquiries", icon: Inbox },
+      { key: "content", href: "/admin/content", icon: FileText },
+      { key: "centres", href: "/admin/centres", icon: MapPin },
+      { key: "results", href: "/admin/results", icon: Trophy },
     ],
     strip: "bg-gold",
     badge: "border-[#f2dfa0] bg-gold-soft text-[#7a5600]",
@@ -96,7 +95,7 @@ export const portalAreas: Record<Role, PortalAreaConfig> = {
   },
 };
 
-/** Whether `href` is the current section for `pathname`. */
+/** Whether `href` is the current section for a LOCALE-FREE `pathname`. */
 export function isActivePortalItem(pathname: string | null, href: string, areaHome: string): boolean {
   if (pathname === null) return false;
   if (href === areaHome) return pathname === href;

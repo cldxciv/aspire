@@ -116,12 +116,29 @@ describe("GET /api/centres", () => {
     expect((await getCentres(get(`/api/centres?q=${"a".repeat(101)}`))).status).toBe(400);
     expect((await getCentres(get("/api/centres?exam=x"))).status).toBe(400);
   });
+
+  it("never exposes centre heads (faculty info is not published) or sourceRef", async () => {
+    const body = await json<{ data: Record<string, unknown>[] }>(await getCentres(get("/api/centres")));
+    for (const centre of body.data) {
+      expect(centre).not.toHaveProperty("head");
+      expect(centre).not.toHaveProperty("sourceRef");
+    }
+    expect(JSON.stringify(body)).not.toMatch(/facultySlug/);
+  });
 });
 
 describe("GET /api/centres/[slug]", () => {
   it("returns a centre or 404", async () => {
     expect((await getCentreBySlug(get("/api/centres/shimla"), params("shimla"))).status).toBe(200);
     expect((await getCentreBySlug(get("/api/centres/nowhere"), params("nowhere"))).status).toBe(404);
+  });
+
+  it("never exposes the centre head", async () => {
+    const body = await json<{ data: Record<string, unknown> }>(
+      await getCentreBySlug(get("/api/centres/shimla"), params("shimla")),
+    );
+    expect(body.data).not.toHaveProperty("head");
+    expect(JSON.stringify(body)).not.toMatch(/facultySlug/);
   });
 
   it("generateStaticParams falls back to the sentinel when no centre is visible", async () => {

@@ -192,7 +192,7 @@ const downloads: DownloadItem[] = [
     title: "Physics Formula Vault: Mechanics to Modern Physics",
     category: "Formula Sheet",
     description:
-      "Every JEE / NEET physics formula with the one-line derivation cue Er. Raman Sharma uses on the doubt desk…",
+      "Every JEE / NEET physics formula with a one-line derivation cue from the doubt desk…",
     subjects: "Physics",
     audience: "Class 11/12 & Droppers",
     pages: 24,
@@ -205,7 +205,7 @@ const downloads: DownloadItem[] = [
     title: "Organic Chemistry DPP Set: Mechanisms Week 1–4",
     category: "DPP",
     description:
-      "Daily practice problems from Prof. Arun Kaundal's Reaction Roadmap: SN1/SN2, E1/E2, NGP and rearrangements with timed…",
+      "Daily practice problems from the Reaction Roadmap: SN1/SN2, E1/E2, NGP and rearrangements with timed…",
     subjects: "Chemistry",
     audience: "Class 12 & Droppers",
     pages: 36,
@@ -254,7 +254,7 @@ export const instituteProfile: InstituteProfile = {
   },
   tagline: "Founded by IIT Roorkee alumni",
   summary:
-    "Founded by IITians in Shimla, Aspire prepares ambitious students from every district of Himachal Pradesh for JEE Main, JEE Advanced, NEET and the Olympiads — with permanent resident faculty, disciplined hostels and results you can verify.",
+    "Founded by IITians in Shimla, Aspire prepares ambitious students from every district of Himachal Pradesh for JEE Main, JEE Advanced, NEET and the Olympiads — with permanent resident faculty and disciplined hostels.",
   foundingStory:
     "For decades, a serious JEE or NEET attempt meant sending a 16-year-old to Kota or Delhi. Aspire was founded in 2013 to end that compromise: a residential academy in Himachal Pradesh where the teaching, the hostels and the testing are all held to the same national standard — and where parents are two hours away, not two days.",
   mission: {
@@ -267,7 +267,7 @@ export const instituteProfile: InstituteProfile = {
     headline: "Competitive success isn’t born from generic slide-decks or weekend guest lecturers.",
     paragraphs: [
       "It requires relentless, round-the-clock pedagogical immersion. At Aspire, every senior educator is a permanent resident scholar dedicated to dissecting high-order problem patterns until intuition becomes second nature.",
-      "Our promise to Himachali families is simple: the same rigour as Kota, two hours from home, with a warden who knows your child’s name and a published refund charter you can hold us to.",
+      "Our promise to Himachali families is simple: the same rigour as Kota, two hours from home, with a warden who knows your child’s name.",
     ],
     attribution: "Er. Raman Sharma, Founder & Physics Directorate · B.Tech, IIT Roorkee",
   },
@@ -326,7 +326,7 @@ export const instituteProfile: InstituteProfile = {
       year: 2013,
       title: "First classroom opens in New Shimla",
       description:
-        "Er. Raman Sharma (B.Tech, IIT Roorkee) starts Aspire with one JEE batch of 28 students and a promise: no guest lecturers, ever.",
+        "Aspire starts with one JEE batch of 28 students and a promise: no guest lecturers, ever.",
       tag: "Founded",
     },
     {
@@ -346,7 +346,9 @@ export const instituteProfile: InstituteProfile = {
       year: 2019,
       title: "Brain of Himachal scholarship test launched",
       description:
-        "A statewide, NTA-identical diagnostic exam that funds 100% free education and boarding for district toppers.",
+        // Demo claim "funds 100% free education and boarding for district toppers" withheld pending
+        // Aspire's confirmation (docs/content-verification.md, 2026-10-20 integrity review).
+        "A statewide diagnostic and scholarship test for Himachal students. Scholarship terms to be confirmed by Aspire.",
       tag: "BOH",
     },
     {

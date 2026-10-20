@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isPortalPreviewEnabled, SESSION_COOKIE_NAME } from "./config";
+import { AUTH_COOKIE_NAME, isPortalPreviewEnabled, SESSION_COOKIE_NAME } from "./config";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -34,7 +34,8 @@ describe("isPortalPreviewEnabled", () => {
 });
 
 describe("SESSION_COOKIE_NAME", () => {
-  it("is unset while no identity provider is integrated", () => {
-    expect(SESSION_COOKIE_NAME).toBeNull();
+  it("names the session cookie set by /api/auth/login (a proxy hint only, D-029)", () => {
+    expect(SESSION_COOKIE_NAME).toBe("aspire_session");
+    expect(SESSION_COOKIE_NAME).toBe(AUTH_COOKIE_NAME);
   });
 });

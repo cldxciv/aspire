@@ -23,6 +23,44 @@ Owner: Orchestrator. Updated after each merge. Only commands actually run are li
 | Mobile menu (browser, dev) | Escape closes from toggle and from panel; focus returns to toggle |
 | Images (browser, dev) at 360 / 768 / 1280 on `/`, `/about`, `/programs`, `/programs/iit-jee`, `/resources`, article, `/admissions`, `/contact` | all load, no broken images, no horizontal overflow; hero served via `/_next/image` (~235 KB at 1920w) |
 
+## Milestone 4 — Hindi site, logins, image-rich pages, faculty removed (integrated 2026-10-20)
+Plan: `docs/m4-plan.md` (D-028 i18n, D-029 auth, D-030 imagery) · briefs: `docs/m4-briefs.md` · integrity review: `docs/m4-integrity-review.md` · Hindi register: `docs/hindi-review-register.md` · auth: `docs/auth-and-portals.md` · owner questions: `docs/aspire-approval-checklist.md` §15.
+
+| Workstream | Owner | Status |
+|---|---|---|
+| Faculty info removed (`/faculty` → `/about`, no names/profiles/founder message/centre heads, API strips `head`) | Lead | complete |
+| `[lang]` routing (English unprefixed, Hindi `/hi`), Hindi chrome, switcher, Devanagari fonts, hreflang, sitemap/robots | I18N-CORE | complete |
+| Locale-aware content + Hindi overlays (`src/content/hi/**`) | CONTENT-HI | complete (machine draft) |
+| 36 licensed stock photos (24 new) | IMG2 | complete |
+| Pages: home/programs/results/centres/forms · about/hostels/admissions/contact/resources/legal | PAGES-A · PAGES-B | complete (en + hi) |
+| Auth core (SQLite, scrypt, sessions, throttling, admin APIs, audit) · login UI + 3 portals + admin user management | AUTH-1 · AUTH-2 | complete |
+| Image uplift to ~50/50 (`PageHero` image, `MediaSplit`, `PhotoBand`, `StickyMediaLayout`) | UPLIFT-A · UPLIFT-B | complete |
+| QA public · QA auth/security · content integrity | QA-PUBLIC · QA-AUTH · INTEGRITY | complete; findings fixed or raised with Aspire |
+
+| Check | Result |
+|---|---|
+| typecheck / lint / test | pass — 41 files, 884 tests |
+| `next build` | success — 123 static/partial pages, no warnings (earlier auth prerender log errors fixed with `unstable_rethrow`) |
+| Production smoke (`next start`, fresh build) | **63/63** — 26 public pages (13 × en/hi): 200, correct `<html lang>`, one h1, 0 DEMO, 0 faculty; `/en/*`, `/faculty`, `/hi/faculty` redirects; portal/account → localised login; 404s; robots disallows portal/account/login in both locales; sitemap with hreflang; `/api/centres` without heads; student/parent/admin sign-in (cookie HttpOnly + Secure + SameSite=Lax), every portal page en + hi (200, `noindex`, `no-store`), cross-role API denial, logout revokes, unknown login 401, cross-origin login 403 |
+| QA public (dev, preview) | all routes × locales pass; no overflow 320–1920; first fold fits at 1280×600 … 1920×1080 in both locales; Hindi complete; numbers match English |
+| Image share at 1440 (preview content) | 45–50 % static on Home, Programs, Program detail, Centres, About, Hostels, Admissions, Contact, Resources; long-form pages 41–55 % of the viewport while reading (Results, Articles, Privacy, Terms) |
+| QA auth (≈450 live assertions) | 0 Critical/High; M1 (forged `X-Forwarded-For` bypassed the per-IP limit) **fixed** (`TRUSTED_PROXY_HOPS`, rightmost trusted hop); L1–L5 documented as owner/deployment decisions |
+
+### Milestone 4 conditions
+- **Hindi is a machine draft** — native review before launch (checklist HI-1/HI-2); the privacy additions also need legal review (LG-1).
+- **Auth store is a single SQLite file** (`AUTH_DB_PATH`, default `.data/aspire.sqlite`) — one server instance, persistent disk, backups; create the first admin with `npm run auth:create-admin`; never run `auth:seed` on a server.
+- Run behind a reverse proxy that sets `X-Forwarded-For`; set `TRUSTED_PROXY_HOPS` if there is more than one.
+
+## Milestone 3 — Homepage showcase + 3-step hero form (integrated 2026-10-20)
+Full report: `docs/homepage-implementation-report.md` · QA: `docs/visual-qa-report.md` · Approvals: `docs/aspire-approval-checklist.md` · Map: `docs/homepage-showcase-content-map.md`.
+
+| Check | Result |
+|---|---|
+| typecheck / lint / test | pass — 26 files, 528 tests |
+| build + production smoke (fresh build 02:57:29) | pass — 0 imported data / DEMO / filler on `/` and `/results`; hero POST `not_configured` |
+| Preview password gate (D-027) | built and tested (401 on every page/API without the password; images exempt so next/image works); **off locally** by owner choice — set `PREVIEW_ACCESS_PASSWORD` in the host's settings for any shared preview |
+| QA Wave 2 | no blocker/high; M-1/M-2 fixed; L-1…L-7 open (polish / preview-only) |
+
 ## Milestone 2 — Demo-site data + Aspire assets (integrated 2026-10-20)
 
 | Workstream | Owner | Status |
@@ -73,7 +111,7 @@ Owner: Orchestrator. Updated after each merge. Only commands actually run are li
 | Dependency | Needed for | Owner action |
 |---|---|---|
 | Enquiry destination (CRM, email inbox or webhook) + handling process | Live enquiry forms | Aspire to choose; set `ENQUIRY_DESTINATION` (webhook adapter ready) |
-| Identity provider + student/parent/staff records | Real portals | Aspire to confirm existing systems (integration point: `src/lib/auth/session.ts`) |
+| Student/parent/staff records (timetables, marks, attendance) | Portal data beyond account details (sign-in itself is built, M4) | Aspire to confirm which system holds them |
 | Staff permission model (which staff see which learners; audit) | Admin access to learner records (D-015) | Aspire |
 | Verified content (see `content-verification.md`) | Publishing anything as fact | Aspire |
 | Approved photography + brand files | Final visuals | Aspire |
@@ -81,7 +119,7 @@ Owner: Orchestrator. Updated after each merge. Only commands actually run are li
 
 ## Deferred technical items
 - Content-Security-Policy with nonces.
-- Rate limiter is in-memory (single instance) and keys on the first `X-Forwarded-For` hop — needs a shared store and a trusted-proxy policy before multi-instance hosting.
+- Enquiry rate limiter is in-memory (single instance) — needs a shared store before multi-instance hosting. Client IP now comes from the rightmost trusted `X-Forwarded-For` hop (`TRUSTED_PROXY_HOPS`, M4).
 - Non-POST methods on `/api/enquiries` return Next's default 405 (not the JSON envelope).
 - Error-code → HTTP-status mapping exists in both `src/lib/server/http.ts` (BE) and `src/lib/auth/responses.ts` (PORTAL); consolidate into `src/lib/contracts/api.ts`.
 - Portal "Preview" banner/badges must be removed when a real identity provider is connected (`docs/auth-and-portals.md`).

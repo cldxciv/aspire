@@ -39,6 +39,27 @@ describe("authorizeRole (deny by default)", () => {
   it("allows a listed role", () => {
     expect(authorizeRole(admin, ["admin"])).toEqual({ ok: true, session: admin });
     expect(authorizeRole(parent, ["student", "parent"])).toEqual({ ok: true, session: parent });
+    expect(authorizeRole({ ...admin, mustChangePassword: false }, ["admin"]).ok).toBe(true);
+  });
+
+  it("holds back the right role while a temporary password is unchanged", () => {
+    expect(authorizeRole({ ...admin, mustChangePassword: true }, ["admin"])).toEqual({
+      ok: false,
+      error: "password_change_required",
+    });
+    // The role check still comes first.
+    expect(authorizeRole({ ...student, mustChangePassword: true }, ["admin"])).toEqual({ ok: false, error: "forbidden" });
+  });
+
+  it("rejects mistyped optional fields as malformed", () => {
+    expect(authorizeRole({ ...admin, mustChangePassword: "no" } as unknown as Session, ["admin"])).toEqual({
+      ok: false,
+      error: "unauthenticated",
+    });
+    expect(authorizeRole({ ...admin, displayName: 7 } as unknown as Session, ["admin"])).toEqual({
+      ok: false,
+      error: "unauthenticated",
+    });
   });
 });
 

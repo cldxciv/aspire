@@ -1,21 +1,49 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import HomePage from "@/app/(site)/page";
-import { getCentres, getFeaturedResults, getPrograms } from "@/lib/data";
+import HomePage from "@/app/[lang]/(site)/page";
+import { getFaculty, getFeaturedResults, getStats, getTestimonials } from "@/lib/data";
 
-/** Renders the async home page (its children are all synchronous components). */
+/** Renders the async home page (sections are server components; client children render statically). */
 async function renderHome(): Promise<string> {
   return renderToStaticMarkup(await HomePage());
 }
 
-/** The markup of one home section, found by its aria-labelledby id. */
+/** The markup of one home section, found by its aria-labelledby id (up to the closing </section>). */
 function section(html: string, labelId: string): string {
   const start = html.indexOf(`aria-labelledby="${labelId}"`);
   expect(start, `section ${labelId} should render`).toBeGreaterThan(-1);
-  const end = html.indexOf("</section>", start);
-  return html.slice(start, end);
+  return html.slice(start, html.indexOf("</section>", start));
 }
+
+const PREVIEW_SECTIONS = [
+  "home-results-title",
+  "home-programs-title",
+  "home-approach-title",
+  "home-centres-title",
+  "home-life-title",
+  "home-voices-title",
+  "home-impact-title",
+  "home-resources-title",
+  "home-cta-title",
+];
+
+/** Design-PNG filler that must never ship (docs/homepage-implementation-plan.md §1). */
+const MOCKUP_FILLER = [
+  "98765 43210",
+  "Palampur",
+  "Solan",
+  "Trusted Choice",
+  "Ex-IIT Faculty",
+  "20+ Years",
+  "10+ Years",
+  "5000+ Students",
+  "AIR 48",
+  "Rohan Mehta",
+  "Sneha Verma",
+  "Real Success",
+  "We Make It Possible",
+];
 
 const PERSON_ASSET_FILES = ["hero-students", "students-group-study", "student-studying", "student-boy", "student-girl"];
 
@@ -24,58 +52,86 @@ afterEach(() => {
 });
 
 describe("home page with placeholder content (development / preview)", () => {
-  it("renders every imported section with DEMO labels", async () => {
+  it("renders the hero form and every showcase section, with DEMO labels", async () => {
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
     const html = await renderHome();
-    const programs = await getPrograms();
-    const centres = await getCentres();
 
-    expect(html).toContain("Brighter Tomorrows.");
-    expect(html).toContain("gold-curve.webp");
-    expect(html).toContain("Demo · pending verification"); // hero lead from the institute profile
+    expect(html).toContain('id="home-enquiry"');
+    expect(html).toContain("Take Discipline.");
+    for (const id of PREVIEW_SECTIONS) section(html, id);
+    expect(html).toContain('aria-labelledby="home-stats-title"');
+    expect(html.match(/>Demo/g)?.length ?? 0).toBeGreaterThan(10);
 
-    const programsHtml = section(html, "home-programs-title");
-    for (const program of programs) expect(programsHtml).toContain(program.slug);
-    expect(programsHtml.match(/>Demo</g)?.length).toBe(programs.length);
-
-    expect(section(html, "home-approach-title")).toContain("icon-mentorship.webp");
-
-    const centresHtml = section(html, "home-centres-title");
-    for (const centre of centres) expect(centresHtml).toContain(`/centres#${centre.slug}`);
-    const thumbnails = centresHtml.match(/<img[^>]*>/g) ?? [];
-    expect(thumbnails.length).toBe(centres.length);
-    for (const img of thumbnails) expect(img).toMatch(/alt="Illustrative image/);
-    expect(centresHtml.match(/>Illustrative image</g)?.length).toBe(thumbnails.length);
-
-    expect(section(html, "home-cta-title")).toContain("hero-students.webp");
+    // Stats show stored values, never the design's numbers.
+    const stats = await getStats();
+    const years = stats.find((stat) => stat.id === "stat-years");
+    if (years) expect(section(html, "home-stats-title")).toContain(years.value);
   });
 
-  it("shows featured result names and keeps person images away from them", async () => {
+  it("contains none of the design's placeholder names, numbers or claims", async () => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
+    const html = (await renderHome()).replace(/&nbsp;|\s+/g, " ");
+    for (const filler of MOCKUP_FILLER) expect(html.toLowerCase()).not.toContain(filler.toLowerCase());
+  });
+
+  it("keeps AI person images out of every section that names people (D-019)", async () => {
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
     const html = await renderHome();
-    const featured = await getFeaturedResults();
-    expect(featured.length).toBeGreaterThan(0);
-
-    const resultsHtml = section(html, "home-results-title");
-    for (const result of featured.slice(0, 4)) expect(resultsHtml).toContain(result.studentDisplayName);
-    for (const chunk of [resultsHtml, section(html, "home-voices-title")]) {
-      for (const file of PERSON_ASSET_FILES) expect(chunk).not.toContain(file);
+    for (const id of ["home-results-title", "home-voices-title"]) {
+      const sectionHtml = section(html, id);
+      for (const file of PERSON_ASSET_FILES) expect(sectionHtml).not.toContain(file);
     }
+    // The only AI person image is the hero students image, decorative and visibly labelled as an
+    // illustration (D-023a); the old small postcard file is no longer rendered.
+    const heroEnd = html.indexOf('aria-labelledby="home-stats-title"');
+    expect(html.indexOf("hero-students")).toBeLessThan(heroEnd);
+    expect(html.slice(heroEnd)).not.toContain("hero-students");
+    const heroHtml = html.slice(0, heroEnd);
+    const studentsImg = heroHtml.match(/<img[^>]*hero-students-large[^>]*>/)?.[0];
+    expect(studentsImg, "hero students image").toBeDefined();
+    expect(studentsImg).toContain('alt=""');
+    expect(heroHtml).toMatch(/>Illustration</);
+    expect(html).not.toContain("hero-students.webp");
   });
 });
 
 describe("home page without placeholder content (production)", () => {
-  it("falls back to honest, unlabelled generic content", async () => {
+  it("shows the hero form and honest fallbacks, and no imported people, numbers or contact details", async () => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
+    const [featured, faculty, testimonials, stats] = await Promise.all([
+      getFeaturedResults(),
+      getFaculty(),
+      getTestimonials(),
+      getStats(),
+    ]);
+    const importedStrings = [
+      ...featured.map((result) => result.studentDisplayName ?? ""),
+      ...faculty.map((member) => member.name),
+      ...testimonials.map((testimonial) => testimonial.author),
+      ...stats.map((stat) => stat.label),
+      "98166",
+      "aspireiitmedical",
+    ].filter((value) => value.trim().length > 3);
+    expect(importedStrings.length).toBeGreaterThan(10);
+
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "false");
     const html = await renderHome();
 
-    expect(html).not.toMatch(/>Demo</);
-    expect(html).not.toContain("Demo · pending verification");
-    expect(html).toContain("Guiding students across Himachal Pradesh");
-    expect(html).toContain("Results matter");
-    expect(html).toContain("Awaiting approved result record");
-    expect(html).not.toContain('aria-labelledby="home-approach-title"');
-    expect(html).not.toContain('aria-labelledby="home-voices-title"');
-    expect(html).not.toContain("Illustrative image");
+    expect(html).toContain('id="home-enquiry"');
+    expect(html).not.toMatch(/>Demo/);
+    for (const value of importedStrings) expect(html).not.toContain(value);
+
+    // Data-only sections disappear; the results intro stays with an honest note.
+    for (const id of ["home-stats-title", "home-faculty-title", "home-centres-title", "home-voices-title", "home-impact-title", "home-resources-title"]) {
+      expect(html).not.toContain(`aria-labelledby="${id}"`);
+    }
+    section(html, "home-results-title");
+    section(html, "home-programs-title");
+    section(html, "home-approach-title");
+    section(html, "home-life-title");
+    section(html, "home-cta-title");
+
+    // No published centres → the hero form offers no centre options.
+    expect(html).not.toContain("verify availability");
   });
 });

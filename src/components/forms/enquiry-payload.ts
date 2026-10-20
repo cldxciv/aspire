@@ -81,6 +81,44 @@ export function buildPayload(
   }
 }
 
+/**
+ * Request body of the home hero 3-step form (`source: "hero"`, D-021 / D-021a), exactly as
+ * POSTed: the raw `classOrExam` value (the server maps it to class + program), required fields
+ * as `""` when blank, blank optional fields omitted. The hero form has no email field, so no
+ * `email` is ever sent (the contract keeps it optional).
+ */
+export type HeroPayload = {
+  source: "hero";
+  name: string;
+  classOrExam: string;
+  guardianName: string;
+  phone: string;
+  preferredCentre?: string;
+  message?: string;
+  consent: boolean;
+  website: string;
+};
+
+/**
+ * Builds the hero payload from the whole form (every step's fieldset stays mounted, so one
+ * FormData has all three steps). The centre is only read when the centre select is rendered.
+ */
+export function buildHeroPayload(data: FormData, hasCentreField: boolean): HeroPayload {
+  const optional = (key: string) => text(data, key) || undefined;
+  const honeypot = data.get("website");
+  return {
+    source: "hero",
+    name: text(data, "name"),
+    classOrExam: text(data, "classOrExam"),
+    guardianName: text(data, "guardianName"),
+    phone: text(data, "phone"),
+    preferredCentre: hasCentreField ? optional("preferredCentre") : undefined,
+    message: optional("message"),
+    consent: data.has("consent"),
+    website: typeof honeypot === "string" ? honeypot : "",
+  };
+}
+
 /** Keeps the first message for each field this variant renders, in DOM order. */
 export function pickErrors(fieldErrors: Record<string, string[] | undefined>, order: FieldName[]): FieldErrors {
   const picked: FieldErrors = {};

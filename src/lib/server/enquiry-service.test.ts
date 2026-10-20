@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { Enquiry } from "@/lib/contracts/enquiry";
+import { enquirySchema, type Enquiry } from "@/lib/contracts/enquiry";
 
 import type { EnquiryDestination } from "./destinations";
 import { noneDestination } from "./destinations/none";
@@ -90,6 +90,117 @@ describe("checkPreferredCentre", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe("hero enquiries (D-021)", () => {
+  const hero: Enquiry = {
+    source: "hero",
+    name: "Test Student",
+    guardianName: "Test Parent",
+    phone: "+919876543210",
+    consent: true,
+    currentClass: "dropper",
+    programInterest: "neet",
+  };
+
+  it("checkPreferredCentre accepts absent, empty, 'not-sure' and a published centre slug", async () => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
+    try {
+      for (const preferredCentre of [undefined, "", "not-sure", "shimla"]) {
+        await expect(checkPreferredCentre({ ...hero, preferredCentre })).resolves.toBeNull();
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("checkPreferredCentre rejects free text and centres that are not published", async () => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "false");
+    try {
+      for (const preferredCentre of ["My house, 12 Mall Road", "shimla", "palampur"]) {
+        await expect(checkPreferredCentre({ ...hero, preferredCentre })).resolves.toEqual({
+          preferredCentre: [PREFERRED_CENTRE_ERROR],
+        });
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("checkPreferredCentre ignores sources without a centre field", async () => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "false");
+    try {
+      const contact: Enquiry = { source: "contact", name: "Parent", phone: "9876543210", consent: true, topic: "other" };
+      await expect(checkPreferredCentre(contact)).resolves.toBeNull();
+      const quick: Enquiry = {
+        source: "quick",
+        name: "Test Student",
+        phone: "9876543210",
+        consent: true,
+        currentClass: "class-11",
+        programInterest: "jee",
+        intent: "enquiry",
+      };
+      await expect(checkPreferredCentre(quick)).resolves.toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("buildEnquiryPayload forwards currentClass + programInterest and drops classOrExam, the honeypot and blank optional fields", () => {
+    const parsed = enquirySchema.parse({
+      source: "hero",
+      name: "Test Student",
+      classOrExam: "jee-class-12",
+      guardianName: "  Test Parent ",
+      phone: "+91 98765 43210",
+      email: "",
+      preferredCentre: "",
+      message: "",
+      consent: true,
+      website: "",
+    });
+    expect(buildEnquiryPayload(parsed, "ENQ-0123456789", new Date("2026-10-20T10:00:00Z"))).toEqual({
+      reference: "ENQ-0123456789",
+      receivedAt: "2026-10-20T10:00:00.000Z",
+      consentAt: "2026-10-20T10:00:00.000Z",
+      enquiry: {
+        source: "hero",
+        name: "Test Student",
+        guardianName: "Test Parent",
+        phone: "+919876543210",
+        consent: true,
+        currentClass: "class-12",
+        programInterest: "jee",
+      },
+    });
+  });
+
+  it("buildEnquiryPayload keeps the optional fields when they are given", () => {
+    const parsed = enquirySchema.parse({
+      source: "hero",
+      name: "Test Student",
+      classOrExam: "foundation-class-10",
+      guardianName: "Test Parent",
+      phone: "9876543210",
+      email: "parent@example.com",
+      preferredCentre: "not-sure",
+      message: "Weekend batches?",
+      consent: true,
+    });
+    expect(buildEnquiryPayload(parsed, "ENQ-0123456789", new Date("2026-10-20T10:00:00Z")).enquiry).toEqual({
+      source: "hero",
+      name: "Test Student",
+      guardianName: "Test Parent",
+      phone: "9876543210",
+      email: "parent@example.com",
+      preferredCentre: "not-sure",
+      message: "Weekend batches?",
+      consent: true,
+      currentClass: "class-10",
+      programInterest: "foundation",
+    });
   });
 });
 

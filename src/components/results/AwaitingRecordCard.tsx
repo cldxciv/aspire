@@ -1,9 +1,10 @@
 import { Badge } from "@/components/ui";
+import type { Messages } from "@/i18n/messages/types";
 
 /**
  * Honest stand-in shown while no verified result records are published
  * (mockup "awaiting approved record" cards). Describes what will appear;
- * contains no names, ranks or counts.
+ * contains no names, ranks or counts. Copy: `results.awaiting` messages.
  */
 export type AwaitingCategory = {
   tag: string;
@@ -12,55 +13,10 @@ export type AwaitingCategory = {
   status: string;
 };
 
-/** Home page results feature (three cards). */
-export const HOME_AWAITING: AwaitingCategory[] = [
-  {
-    tag: "JEE · Result story",
-    title: "Student achievement",
-    description: "Student name, exam year, rank and destination will be published only after verification.",
-    status: "Awaiting approved result record",
-  },
-  {
-    tag: "NEET · Result story",
-    title: "Student achievement",
-    description: "A student's preparation journey and verified outcome, shared with consent.",
-    status: "Awaiting approved result record",
-  },
-  {
-    tag: "Foundation",
-    title: "Academic progress",
-    description: "Approved stories about growth, confidence and learning.",
-    status: "Awaiting approved story",
-  },
-];
-
-/** Results archive (four categories). */
-export const ARCHIVE_AWAITING: AwaitingCategory[] = [
-  {
-    tag: "JEE",
-    title: "Verified result archive",
-    description: "Exam, year and outcome from Aspire's official records, with the student's name only where consent is given.",
-    status: "No verified result published yet",
-  },
-  {
-    tag: "NEET",
-    title: "Verified result archive",
-    description: "Approved result details and student stories, published with consent.",
-    status: "No verified result published yet",
-  },
-  {
-    tag: "Foundation",
-    title: "Student progress stories",
-    description: "Approved academic milestones that do not imply unverified exam outcomes.",
-    status: "No approved story published yet",
-  },
-  {
-    tag: "Archive",
-    title: "Historical records",
-    description: "Year-wise records will be browsable here once Aspire provides verified data.",
-    status: "Awaiting records",
-  },
-];
+/** Results archive stand-ins (four categories), in display order, from the `results` messages. */
+export function archiveAwaiting(t: Messages<"results">["awaiting"]): AwaitingCategory[] {
+  return [t.jee, t.neet, t.foundation, t.archive];
+}
 
 export function AwaitingRecordCard({ category }: { category: AwaitingCategory }) {
   return (

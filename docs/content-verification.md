@@ -102,3 +102,64 @@ Source: `aspire2.thechunkmedia.com` (pages listed in `docs/demo-data-import.md`)
 | Marketing stats: "MOST SELECTED BY 68% PARENTS" | /residential-campuses | needs approval |
 | WhatsApp planner marketing ("12-Month Daily Study Planner PDF delivered via WhatsApp in 30 seconds", "Claim Verified 2026 Batch Plan"), prefilled WhatsApp message, cookie-banner text, Hindi toggle and Hindi slogans ("13 साल बेमिसाल", "ASPIRE फिर बना सफलता की पहचान!") | home, /why-aspire, all pages | needs approval |
 | Sample checkout identity "Aarav Sharma — KYC Verified", App ID | /admissions | omit |
+
+## Homepage showcase review (2026-10-20)
+
+Sources: Phase 1 audits (content researcher, content integrity reviewer) against `reference/homepage/01`/`02` and the demo site. Every item below is **needs approval** (or **omit** where stated) and is **not** rendered as fact; see `docs/homepage-implementation-plan.md` §1 and `docs/aspire-approval-checklist.md`.
+
+### New conflicts (continuing C1–C27)
+| ID | Conflict | Values | Status |
+|---|---|---|---|
+| C28 | Years of operation | Design "10+ Years", "For over a decade" vs demo "13+ years" / founded 2013 | needs approval |
+| C29 | "5,000+" label | Design "5000+ Students Guided" vs demo "5,000+ Doctors & IITians" (also vs 715 listed rankers, C23) | needs approval |
+| C30 | Centre network | Design map pins Dharamshala, Palampur, Shimla, Solan vs data Shimla, Hamirpur, Dharamshala, Kullu | needs approval |
+| C31 | Ranker duplicates | 7 exact duplicate pairs → 708 unique of 715 listed | needs approval |
+| C32 | Results wall vs rankers list | None of the 18 wall records match the rankers list by full name; Mitali Thakur (AIIMS Bilaspur vs IGMC), Sanidhya Dogra (Tanda vs IGMC); AIR 312/412 reused; "State Rank #2" unsourced | needs approval — keep off public pages until official records + consent |
+| C33 | BOH scholarship age | "13th Annual Edition" vs 2019 launch milestone | needs approval |
+| C34 | Selection rate | "94.2% IGMC/AIIMS rate" (/batch-finder) vs "94.8% boarder selection rate" | needs approval |
+| C35 | What "3.8 : 1" measures | Student-mentor ratio vs student-to-inquiry / doubt-resolution ratio | needs approval |
+| C36 | Residential status per campus | Sources disagree on which campuses are residential/day/partner hostels (extends C24) | needs approval |
+| C37 | Hostel routine times | Blog vs `hostels.ts` vs /batch-finder (extends C17, C25); 11:30 PM–6 AM = 6.5 h vs "mandatory 7 hours" | needs approval |
+| C38 | Founder experience | "14+ years" vs "a decade of mentoring in Kota and Delhi" before founding in 2013 | needs approval |
+| C39 | AIIMS Delhi claims | /batch-finder and /boh-scholarship claim AIIMS Delhi selections; none in results or rankers | needs approval |
+| C40 | Parents' details | "Mother of Hitesh • Hamirpur, IIT Roorkee" vs Hitesh Thakur NEET/IGMC Shimla; "Father of Kunal • Mandi" | needs approval |
+| C41 | Region served | /llms.txt "HP, Punjab, Haryana and Uttarakhand" vs "Himachal Pradesh" | needs approval |
+| C42 | Shimla rooms / girls' wing / Hamirpur 2017 milestone | "Twin-sharing AC" vs single/twin/triple; "independent towers" vs "separate wing"; Hamirpur "serving Kangra families" vs Kangra → Dharamshala | needs approval |
+| C43 | Stale program titles | "JEE / NEET 2026", "Target 2026" (exams already held); "Pinnacle 2027"; NTSE relevance | needs approval |
+| C44 | "NEET 2015" ranker labels | The 2015 exam was AIPMT | needs approval |
+| C45 | Pranjali Paul | Testimonial "NEET 2025, Dharamshala" vs ranker "Pranjali, IGMC Shimla, NEET 2021" | needs approval |
+
+### Design (PNG) values that must not ship
+Filler in `reference/homepage/*.png`, guarded by `src/test/mockup-strings.test.ts`: toppers Rohan Mehta (AIR 48), Ananya Sharma (AIR 62), Kartik Thakur (AIR 101), Sneha Verma (AIR 118) and the AIIMS Delhi / IIT Bombay destinations; testimonial "Pareet"; "Dr. R. Sharma · 20+ Years · Ex-IIT Faculty · Mentored 1000s"; phone "+91 98765 43210", "Mon–Sat 9:00 AM – 6:00 PM"; the impact-chart bar values; "© 2025". **omit**
+
+### Claims withheld (neutral copy used instead)
+| Item | Where | Status |
+|---|---|---|
+| "Himachal Pradesh's Trusted Choice" | design hero eyebrow | needs approval |
+| "We Make It Possible." (outcome promise) | design hero H1 line 3 (site uses "Let's Build Yours.") | needs approval |
+| "Real Students. Real Success.", "Learn from the Best", "Proven Track Record", "Safe & Supportive", "Safe & comfortable (AC / Non-AC)", "Consistent Growth. Brighter Futures.", "A decade of trust", "Your information is safe with us" | design sections | needs approval |
+| Trust row "Experienced Faculty / Regular Tests & Analysis / Personal Mentoring / Supportive Learning Environment" and hero lead copy | home hero (hard-coded, renders in production) | needs approval |
+| BOH "funds 100% free education and boarding for district toppers" | 2019 milestone — **removed** from `institute.ts` | needs approval |
+| "results you can verify" (summary), "a published refund charter you can hold us to" (founder message) | `institute.ts` — **removed** | needs approval |
+| Response-time promises ("Callback within 2 working hours…", email/WhatsApp reply times) | `contact.ts` — **removed** until an enquiry destination is live | needs approval |
+| Parent Portal / student-app / attendance-SMS claims | `institute.ts`, `centres.ts` (site portals are inactive, D-011) | needs approval |
+| Demo pages never imported: /batch-finder, /boh-scholarship (₹1.5 Cr pool, waivers, "Guaranteed", state citation), /demo-class, /blog (8 posts), /faqs, /refund-policy, Grievance Officer | demo site | needs approval |
+
+### Imagery
+| Item | Status |
+|---|---|
+| AI-generated people with "ASPIRE"-branded hoodies (`hero-students`, `classroom-learning`, `students-group-study`, `student-boy-1/2`); `students-group-study` also shows an Apple logo | needs approval — `hero-students` used only as a labelled "Illustration" postcard (D-023); generator/terms to be recorded |
+| `palampur-centre.webp`, `solan-centre.webp` | omit (no such Aspire centres in data) |
+| Kullu has no illustrative centre image (uses `himachalLandscape`) | needs asset |
+
+### New homepage copy introduced by the build (2026-10-20) — renders in production
+All **needs approval** (itemised for Aspire in `docs/aspire-approval-checklist.md`; developer map in `docs/homepage-showcase-content-map.md`).
+
+| Copy | Where |
+|---|---|
+| Eyebrow "IIT-JEE · NEET · Foundation · Himachal Pradesh"; H1 "Dreams / Take Discipline. / Let's Build Yours."; hero lead; trust row (Experienced Faculty, Regular Tests & Analysis, Personal Mentoring, Supportive Learning Environment) | Home hero |
+| Form card copy: "Get information about our programs, admissions and centres.", step descriptions ("Tell us a bit about the student.", "Who should Aspire contact about this enquiry?", "Anything else that would help us respond."), privacy line "We use these details to respond to your enquiry." | Hero form |
+| Class/target-exam option set (12 combinations; Foundation shown as "Class 8") | Hero form (contract `HERO_CLASS_EXAM_OPTIONS`) |
+| "Results, year by year" + intro; "A clear path for every aspirant"; "More than coaching", "Rooted in Himachal"; "Meet our faculty"; "A home for learning and growth" + tile titles (Classrooms, Hostel/Campus life, Library, Labs); "Voices from families"; "Guidance for your journey" | Home sections |
+| CTA "Ready to begin your journey?" + line; slogan "Dream · Prepare · Achieve"; footer blurb | CTA band, footer |
+| Preview-only surfaced data: stat label "Verified rankers"; testimonials with outcome wording ("cleared…", "crack NEET for IGMC", "small batch of 35"); approach point mentioning "Parent Portal"; "Dropper Apex"; caption "Monitored Study Pods" | Preview (DEMO) — accepted for preview only behind the D-027 password gate |

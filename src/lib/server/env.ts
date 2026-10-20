@@ -77,6 +77,23 @@ export function parseEnquiryDestination(env: Env): ParsedDestinationConfig {
   return { config: { kind: "webhook", url: url.toString(), secret }, warnings: [] };
 }
 
+export type EnquiryDeliveryStatus = "connected" | "not_configured";
+
+/**
+ * Whether online enquiries would currently be delivered: "connected" only when
+ * a valid webhook destination is configured, otherwise "not_configured" (the
+ * same rule POST /api/enquiries and /api/health apply). Returns the status word
+ * only — never the URL, the secret or the config warnings — so it is safe to
+ * pass to client components.
+ *
+ * Pages that are prerendered read it at build time, so it can be stale if the
+ * environment changes after the build. The API response stays the source of
+ * truth: a form must still branch on `received` / `not_configured`.
+ */
+export function getEnquiryDeliveryStatus(env: Env = process.env): EnquiryDeliveryStatus {
+  return parseEnquiryDestination(env).config.kind === "webhook" ? "connected" : "not_configured";
+}
+
 /** Origin of NEXT_PUBLIC_SITE_URL (e.g. "https://aspireiit.in"), or null if unset/invalid. */
 export function getSiteOrigin(env: Env): string | null {
   const raw = env.NEXT_PUBLIC_SITE_URL?.trim();

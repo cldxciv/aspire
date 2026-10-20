@@ -22,7 +22,7 @@ export const centres: Centre[] = [
     email: "shimla@aspireiit.in",
     openingHours: "Mon–Sat 8:00 AM – 8:00 PM · Sun 9:00 AM – 1:00 PM (Counselling desk)",
     programs: [],
-    head: { honorific: "Er.", name: "Raman Sharma", title: "Director", facultySlug: "er-raman-sharma" },
+    head: { honorific: "Er.", name: "Raman Sharma", title: "Director", facultySlug: "er-raman-sharma" }, // not rendered (2026-10-20)
     hostelNote: "Hostels: Boys & Girls (50m walk)",
     transportNote: "Direct inter-state Volvo stop at BCS Chowk; weekend pickup for outstation parents.",
     travelTimes: ["2.5 hrs from Solan", "3.5 hrs from Chandigarh"],
@@ -65,7 +65,7 @@ export const centres: Centre[] = [
     district: "Hamirpur",
     label: "Central Hub",
     summary:
-      "The central academic hub for Hamirpur, Una and Bilaspur districts: boarding & day-scholastic batches, a dedicated girls hostel wing and the Reaction Mechanism Lab led by Prof. Arun Kaundal.",
+      "The central academic hub for Hamirpur, Una and Bilaspur districts: boarding & day-scholastic batches, a dedicated girls hostel wing and an organic-chemistry Reaction Mechanism Lab.",
     address: "Anu Road, Opposite PWD Colony, Hamirpur - 177005",
     phone: "+91 98166 23677",
     email: "hamirpur@aspireiit.in",
@@ -109,7 +109,7 @@ export const centres: Centre[] = [
     district: "Kangra",
     label: "Kangra Valley",
     summary:
-      "A high-altitude study retreat for the Kangra valley: Civil Lines classrooms, a partner-hostel network within 1 km and Er. Vivek Chauhan's physics doubt desk every evening.",
+      "A high-altitude study retreat for the Kangra valley: Civil Lines classrooms, a partner-hostel network within 1 km and an evening physics doubt desk.",
     address: "Civil Lines, Kachhari Road, Dharamshala - 176215",
     phone: "+91 98166 23678",
     email: "dharamshala@aspireiit.in",
@@ -153,7 +153,7 @@ export const centres: Centre[] = [
     district: "Kullu",
     label: "Kullu & Mandi",
     summary:
-      "Monitored day-boarding centre on Dhalpur Green Avenue serving Kullu, Mandi and Manali students, with residential rooms for outstation scholars and Dr. Arvind Swaminathan's chemistry directorate.",
+      "Monitored day-boarding centre on Dhalpur Green Avenue serving Kullu, Mandi and Manali students, with residential rooms for outstation scholars and a chemistry practical lab.",
     address: "Dhalpur Green Avenue, Near Bus Stand, Kullu - 175101",
     phone: "+91 98166 23679",
     email: "kullu@aspireiit.in",

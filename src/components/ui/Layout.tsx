@@ -6,11 +6,13 @@ export function Container({ className, ...props }: ComponentProps<"div">) {
   return <div className={cn("mx-auto w-full max-w-content px-4 sm:px-5", className)} {...props} />;
 }
 
-export type SectionTone = "white" | "surface" | "navy";
+export type SectionTone = "white" | "surface" | "blue" | "navy";
 
 const tones: Record<SectionTone, string> = {
   white: "bg-white",
   surface: "bg-surface",
+  /** Light blue band (homepage stats band, D-022). */
+  blue: "bg-blue-soft/60",
   navy: "bg-linear-to-r from-navy to-navy-2 text-white",
 };
 
@@ -23,7 +25,11 @@ export function Section({
   ...props
 }: ComponentProps<"section"> & { tone?: SectionTone; containerClassName?: string }) {
   return (
-    <section className={cn("py-11 md:py-16", tones[tone], className)} {...props}>
+    <section
+      className={cn("py-11 md:py-16", tones[tone], className)}
+      data-surface={tone === "navy" ? "dark" : undefined}
+      {...props}
+    >
       <Container className={containerClassName}>{children}</Container>
     </section>
   );

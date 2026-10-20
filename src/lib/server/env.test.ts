@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getSiteOrigin, parseEnquiryDestination } from "./env";
+import { getEnquiryDeliveryStatus, getSiteOrigin, parseEnquiryDestination } from "./env";
 
 const SECRET = "s".repeat(32);
 
@@ -72,6 +72,64 @@ describe("parseEnquiryDestination", () => {
       NODE_ENV: "production",
     });
     expect(JSON.stringify(parsed.warnings)).not.toMatch(/secret-host|token123|tiny/);
+  });
+});
+
+describe("getEnquiryDeliveryStatus", () => {
+  const URL_ = "https://hooks.example.com/enquiries";
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is 'connected' only for a valid webhook destination", () => {
+    expect(
+      getEnquiryDeliveryStatus({
+        ENQUIRY_DESTINATION: "webhook",
+        ENQUIRY_WEBHOOK_URL: URL_,
+        ENQUIRY_WEBHOOK_SECRET: SECRET,
+      }),
+    ).toBe("connected");
+  });
+
+  it.each([
+    ["unset", {}],
+    ["none", { ENQUIRY_DESTINATION: "none" }],
+    ["unknown destination", { ENQUIRY_DESTINATION: "email" }],
+    ["webhook without secret", { ENQUIRY_DESTINATION: "webhook", ENQUIRY_WEBHOOK_URL: URL_ }],
+    ["webhook with short secret", { ENQUIRY_DESTINATION: "webhook", ENQUIRY_WEBHOOK_URL: URL_, ENQUIRY_WEBHOOK_SECRET: "short" }],
+    ["webhook without URL", { ENQUIRY_DESTINATION: "webhook", ENQUIRY_WEBHOOK_SECRET: SECRET }],
+    [
+      "insecure webhook URL in production",
+      {
+        NODE_ENV: "production",
+        ENQUIRY_DESTINATION: "webhook",
+        ENQUIRY_WEBHOOK_URL: "http://hooks.example.com",
+        ENQUIRY_WEBHOOK_SECRET: SECRET,
+      },
+    ],
+  ])("is 'not_configured' when %s", (_label, env) => {
+    expect(getEnquiryDeliveryStatus(env)).toBe("not_configured");
+  });
+
+  it("reads process.env by default", () => {
+    vi.stubEnv("ENQUIRY_DESTINATION", "");
+    expect(getEnquiryDeliveryStatus()).toBe("not_configured");
+    vi.stubEnv("ENQUIRY_DESTINATION", "webhook");
+    vi.stubEnv("ENQUIRY_WEBHOOK_URL", URL_);
+    vi.stubEnv("ENQUIRY_WEBHOOK_SECRET", SECRET);
+    expect(getEnquiryDeliveryStatus()).toBe("connected");
+  });
+
+  it("returns only the status word, never the URL or secret", () => {
+    const status = getEnquiryDeliveryStatus({
+      ENQUIRY_DESTINATION: "webhook",
+      ENQUIRY_WEBHOOK_URL: URL_,
+      ENQUIRY_WEBHOOK_SECRET: SECRET,
+    });
+    expect(typeof status).toBe("string");
+    expect(status).not.toContain("hooks.example.com");
+    expect(status).not.toContain(SECRET);
   });
 });
 

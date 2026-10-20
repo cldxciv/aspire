@@ -5,16 +5,19 @@ import { useId, useLayoutEffect, useRef, useState, type ChangeEvent, type FormEv
 import { flushSync } from "react-dom";
 import { z } from "zod";
 import { Button } from "@/components/ui";
+import { useLocale } from "@/i18n/client";
+import { format } from "@/i18n/format";
+import enForms from "@/i18n/messages/en/forms";
+import type { Messages } from "@/i18n/messages/types";
+import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
-import {
-  CLASS_OPTIONS,
-  CONTACT_TOPIC_OPTIONS,
-  PROGRAM_INTEREST_OPTIONS,
-  enquirySchema,
-} from "@/lib/contracts/enquiry";
+import { PROGRAM_INTEREST_OPTIONS, enquirySchema } from "@/lib/contracts/enquiry";
 import { FIELD_ORDER, buildPayload, pickErrors, type FieldErrors, type FieldName, type Intent } from "./enquiry-payload";
+import { localizeFieldErrors } from "./field-errors";
 import { ConsentField, HoneypotField, SelectField, TextAreaField, TextField } from "./fields";
+import { formatNodes } from "./format-nodes";
 import { FormStatus, type FormState } from "./FormStatus";
+import { classOptions, programOptions, topicOptions } from "./option-labels";
 import { submitEnquiry } from "./submit-enquiry";
 
 /**
@@ -24,9 +27,33 @@ import { submitEnquiry } from "./submit-enquiry";
  * - Renders the server's answer honestly: only `received` is reported as a successful enquiry;
  *   `not_configured` says plainly that nothing was sent and keeps the entered data.
  * - Renders only the form (fields, consent, submit, status) — the caller supplies any card chrome.
+ *
+ * ── Localisation API (M4, D-028) ────────────────────────────────────────────────────────────
+ *   // server page (admissions / contact)
+ *   const [locale, tForms] = await Promise.all([getLocale(), getMessages("forms")]);
+ *   const centres = await getCentres(undefined, locale);
+ *   const centreOptions = centres.map((c) => ({
+ *     value: c.slug,
+ *     label: isPlaceholder(c) ? format(tForms.shared.centreUnverified, { name: c.name }) : c.name,
+ *   }));
+ *   <EnquiryForm variant="admissions" centreOptions={centreOptions} messages={tForms} />
+ *   <EnquiryForm variant="contact" messages={tForms} />
+ *
+ * - `messages`: the `forms` namespace (`EnquiryFormMessages` = `Pick<Messages<"forms">, "shared" |
+ *   "enquiry">`; passing the whole `getMessages("forms")` object is fine). Optional only for
+ *   backwards compatibility — without it the form renders English, so ALWAYS pass it.
+ * - Links (privacy notice, contact page) use `useLocale()` + `localePath()` internally.
+ * - Field errors: the contract's English zod messages are mapped per field onto
+ *   `forms.shared.errors` (field-errors.ts). Server outcomes are shown with `forms.shared.status`
+ *   copy chosen by outcome kind, never the server's English `message`.
+ * - Option values always come from the contract; only their labels are localised.
+ * - Unchanged: `variant`, `centreOptions`, `defaultProgram`, `className`.
  */
 
 export type EnquiryFormVariant = "quick" | "admissions" | "contact";
+
+/** The parts of the `forms` namespace this form reads. */
+export type EnquiryFormMessages = Pick<Messages<"forms">, "shared" | "enquiry">;
 
 export interface EnquiryFormProps {
   variant: EnquiryFormVariant;
@@ -35,18 +62,22 @@ export interface EnquiryFormProps {
   /** Pre-selects a program, e.g. from a program detail page ("jee" | "neet" | "foundation" | "integrated"). */
   defaultProgram?: string;
   className?: string;
+  /** Localised copy: `await getMessages("forms")`. Defaults to English (backwards compatibility only). */
+  messages?: EnquiryFormMessages;
 }
-
-const INTENT_OPTIONS: { value: Intent; label: string }[] = [
-  { value: "enquiry", label: "Enquiry" },
-  { value: "scholarship", label: "Scholarship interest" },
-];
-
-const NOT_SURE_CENTRE = { value: "not-sure", label: "Not sure yet" };
 
 const MESSAGE_MAX = 1000;
 
-export function EnquiryForm({ variant, centreOptions, defaultProgram, className }: EnquiryFormProps) {
+export function EnquiryForm({ variant, centreOptions, defaultProgram, className, messages = enForms }: EnquiryFormProps) {
+  const locale = useLocale();
+  const { shared, enquiry: t } = messages;
+  const intentOptions: { value: Intent; label: string }[] = [
+    { value: "enquiry", label: t.intentEnquiry },
+    { value: "scholarship", label: t.intentScholarship },
+  ];
+  const notSureCentre = { value: "not-sure", label: shared.notSureCentre };
+  const optional = shared.optionalSuffix;
+
   const uid = useId();
   const fieldId = (name: string) => `${uid}-${name}`;
 
@@ -88,7 +119,7 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className 
   function showFieldErrors(next: FieldErrors, origin: "client" | "server") {
     // Commit the errors first so the focused field already carries aria-invalid + its message.
     flushSync(() => {
-      setErrors(next);
+      setErrors(localizeFieldErrors(next, shared.errors));
       setState({ kind: "invalid", count: Object.keys(next).length, origin });
     });
     const first = order.find((field) => next[field]);
@@ -170,9 +201,9 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className 
     >
       {variant === "quick" && (
         <fieldset className="mb-4">
-          <legend className="sr-only">What would you like to ask about?</legend>
+          <legend className="sr-only">{t.intentLegend}</legend>
           <div className="flex gap-1 rounded-[9px] bg-surface p-1">
-            {INTENT_OPTIONS.map((option) => (
+            {intentOptions.map((option) => (
               <label
                 key={option.value}
                 className={cn(
@@ -196,15 +227,13 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className 
             ))}
           </div>
           {intent === "scholarship" && (
-            <p className="mt-2 text-xs text-muted">
-              Scholarship availability and eligibility are decided by Aspire and confirmed when the team responds.
-            </p>
+            <p className="mt-2 text-xs text-muted">{t.scholarshipNote}</p>
           )}
         </fieldset>
       )}
 
       <p className="mb-3 text-xs text-muted">
-        Fields marked <span className="text-danger">*</span> are required.
+        {formatNodes(shared.requiredNote, { star: <span className="text-danger">*</span> })}
       </p>
 
       <div className={grid}>
@@ -213,7 +242,7 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className 
             <TextField
               id={fieldId("name")}
               name="name"
-              label="Student name"
+              label={t.labels.studentName}
               required
               autoComplete="name"
               maxLength={80}
@@ -222,32 +251,32 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className 
             <SelectField
               id={fieldId("currentClass")}
               name="currentClass"
-              label="Current class"
+              label={t.labels.currentClass}
               required
-              placeholder="Select class"
-              options={CLASS_OPTIONS}
+              placeholder={t.placeholders.selectClass}
+              options={classOptions(shared.options)}
               error={errors.currentClass}
             />
             <SelectField
               id={fieldId("programInterest")}
               name="programInterest"
-              label="Interested program"
+              label={t.labels.interestedProgram}
               required
-              placeholder="Select program"
-              options={PROGRAM_INTEREST_OPTIONS}
+              placeholder={t.placeholders.selectProgram}
+              options={programOptions(shared.options)}
               defaultValue={programDefault}
               error={errors.programInterest}
             />
             <TextField
               id={fieldId("phone")}
               name="phone"
-              label="Phone number"
+              label={t.labels.phone}
               required
               type="tel"
               inputMode="tel"
               autoComplete="tel"
               maxLength={20}
-              hint="Parent or student mobile number."
+              hint={t.hints.quickPhone}
               error={errors.phone}
             />
           </>
@@ -258,7 +287,7 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className 
             <TextField
               id={fieldId("name")}
               name="name"
-              label="Student name"
+              label={t.labels.studentName}
               required
               autoComplete="name"
               maxLength={80}
@@ -268,38 +297,39 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className 
             <SelectField
               id={fieldId("currentClass")}
               name="currentClass"
-              label="Current class"
+              label={t.labels.currentClass}
               required
-              placeholder="Select class"
-              options={CLASS_OPTIONS}
+              placeholder={t.placeholders.selectClass}
+              options={classOptions(shared.options)}
               error={errors.currentClass}
             />
             <SelectField
               id={fieldId("programInterest")}
               name="programInterest"
-              label="Program"
+              label={t.labels.program}
               required
-              placeholder="Select program"
-              options={PROGRAM_INTEREST_OPTIONS}
+              placeholder={t.placeholders.selectProgram}
+              options={programOptions(shared.options)}
               defaultValue={programDefault}
               error={errors.programInterest}
             />
             <TextField
               id={fieldId("phone")}
               name="phone"
-              label="Student or parent phone"
+              label={t.labels.studentOrParentPhone}
               required
               type="tel"
               inputMode="tel"
               autoComplete="tel"
               maxLength={20}
-              hint="10-digit mobile number."
+              hint={t.hints.phone}
               error={errors.phone}
             />
             <TextField
               id={fieldId("email")}
               name="email"
-              label="Email"
+              label={t.labels.email}
+              optionalLabel={optional}
               type="email"
               autoComplete="email"
               maxLength={254}
@@ -309,10 +339,11 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className 
               <SelectField
                 id={fieldId("preferredCentre")}
                 name="preferredCentre"
-                label="Preferred district or centre"
-                options={[NOT_SURE_CENTRE, ...(centreOptions ?? [])]}
-                defaultValue={NOT_SURE_CENTRE.value}
-                hint="Centre availability is confirmed by Aspire."
+                label={t.labels.preferredCentre}
+                optionalLabel={optional}
+                options={[notSureCentre, ...(centreOptions ?? [])]}
+                defaultValue={notSureCentre.value}
+                hint={t.hints.centre}
                 error={errors.preferredCentre}
                 className={wide}
               />
@@ -320,10 +351,11 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className 
             <TextAreaField
               id={fieldId("message")}
               name="message"
-              label="Message"
+              label={t.labels.message}
+              optionalLabel={optional}
               rows={4}
               maxLength={MESSAGE_MAX}
-              hint={`Anything the admissions team should know. Up to ${MESSAGE_MAX} characters.`}
+              hint={format(t.hints.admissionsMessage, { max: MESSAGE_MAX })}
               error={errors.message}
               className={wide}
             />
@@ -335,7 +367,7 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className 
             <TextField
               id={fieldId("name")}
               name="name"
-              label="Your name"
+              label={t.labels.yourName}
               required
               autoComplete="name"
               maxLength={80}
@@ -344,19 +376,20 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className 
             <TextField
               id={fieldId("phone")}
               name="phone"
-              label="Phone number"
+              label={t.labels.phone}
               required
               type="tel"
               inputMode="tel"
               autoComplete="tel"
               maxLength={20}
-              hint="10-digit mobile number."
+              hint={t.hints.phone}
               error={errors.phone}
             />
             <TextField
               id={fieldId("email")}
               name="email"
-              label="Email"
+              label={t.labels.email}
+              optionalLabel={optional}
               type="email"
               autoComplete="email"
               maxLength={254}
@@ -365,29 +398,37 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className 
             <SelectField
               id={fieldId("topic")}
               name="topic"
-              label="What can we help with?"
+              label={t.labels.topic}
               required
-              placeholder="Select a topic"
-              options={CONTACT_TOPIC_OPTIONS}
+              placeholder={t.placeholders.selectTopic}
+              options={topicOptions(shared.options)}
               error={errors.topic}
             />
             <TextAreaField
               id={fieldId("message")}
               name="message"
-              label="Message"
+              label={t.labels.message}
+              optionalLabel={optional}
               rows={5}
               maxLength={MESSAGE_MAX}
-              hint={`Your question or any details that will help us respond. Up to ${MESSAGE_MAX} characters.`}
+              hint={format(t.hints.contactMessage, { max: MESSAGE_MAX })}
               error={errors.message}
               className={wide}
             />
           </>
         )}
 
-        <ConsentField id={fieldId("consent")} error={errors.consent} className={wide} />
+        <ConsentField
+          id={fieldId("consent")}
+          error={errors.consent}
+          className={wide}
+          text={shared.consent}
+          linkText={shared.consentLink}
+          privacyHref={localePath("/privacy", locale)}
+        />
       </div>
 
-      <HoneypotField id={fieldId("website")} />
+      <HoneypotField id={fieldId("website")} label={shared.honeypotLabel} />
 
       <Button
         type="submit"
@@ -400,20 +441,25 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className 
         {submitting ? (
           <>
             <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
-            Sending…
+            {shared.sending}
           </>
         ) : (
           <>
-            {variant === "quick" && intent === "scholarship" ? "Ask about scholarships" : "Send enquiry"}
+            {variant === "quick" && intent === "scholarship" ? t.submitScholarship : t.submit}
             <Send aria-hidden="true" className="size-4" />
           </>
         )}
       </Button>
       <p className={cn("mt-2 text-xs text-muted", variant !== "contact" && "text-center")}>
-        A reference number is shown here only once Aspire has received your enquiry.
+        {t.referenceNote}
       </p>
 
-      <FormStatus state={state} onContactPage={variant === "contact"} />
+      <FormStatus
+        state={state}
+        onContactPage={variant === "contact"}
+        messages={shared}
+        contactHref={localePath("/contact", locale)}
+      />
     </form>
   );
 }

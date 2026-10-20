@@ -1,5 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { buildLoginHref, isPortalApiPath, isPortalPagePath, portalRoleForPath, sanitizeNextPath } from "./paths";
+import {
+  buildChangePasswordHref,
+  buildLoginHref,
+  isAccountPagePath,
+  isPortalApiPath,
+  isPortalPagePath,
+  localizedPostLoginPath,
+  portalRoleForPath,
+  postLoginRedirect,
+  sanitizeNextPath,
+} from "./paths";
+
+describe("postLoginRedirect", () => {
+  it("uses a safe next inside the user's own portal, else the portal home", () => {
+    expect(postLoginRedirect("parent", "/parent/progress")).toBe("/parent/progress");
+    expect(postLoginRedirect("parent", "/admin/enquiries")).toBe("/parent");
+    expect(postLoginRedirect("student", "//evil.com")).toBe("/student");
+    expect(postLoginRedirect("admin", "https://evil.com/admin")).toBe("/admin");
+    expect(postLoginRedirect("admin", undefined)).toBe("/admin");
+  });
+});
 
 describe("sanitizeNextPath", () => {
   it.each([
@@ -56,6 +76,57 @@ describe("sanitizeNextPath", () => {
   it.each([undefined, null, 42, ["/admin"], { href: "/admin" }])("rejects non-string %j", (input) => {
     expect(sanitizeNextPath(input)).toBeNull();
   });
+
+  // D-028: `next` may carry the visitor's locale; the result is always locale-free.
+  it.each([
+    ["/hi/student", "/student"],
+    ["/hi/student/timetable", "/student/timetable"],
+    ["/hi/parent/progress?x=1#y", "/parent/progress"],
+    ["/en/admin/enquiries", "/admin/enquiries"],
+    ["/hi/admin/", "/admin/"],
+    ["/hi/../admin", "/admin"],
+  ])("accepts locale-prefixed portal path %s", (input, expected) => {
+    expect(sanitizeNextPath(input)).toBe(expected);
+  });
+
+  it.each([
+    "/hi",
+    "/hi/",
+    "/en",
+    "/hi/login",
+    "/hi/about",
+    "/hi//evil.com",
+    "/hi///evil.com",
+    "/hi//evil.com/admin",
+    "/en//evil.com",
+    "/hi/\\evil.com",
+    "/hi\\evil.com",
+    "/hi/\\\\evil.com",
+    "/hi/admin//evil.com",
+    "/hi/.//evil.com",
+    "/hi/%2F%2Fevil.com",
+    "/hi/%2fevil.com",
+    "/hi/%5Cevil.com",
+    "/hi%2F%2Fevil.com",
+    "/%68%69/student",
+    "/%2Fhi/student",
+    "/hi/student%2F..%2F..%2Fevil",
+    "/hi/students",
+    "/hindi/student",
+    "/xx/student",
+    "/hi/hi/student",
+    "/hi/en/admin",
+    "/hi/api/admin/enquiries",
+    "/hi/admin\n",
+    "/hi/admin\t/x",
+    "/hi/admin\u0000",
+    "https://evil.com/hi/student",
+    "//evil.com/hi/student",
+    "http:/evil.com/hi/admin",
+    `/hi/admin/${"a".repeat(600)}`,
+  ])("rejects locale-prefixed attempt %j", (input) => {
+    expect(sanitizeNextPath(input)).toBeNull();
+  });
 });
 
 describe("buildLoginHref", () => {
@@ -67,6 +138,38 @@ describe("buildLoginHref", () => {
     expect(buildLoginHref("//evil.com")).toBe("/login");
     expect(buildLoginHref("https://evil.com")).toBe("/login");
     expect(buildLoginHref()).toBe("/login");
+  });
+
+  it("localises the login page but keeps next locale-free", () => {
+    expect(buildLoginHref("/student", "hi")).toBe("/hi/login?next=%2Fstudent");
+    expect(buildLoginHref("/hi/student/timetable", "hi")).toBe("/hi/login?next=%2Fstudent%2Ftimetable");
+    expect(buildLoginHref("/hi/student", "en")).toBe("/login?next=%2Fstudent");
+    expect(buildLoginHref("/hi//evil.com", "hi")).toBe("/hi/login");
+    expect(buildLoginHref(undefined, "hi")).toBe("/hi/login");
+  });
+});
+
+describe("localised redirects after sign-in", () => {
+  it("keeps the page's locale and the role allowlist", () => {
+    expect(localizedPostLoginPath("student", "/student/timetable", "hi")).toBe("/hi/student/timetable");
+    expect(localizedPostLoginPath("student", "/hi/student/timetable", "hi")).toBe("/hi/student/timetable");
+    expect(localizedPostLoginPath("student", "/hi/student/timetable", "en")).toBe("/student/timetable");
+    expect(localizedPostLoginPath("parent", "/admin", "hi")).toBe("/hi/parent");
+    expect(localizedPostLoginPath("admin", "/hi//evil.com", "hi")).toBe("/hi/admin");
+    expect(localizedPostLoginPath("admin", "https://evil.com/admin", "en")).toBe("/admin");
+    expect(localizedPostLoginPath("student", undefined, "hi")).toBe("/hi/student");
+  });
+
+  it("postLoginRedirect accepts a locale-prefixed next but returns it locale-free", () => {
+    expect(postLoginRedirect("parent", "/hi/parent/updates")).toBe("/parent/updates");
+    expect(postLoginRedirect("parent", "/hi/admin")).toBe("/parent");
+  });
+
+  it("builds the change-password link with a safe next", () => {
+    expect(buildChangePasswordHref("en")).toBe("/account/password");
+    expect(buildChangePasswordHref("hi", "/student/progress")).toBe("/hi/account/password?next=%2Fstudent%2Fprogress");
+    expect(buildChangePasswordHref("hi", "//evil.com")).toBe("/hi/account/password");
+    expect(buildChangePasswordHref("en", "/account/password")).toBe("/account/password");
   });
 });
 
@@ -85,6 +188,13 @@ describe("portal path helpers", () => {
     expect(isPortalApiPath("/api/session")).toBe(false);
     expect(isPortalApiPath("/api/enquiries")).toBe(false);
     expect(isPortalApiPath("/api/administrator")).toBe(false);
+  });
+
+  it("recognises account pages", () => {
+    expect(isAccountPagePath("/account")).toBe(true);
+    expect(isAccountPagePath("/account/password")).toBe(true);
+    expect(isAccountPagePath("/accounts")).toBe(false);
+    expect(isAccountPagePath("/hi/account/password")).toBe(false); // callers pass locale-free paths
   });
 
   it("maps paths to portal areas", () => {

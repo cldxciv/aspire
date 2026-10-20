@@ -5,9 +5,10 @@ import type { Faq } from "@/lib/types";
 
 /**
  * FAQ accordion built on native <details>/<summary>: keyboard-operable and
- * announced as expandable without extra script. Placeholder answers carry a DemoBadge.
+ * announced as expandable without extra script. Placeholder answers carry a DemoBadge
+ * (pass the localised `demoLabel` from `common.labels.demoPending`).
  */
-export function FaqList({ faqs, className }: { faqs: Faq[]; className?: string }) {
+export function FaqList({ faqs, demoLabel, className }: { faqs: Faq[]; demoLabel?: string; className?: string }) {
   return (
     <div className={cn("divide-y divide-line overflow-hidden rounded-card border border-line bg-white shadow-soft", className)}>
       {faqs.map((faq) => (
@@ -20,7 +21,7 @@ export function FaqList({ faqs, className }: { faqs: Faq[]; className?: string }
           >
             <span className="flex flex-col items-start gap-1.5">
               <span>{faq.question}</span>
-              {faq.status === "placeholder" && <DemoBadge />}
+              {faq.status === "placeholder" && <DemoBadge label={demoLabel} />}
             </span>
             <ChevronDown
               aria-hidden="true"

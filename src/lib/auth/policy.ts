@@ -5,18 +5,25 @@
  */
 import { isRecordId, isValidSession, type Role, type Session } from "./roles";
 
-export type AuthFailure = "unauthenticated" | "forbidden";
+/**
+ * `password_change_required`: signed in with the right role, but the account still
+ * uses an admin-issued temporary password. Route guards answer 403; the account
+ * endpoints under /api/auth (me, change-password, logout) do not use these checks.
+ */
+export type AuthFailure = "unauthenticated" | "forbidden" | "password_change_required";
 
 export type AuthDecision = { ok: true; session: Session } | { ok: false; error: AuthFailure };
 
 /**
  * Allows only a well-formed session whose role is in `allowed`.
  * No session (or a malformed one) → `unauthenticated`. Wrong role, or an empty
- * `allowed` list → `forbidden`.
+ * `allowed` list → `forbidden`. Right role but a pending temporary password →
+ * `password_change_required`.
  */
 export function authorizeRole(session: Session | null | undefined, allowed: readonly Role[]): AuthDecision {
   if (!isValidSession(session)) return { ok: false, error: "unauthenticated" };
   if (!allowed.includes(session.role)) return { ok: false, error: "forbidden" };
+  if (session.mustChangePassword === true) return { ok: false, error: "password_change_required" };
   return { ok: true, session };
 }
 

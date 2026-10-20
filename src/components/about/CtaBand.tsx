@@ -1,24 +1,68 @@
 import { ArrowRight } from "lucide-react";
 import { ButtonLink } from "@/components/ui";
 import type { AspireAsset } from "@/content/aspire-assets";
+import type { ImageAsset } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { Art } from "./Art";
+import { PhotoPanel } from "./PhotoPanel";
 
-/** Closing call-to-action band (mockup `.cta`): enquiry first, contact second. */
+type CtaLink = { label: string; href: string };
+
+/**
+ * Closing call-to-action band (mockup `.cta`). All copy and hrefs come from the caller's
+ * messages; pass hrefs through `localePath()` so Hindi pages link to Hindi pages.
+ *
+ * With `image` (D-030) it becomes a wide photo panel with the copy on a navy gradient
+ * (see `PhotoPanel`); pass `imageLabel` ("Illustrative stock photo") with it.
+ */
 export function CtaBand({
   id = "cta-heading",
-  title = "Ready to take your next step?",
-  description = "Talk to the academic team and explore the right program for your goals.",
+  title,
+  description,
+  primary,
+  secondary,
   art,
+  image,
+  imageLabel,
   className,
 }: {
   id?: string;
-  title?: string;
-  description?: string;
+  title: string;
+  description: string;
+  primary: CtaLink;
+  secondary?: CtaLink;
   /** Optional decorative illustration (never a person image — this band sits beside no names, keep it that way). */
   art?: AspireAsset;
+  /** Optional licensed stock photo behind the copy (decorative; never a person beside a name). */
+  image?: ImageAsset;
+  imageLabel?: string;
   className?: string;
 }) {
+  const buttons = (
+    <div className="flex flex-wrap gap-2.5">
+      <ButtonLink href={primary.href}>
+        {primary.label} <ArrowRight aria-hidden="true" className="size-4" />
+      </ButtonLink>
+      {secondary && (
+        <ButtonLink href={secondary.href} variant="outline">
+          {secondary.label}
+        </ButtonLink>
+      )}
+    </div>
+  );
+
+  if (image) {
+    return (
+      <PhotoPanel image={image} imageLabel={imageLabel} minHeight="lg" className={className}>
+        <h2 id={id} className="text-2xl font-extrabold leading-snug tracking-tight text-white md:text-3xl">
+          {title}
+        </h2>
+        <p className="mt-2 text-[#dbe8f7]">{description}</p>
+        <div className="mt-6">{buttons}</div>
+      </PhotoPanel>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -35,14 +79,7 @@ export function CtaBand({
           <p className="mt-2 text-muted">{description}</p>
         </div>
       </div>
-      <div className="flex flex-wrap gap-2.5">
-        <ButtonLink href="/admissions#enquiry">
-          Enquire now <ArrowRight aria-hidden="true" className="size-4" />
-        </ButtonLink>
-        <ButtonLink href="/contact" variant="outline">
-          Contact Aspire
-        </ButtonLink>
-      </div>
+      {buttons}
     </div>
   );
 }

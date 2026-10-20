@@ -2,10 +2,20 @@
 
 import { ChevronDown, Search } from "lucide-react";
 import { useId, useRef, useState } from "react";
-import { EXAM_META, EXAM_ORDER } from "@/components/programs/exam-meta";
+import { EXAM_ORDER, trackLabel, type TrackLabels } from "@/components/programs/exam-meta";
 import { Button, DemoBadge, EmptyState } from "@/components/ui";
+import { format } from "@/i18n/format";
+import type { Messages } from "@/i18n/messages/types";
 import type { ExamTrack } from "@/lib/types";
 import type { RankerRow } from "./result-view";
+
+/** Copy the rankers list reads (`results.rankers`, `programs.tracks`, DEMO label). */
+export type RankersTableMessages = {
+  rankers: Messages<"results">["rankers"];
+  tracks: TrackLabels;
+  demo: string;
+  nameWithheld: string;
+};
 
 /** Rows rendered at first and added per "Show more" (the list can hold 700+ entries). */
 const PAGE_SIZE = 24;
@@ -17,8 +27,8 @@ function normalise(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function plural(count: number, word: string): string {
-  return `${count} ${word}${count === 1 ? "" : "s"}`;
+function plural(count: number, one: string, many: string): string {
+  return format(count === 1 ? one : many, { count });
 }
 
 /**
@@ -27,7 +37,16 @@ function plural(count: number, word: string): string {
  * names that may be shown. Only `limit` rows are in the DOM; filters reset the
  * page and every change is announced through a polite status message.
  */
-export function RankersTable({ rows, sources }: { rows: RankerRow[]; sources: string[] }) {
+export function RankersTable({
+  rows,
+  sources,
+  messages,
+}: {
+  rows: RankerRow[];
+  sources: string[];
+  messages: RankersTableMessages;
+}) {
+  const t = messages.rankers;
   const [exam, setExam] = useState<ExamTrack | "">("");
   const [year, setYear] = useState("");
   const [query, setQuery] = useState("");
@@ -54,9 +73,9 @@ export function RankersTable({ rows, sources }: { rows: RankerRow[]; sources: st
   const filtersActive = exam !== "" || year !== "" || query.trim() !== "";
 
   const filterSummary = [
-    exam && EXAM_META[exam].label,
+    exam && trackLabel(exam, messages.tracks),
     year,
-    query.trim() && `matching “${query.trim()}”`,
+    query.trim() && format(t.matching, { query: query.trim() }),
   ]
     .filter(Boolean)
     .join(", ");
@@ -70,16 +89,17 @@ export function RankersTable({ rows, sources }: { rows: RankerRow[]; sources: st
   };
 
   return (
-    <div>
+    // Container queries: the list sits in half the page width beside a sticky photo (D-030).
+    <div className="@container">
       <form
         role="search"
-        aria-label="Rankers list"
+        aria-label={t.formLabel}
         onSubmit={(e) => e.preventDefault()}
-        className="flex flex-col gap-3 md:flex-row md:items-end"
+        className="flex flex-col gap-3 @2xl:flex-row @2xl:items-end"
       >
         <div className="flex-1">
           <label htmlFor={searchId} className="mb-1 block text-xs font-bold text-[#354b66]">
-            Search by name or college
+            {t.searchLabel}
           </label>
           <div className="relative">
             <Search
@@ -95,17 +115,17 @@ export function RankersTable({ rows, sources }: { rows: RankerRow[]; sources: st
                 setQuery(e.target.value);
                 setLimit(PAGE_SIZE);
               }}
-              placeholder="e.g. NIT Hamirpur"
+              placeholder={t.searchPlaceholder}
               autoComplete="off"
               aria-controls={listId}
               className={`${controlClass} pl-9 pr-3`}
             />
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3 md:flex">
-          <div className="md:w-44">
+        <div className="grid grid-cols-2 gap-3 @2xl:flex">
+          <div className="@2xl:w-44">
             <label htmlFor={examId} className="mb-1 block text-xs font-bold text-[#354b66]">
-              Exam
+              {t.exam}
             </label>
             <select
               id={examId}
@@ -117,17 +137,17 @@ export function RankersTable({ rows, sources }: { rows: RankerRow[]; sources: st
               aria-controls={listId}
               className={`${controlClass} px-3`}
             >
-              <option value="">All exams</option>
+              <option value="">{t.allExams}</option>
               {examOptions.map((e) => (
                 <option key={e} value={e}>
-                  {EXAM_META[e].label}
+                  {trackLabel(e, messages.tracks)}
                 </option>
               ))}
             </select>
           </div>
-          <div className="md:w-36">
+          <div className="@2xl:w-36">
             <label htmlFor={yearId} className="mb-1 block text-xs font-bold text-[#354b66]">
-              Year
+              {t.year}
             </label>
             <select
               id={yearId}
@@ -139,7 +159,7 @@ export function RankersTable({ rows, sources }: { rows: RankerRow[]; sources: st
               aria-controls={listId}
               className={`${controlClass} px-3`}
             >
-              <option value="">All years</option>
+              <option value="">{t.allYears}</option>
               {yearOptions.map((y) => (
                 <option key={y} value={String(y)}>
                   {y}
@@ -149,16 +169,22 @@ export function RankersTable({ rows, sources }: { rows: RankerRow[]; sources: st
           </div>
         </div>
         {filtersActive && (
-          <Button variant="outline" onClick={reset}>
-            Clear
+          <Button variant="outline" onClick={reset} className="self-start @2xl:self-auto">
+            {t.clear}
           </Button>
         )}
       </form>
 
       <p role="status" className="mb-4 mt-3 text-sm text-muted">
         {filtered.length === 0
-          ? `No rankers match${filterSummary ? `: ${filterSummary}` : ""}`
-          : `Showing ${shown.length} of ${plural(filtered.length, "ranker")}${filterSummary ? ` (${filterSummary})` : ""}`}
+          ? filterSummary
+            ? format(t.noMatchFor, { filters: filterSummary })
+            : t.noMatch
+          : format(filterSummary ? t.showingFiltered : t.showing, {
+              shown: shown.length,
+              total: plural(filtered.length, t.rankerOne, t.rankerMany),
+              filters: filterSummary,
+            })}
       </p>
 
       <div id={listId}>
@@ -166,19 +192,17 @@ export function RankersTable({ rows, sources }: { rows: RankerRow[]; sources: st
           <>
             <div className="overflow-x-auto rounded-card border border-line bg-white shadow-soft">
               <table className="w-full text-left text-sm">
-                <caption className="sr-only">
-                  Rankers, newest first. Columns: student, college or institute, exam and year.
-                </caption>
+                <caption className="sr-only">{t.caption}</caption>
                 <thead className="bg-[#f4f7fb] text-xs font-bold text-[#40536b]">
                   <tr>
                     <th scope="col" className="px-3 py-3 sm:px-4">
-                      Student
+                      {t.student}
                     </th>
                     <th scope="col" className="px-3 py-3 sm:px-4">
-                      College / institute
+                      {t.institution}
                     </th>
                     <th scope="col" className="px-3 py-3 sm:px-4">
-                      Exam / year
+                      {t.examYear}
                     </th>
                   </tr>
                 </thead>
@@ -188,17 +212,17 @@ export function RankersTable({ rows, sources }: { rows: RankerRow[]; sources: st
                       <th scope="row" className="px-3 py-3 font-normal sm:px-4">
                         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                           <span className={row.name ? "font-semibold text-navy" : "text-muted"}>
-                            {row.name ?? "Name withheld"}
+                            {row.name ?? messages.nameWithheld}
                           </span>
-                          {row.placeholder && <DemoBadge label="Demo" />}
+                          {row.placeholder && <DemoBadge label={messages.demo} />}
                         </span>
                         {row.note && <span className="mt-0.5 block text-xs text-muted">{row.note}</span>}
                       </th>
                       <td className="px-3 py-3 text-ink sm:px-4">
-                        {row.institution ?? <span className="text-muted">Not stated</span>}
+                        {row.institution ?? <span className="text-muted">{t.notStated}</span>}
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 text-ink sm:px-4">
-                        {EXAM_META[row.exam].label}
+                        {trackLabel(row.exam, messages.tracks)}
                         <span className="block text-xs text-muted">{row.year}</span>
                       </td>
                     </tr>
@@ -214,19 +238,19 @@ export function RankersTable({ rows, sources }: { rows: RankerRow[]; sources: st
                   onClick={() => setLimit((current) => current + PAGE_SIZE)}
                 >
                   <ChevronDown aria-hidden="true" className="size-4" />
-                  Show {Math.min(PAGE_SIZE, remaining)} more
-                  <span className="sr-only"> of {plural(remaining, "remaining ranker")}</span>
+                  {format(t.showMore, { count: Math.min(PAGE_SIZE, remaining) })}
+                  <span className="sr-only"> {format(remaining === 1 ? t.remainingOne : t.remainingMany, { count: remaining })}</span>
                 </Button>
               </div>
             )}
           </>
         ) : (
           <EmptyState
-            title="No rankers match these filters"
-            description="Check the spelling, or try another exam or year."
+            title={t.noMatchTitle}
+            description={t.noMatchBody}
             action={
               <Button variant="outline" onClick={reset}>
-                Clear filters
+                {t.clearFilters}
               </Button>
             }
           />
@@ -234,8 +258,8 @@ export function RankersTable({ rows, sources }: { rows: RankerRow[]; sources: st
       </div>
 
       {sources.length > 0 && (
-        <p className="mt-4 break-words text-xs text-muted">
-          <span className="font-bold text-[#354b66]">Source:</span> {sources.join(" · ")}
+        <p className="mt-4 text-xs text-muted [overflow-wrap:anywhere]">
+          <span className="font-bold text-[#354b66]">{t.source}</span> {sources.join(" · ")}
         </p>
       )}
     </div>

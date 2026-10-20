@@ -126,3 +126,27 @@ export function toPublicResult(record: ResultRecord): PublicResult {
   // Drop undefined keys so the JSON stays compact.
   return Object.fromEntries(Object.entries(publicResult).filter(([, v]) => v !== undefined)) as PublicResult;
 }
+
+/**
+ * Public projection for content records (centres, programs): drops the internal
+ * import provenance `sourceRef` (e.g. "aspire2.thechunkmedia.com/… (fetched …)"),
+ * which is for the verification register, not API consumers.
+ */
+export function withoutInternalFields<T extends { sourceRef?: string }>(record: T): Omit<T, "sourceRef"> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally dropped.
+  const { sourceRef, ...rest } = record;
+  return rest;
+}
+
+/**
+ * Public projection for centres: `withoutInternalFields` plus the centre `head`
+ * (a named staff member with a faculty slug). Faculty info is not published
+ * (owner request 2026-10-20, D-030), so no API response carries it.
+ */
+export function toPublicCentre<T extends { sourceRef?: string; head?: unknown }>(
+  record: T,
+): Omit<T, "sourceRef" | "head"> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally dropped.
+  const { sourceRef, head, ...rest } = record;
+  return rest;
+}

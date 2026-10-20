@@ -1,74 +1,107 @@
-import { ArrowRight, GraduationCap, HeartHandshake, ListChecks, MapPin } from "lucide-react";
+import { ArrowRight, ClipboardList, GraduationCap, HeartHandshake, UsersRound } from "lucide-react";
 import Image from "next/image";
-import { Suspense } from "react";
-import { EnquiryForm } from "@/components/forms/EnquiryForm";
-import { AspireImage, ButtonLink, Container, DemoBadge } from "@/components/ui";
+import Link from "next/link";
+import type { CSSProperties } from "react";
+import { HeroEnquiryForm, type EnquiryDeliveryStatus } from "@/components/forms/HeroEnquiryForm";
+import { ButtonLink, Container } from "@/components/ui";
 import { aspireAssets } from "@/content/aspire-assets";
 import { stockImages } from "@/content/images";
-import type { InstituteProfile } from "@/lib/types";
+import type { Locale } from "@/i18n/config";
+import { messagesFor } from "@/i18n/messages";
+import { localePath } from "@/i18n/paths";
+import { cn } from "@/lib/cn";
 import { MountainRidge } from "./MountainRidge";
 
 const heroPhoto = stockImages.himalayaHero;
 
-/** Qualitative trust points from the mockup — no numbers (copy needs Aspire approval). */
+/** Qualitative trust points (no numbers; copy is on the Aspire approval checklist). Labels: `home.hero.trust`. */
 const TRUST_POINTS = [
-  { Icon: GraduationCap, title: "Expert faculty", text: "& mentorship" },
-  { Icon: ListChecks, title: "Structured learning", text: "& practice" },
-  { Icon: HeartHandshake, title: "Personalized", text: "student support" },
-  { Icon: MapPin, title: "Local guidance", text: "across Himachal" },
-];
-
-const DEFAULT_LEAD =
-  "Guiding students across Himachal Pradesh with expert faculty, structured programs and a commitment to meaningful academic progress.";
+  { Icon: UsersRound, key: "faculty" },
+  { Icon: ClipboardList, key: "tests" },
+  { Icon: HeartHandshake, key: "mentoring" },
+  { Icon: GraduationCap, key: "environment" },
+] as const;
 
 /**
- * Decorative gold brush stroke under "Brighter Tomorrows." (aspireAssets.goldCurve).
- *
- * The asset is an opaque RGB file: a gold stroke on a pale background. On the navy hero
- * that background would show as a light box, so an inline SVG colour-matrix filter turns
- * "how much more red than blue" into alpha: the gold stroke stays opaque and the near-white
- * background becomes transparent. The box is cropped to the stroke's band (rows 14-76 of 84)
- * and sized in `em` of the heading's font size so it tracks the headline at every breakpoint;
- * its widest render (4em of 64px = 256px) stays under the asset's 420px maxWidth.
- * The filter `<svg>` must stay rendered (not display:none) for the reference to resolve, and
- * its id must match the `[filter:url(#…)]` class (a literal, so Tailwind can generate it).
+ * Readability overlay from `lg` up, anchored to the layout rather than the viewport:
+ * `--hero-text-end` is the right edge of the text (the Container is 1200px max with 20px
+ * padding). At `lg` that is the card's left edge minus the 48px gap; from `xl` the text is
+ * capped at 440px (the students image sits to its right), so it is content-left + 460px.
+ * Navy 88% → 72% across the text, then a fade to 15% over 150px, so the mountains around the
+ * students image and the card read clearly. Colours come from the theme tokens (D-026).
+ * Contrast is measured over the brightest photo pixels (status report).
  */
-function GoldCurve() {
+const navyAt = (token: "navy" | "navy-deep", percent: number) =>
+  `color-mix(in srgb, var(--color-${token}) ${percent}%, transparent)`;
+
+const DESKTOP_OVERLAY: CSSProperties = {
+  backgroundImage: `linear-gradient(90deg, ${navyAt("navy-deep", 88)} 0%, ${navyAt("navy", 72)} var(--hero-text-end), ${navyAt("navy", 15)} calc(var(--hero-text-end) + 150px), ${navyAt("navy", 15)} 100%)`,
+};
+
+/** Outline-white secondary CTA (metrics match ButtonLink `md`). */
+const outlineWhite =
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-control border border-white/85 px-4 py-2.5 text-sm font-bold text-white " +
+  "transition hover:-translate-y-px hover:bg-white/10 motion-reduce:hover:translate-y-0";
+
+const studentsImage = aspireAssets.heroStudentsLarge;
+
+/**
+ * AI-generated students in ASPIRE hoodies (D-023a; placeholder until a consented photo shoot).
+ * Decorative (`alt=""`) and visibly labelled "Illustration"; the wrapper is hidden from assistive tech.
+ *
+ * - Below `lg`: in flow after the form card, rounded, centred, at most 440px wide.
+ * - `lg`: hidden (the text column is too wide to leave room without overlap).
+ * - `xl`+: bottom-anchored in the hero between the text column and the card, like
+ *   reference/homepage/01. The 360×435 box starts 448px into the 1160px content box, after the
+ *   440px text column, so no text overlaps it. Its right 80px sits behind the opaque card,
+ *   so the image is cropped from the left (`object-right`) at its native 1:1 scale (rendered
+ *   440px, under the asset's 460px maxWidth), keeping the main student's face left of the card.
+ *   A mask fades the left, top and bottom edges into the mountains (and the right edge, which
+ *   shows below the card). It sits above the photo/overlay (z -5) and under text and the card.
+ *   The label lives outside the masked box so it never fades.
+ */
+function HeroStudents({ className, label }: { className?: string; label: string }) {
   return (
-    <div aria-hidden="true" className="pointer-events-none text-[clamp(2.375rem,5vw,4rem)] leading-none">
-      <svg className="absolute size-0 overflow-hidden" focusable="false">
-        <filter id="home-hero-gold-key" colorInterpolationFilters="sRGB">
-          <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 0.3 0 0  1.6 0 -1.6 0 -0.08" />
-        </filter>
-      </svg>
-      <div className="-mt-[0.1em] aspect-170/62 w-[3.2em] overflow-hidden sm:ml-[4.6em] sm:w-[4em]">
-        <AspireImage asset={aspireAssets.goldCurve} className="-mt-[8.2%] [filter:url(#home-hero-gold-key)]" />
+    <div aria-hidden="true" className={cn("relative mx-auto w-full max-w-[440px]", className)}>
+      <div className="relative aspect-[440/435] overflow-hidden rounded-card xl:aspect-auto xl:h-full xl:rounded-none xl:[mask-composite:intersect] xl:[mask-image:linear-gradient(to_right,transparent,black_22%,black_84%,transparent),linear-gradient(to_bottom,transparent,black_10%,black_80%,transparent)]">
+        <Image src={studentsImage.src} alt="" fill sizes="440px" className="object-cover xl:object-right" />
       </div>
+      <span className="absolute bottom-3 left-3 rounded bg-navy/85 px-1.5 py-0.5 text-[11px] font-semibold leading-4 text-white xl:bottom-[24%] xl:left-[26%]">
+        {label}
+      </span>
     </div>
   );
 }
 
 /**
- * Home hero (mockup `.hero`): Himalayan photo (temporary stock, see docs/asset-manifest.md)
- * under a navy overlay, copy, CTAs and the quick enquiry card.
+ * Home hero (reference/homepage/01, plan §4.1): full-bleed Dhauladhar stock photo (D-018) under a
+ * lighter navy overlay, serif headline, CTAs, trust row and the 3-step enquiry card (D-021).
  *
- * Layers, back to front: navy gradient + SVG ridge (fallback if the photo fails),
- * photo, readability overlay. The overlay is near-uniform below `lg` (text spans the
- * full width) and a left-to-right fade from `lg` up (text sits in the left column),
- * keeping white and gold text at WCAG AA over the brightest parts of the photo.
- *
- * The lead is the institute profile's summary when a profile is publishable (DEMO-labelled
- * while it is a placeholder), otherwise the generic mockup line.
+ * Layout: one column below `lg` in reading order eyebrow → H1 → lead → CTAs → card → students
+ * image → trust row. From `lg`: text column + 400/432px card column, `items-start` (the card grows
+ * by step); the trust row sits in row 2 of the text column (`auto 1fr` rows, so a taller card never
+ * pushes it). From `xl` the text is capped at 440px and the students image fills the space between
+ * the text and the card (HeroStudents).
  */
-export function HomeHero({ profile }: { profile: InstituteProfile | null }) {
-  const lead = profile?.summary.trim() || DEFAULT_LEAD;
-  const leadIsDemo = Boolean(profile?.summary.trim()) && profile?.status === "placeholder";
-
+export function HomeHero({
+  centreOptions,
+  deliveryStatus,
+  locale,
+}: {
+  centreOptions: { value: string; label: string }[];
+  deliveryStatus: EnquiryDeliveryStatus;
+  locale: Locale;
+}) {
+  const t = messagesFor(locale, "home").hero;
+  const forms = messagesFor(locale, "forms");
+  const common = messagesFor(locale, "common");
   return (
     <section
       aria-labelledby="home-hero-title"
-      className="relative isolate overflow-hidden bg-linear-to-br from-[#051c35] via-navy to-[#164a82] text-white"
+      data-surface="dark"
+      className="relative isolate overflow-hidden bg-navy text-white"
     >
+      {/* Fallback behind the photo (before it paints or if it fails). */}
       <MountainRidge className="pointer-events-none absolute inset-x-0 bottom-0 -z-20 h-[clamp(120px,22vw,320px)] w-full" />
       {/* Decorative background: the heading and copy carry the meaning, so alt is empty. */}
       <Image
@@ -76,60 +109,73 @@ export function HomeHero({ profile }: { profile: InstituteProfile | null }) {
         alt=""
         fill
         preload
-        sizes="100vw"
-        className="-z-10 object-cover object-center"
+        // On narrow screens the landscape photo is cropped to a tall hero, so ask for a wider source
+        // (QA M-1); kept moderate because the mobile overlay is 80–86% navy.
+        sizes="(max-width: 767px) 200vw, (max-width: 1023px) 150vw, 100vw"
+        className="-z-10 object-cover object-[50%_60%]"
+      />
+      {/* Below lg the copy spans the full width: near-uniform overlay. */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 -z-10 bg-linear-to-b from-navy-deep/86 via-navy/80 to-navy/84 lg:hidden"
       />
       <div
         aria-hidden="true"
-        className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgb(5_28_53/0.92),rgb(9_40_75/0.84)_55%,rgb(9_40_75/0.78))] lg:bg-[linear-gradient(90deg,rgb(5_28_53/0.94),rgb(9_40_75/0.86)_60%,rgb(9_40_75/0.4))]"
+        style={DESKTOP_OVERLAY}
+        className="absolute inset-0 -z-10 hidden [--hero-text-end:calc(100%-max(0px,50%-600px)-20px-400px-48px)] lg:block xl:[--hero-text-end:calc(max(0px,50%-600px)+20px+460px)]"
       />
-      <Container className="grid items-center gap-10 pb-14 pt-10 md:pb-20 md:pt-14 lg:grid-cols-[1.25fr_0.75fr] lg:gap-12">
-        <div>
-          <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-gold">
-            IIT JEE · NEET · Foundation · School Programs
+      {/* Thin top vignette under the header. */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-x-0 top-0 -z-10 h-28 bg-linear-to-b from-navy-deep/55 to-transparent"
+      />
+
+      <Container className="grid gap-y-8 pb-10 pt-10 short:pt-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-12 xl:grid-cols-[minmax(0,1fr)_432px]">
+        {/* From xl the text is capped at 440px so it never reaches the students image. */}
+        <div className="lg:col-start-1 lg:row-start-1 xl:max-w-[440px]">
+          <p className="text-[11px] font-extrabold uppercase tracking-[0.1em] text-gold min-[400px]:text-xs min-[400px]:tracking-[0.16em]">
+            {t.eyebrow}
           </p>
           <h1
             id="home-hero-title"
-            className="mt-3.5 max-w-[680px] text-[clamp(2.375rem,5vw,4rem)] font-extrabold leading-[1.04] tracking-tight"
+            className="mt-4 font-serif text-[clamp(2.125rem,1rem+3.4vw,3.5rem)] font-bold leading-[1.06] tracking-tight short:mt-3 xl:text-[3.375rem] [&:lang(hi)]:leading-[1.22]"
           >
-            Higher Dreams.
-            <br />
-            <span className="text-gold">Brighter Tomorrows.</span>
+            <span className="block">{t.titleLine1}</span> <span className="block">{t.titleLine2}</span>{" "}
+            <span className="block text-gold">{t.titleLine3}</span>
           </h1>
-          <GoldCurve />
-          <p className="mt-3 max-w-[620px] text-[15px] text-[#e4edf8] md:text-[17px]">{lead}</p>
-          {leadIsDemo && <DemoBadge className="mt-2" />}
-          <div className="mt-6 flex flex-wrap gap-3">
-            <ButtonLink href="/programs">
-              Explore Programs <ArrowRight aria-hidden="true" className="size-4" />
+          <p className="mt-5 max-w-[560px] text-base text-white/90 md:text-[17px] short:mt-4">{t.lead}</p>
+          <div className="mt-7 flex flex-wrap gap-3 short:mt-5">
+            <ButtonLink href={localePath("/programs", locale)}>
+              {t.ctaPrograms}
+              <ArrowRight aria-hidden="true" className="size-4" />
             </ButtonLink>
-            <ButtonLink href="/admissions#enquiry" variant="outline">
-              Book a Free Counselling Session
-            </ButtonLink>
+            <Link href={localePath("/about", locale)} className={outlineWhite}>
+              {t.ctaStory}
+            </Link>
           </div>
-          <ul className="mt-8 grid grid-cols-1 gap-3 text-xs text-[#eaf2ff] min-[420px]:grid-cols-2 xl:flex xl:flex-wrap xl:gap-x-6">
-            {TRUST_POINTS.map(({ Icon, title, text }) => (
-              <li key={title} className="flex items-start gap-2">
-                <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-gold" />
-                <span>
-                  <strong className="block text-sm text-white">{title}</strong>
-                  {text}
-                </span>
-              </li>
-            ))}
-          </ul>
         </div>
 
-        <div className="w-full max-w-lg justify-self-center rounded-2xl bg-white p-5 text-ink shadow-[0_20px_55px_rgb(0_0_0/0.2)] sm:p-6 lg:max-w-none lg:justify-self-stretch">
-          <h2 className="text-[23px] font-extrabold leading-tight text-navy">Start your journey with Aspire</h2>
-          <p className="mt-1.5 text-[13px] text-muted">
-            Tell us a little about your goals. Our team can guide you to the right next step.
-          </p>
-          {/* Defensive boundary: keeps the hero prerenderable if the form ever suspends. */}
-          <Suspense fallback={<p className="mt-4 text-sm text-muted">Loading the enquiry form…</p>}>
-            <EnquiryForm variant="quick" className="mt-4" />
-          </Suspense>
-        </div>
+        <HeroEnquiryForm
+          id="home-enquiry"
+          centreOptions={centreOptions}
+          deliveryStatus={deliveryStatus}
+          messages={{ shared: forms.shared, hero: forms.hero }}
+          className="w-full max-w-[560px] scroll-mt-24 lg:col-start-2 lg:row-[1/span_2] lg:max-w-none"
+        />
+
+        {/* After the card on small screens; out of flow (bottom-anchored in the hero) from xl. */}
+        <HeroStudents
+          label={common.labels.illustration}
+          className="lg:hidden xl:absolute xl:bottom-0 xl:left-[calc(max(0px,50%-600px)+468px)] xl:-z-5 xl:block xl:h-[435px] xl:w-[360px] xl:max-w-none" />
+
+        <ul className="grid max-w-[560px] grid-cols-2 gap-x-5 gap-y-4 text-sm font-medium leading-snug text-white lg:col-start-1 lg:row-start-2 xl:max-w-[440px]">
+          {TRUST_POINTS.map(({ Icon, key }) => (
+            <li key={key} className="flex items-center gap-2.5">
+              <Icon aria-hidden="true" className="size-6 shrink-0 text-gold" strokeWidth={1.75} />
+              <span>{t.trust[key]}</span>
+            </li>
+          ))}
+        </ul>
       </Container>
     </section>
   );

@@ -84,6 +84,12 @@ export const aspireAssets = {
 
   // People — illustrative only; never beside a named person.
   heroStudents: asset("hero-students.webp", 360, 166, "person", "Four smiling students in hoodies with mountains behind"),
+  /**
+   * Larger cut of the same AI-generated students (photo region only, no UI/text) taken from the
+   * owner's approved design `reference/homepage/01-approved-first-fold.png` (2026-10-20, D-023).
+   * AI people in "ASPIRE" hoodies: always with a visible "Illustration" label; decorative alt.
+   */
+  heroStudentsLarge: asset("hero-students-large.jpg", 440, 435, "person", "", { maxWidth: 460 }),
   studentsGroupStudy: asset("students-group-study.webp", 244, 174, "person", "Three students studying together at a laptop"),
   studentStudying: asset("student-studying.webp", 141, 174, "person", "A student studying with books"),
   studentBoy1: asset("student-boy-1.webp", 138, 174, "person", "A smiling student"),
@@ -92,11 +98,10 @@ export const aspireAssets = {
   studentGirlMedical: asset("student-girl-medical.webp", 137, 174, "person", "A student in a white coat with a stethoscope"),
 
   // Centre buildings — ILLUSTRATIVE, not the real buildings. Label every use.
+  // palampur-centre.webp / solan-centre.webp are deliberately NOT registered: Aspire has no such centres (C30).
   centreShimla: asset("shimla-centre.webp", 158, 121, "centre", "Illustrative image of a hill-style building (not the actual centre)"),
   centreHamirpur: asset("hamirpur-centre.webp", 192, 121, "centre", "Illustrative image of a hill-style building (not the actual centre)"),
   centreDharamshala: asset("dharamshala-centre.webp", 155, 121, "centre", "Illustrative image of a hill-style building (not the actual centre)"),
-  centrePalampur: asset("palampur-centre.webp", 158, 121, "centre", "Illustrative image of a hill-style building (not the actual centre)"),
-  centreSolan: asset("solan-centre.webp", 157, 121, "centre", "Illustrative image of a hill-style building (not the actual centre)"),
 } as const satisfies Record<string, AspireAsset>;
 
 export type AspireAssetKey = keyof typeof aspireAssets;

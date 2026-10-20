@@ -116,19 +116,36 @@ function cleanIp(candidate: string | null): string | null {
 }
 
 /**
- * Client IP: first `X-Forwarded-For` hop, then `X-Real-IP`, else "unknown".
- *
- * Trust caveat: the first XFF hop is only reliable when the hosting proxy
- * overwrites X-Forwarded-For (e.g. Vercel) — a proxy that *appends* lets
- * clients choose their own key. All requests without a usable IP share the
- * "unknown" bucket.
+ * Number of trusted reverse proxies in front of the app (`TRUSTED_PROXY_HOPS`, default 1).
+ * Each proxy appends the address it saw to X-Forwarded-For, so the client's address is
+ * the entry this many positions from the right; anything further left was sent by the
+ * client and is ignored. 1 fits a single proxy (nginx `proxy_add_x_forwarded_for`, most
+ * load balancers, overwriting platforms) and a bare `next start` (Next fills the header
+ * from the socket when it is absent). Use 2 for CDN + proxy, and so on.
  */
-export function getClientIp(headers: Headers): string {
-  return (
-    cleanIp(firstHeaderValue(headers.get("x-forwarded-for"))) ??
-    cleanIp(firstHeaderValue(headers.get("x-real-ip"))) ??
-    "unknown"
-  );
+export function trustedProxyHops(env: Record<string, string | undefined> = process.env): number {
+  const raw = env.TRUSTED_PROXY_HOPS?.trim();
+  if (!raw) return 1;
+  const hops = Number(raw);
+  return Number.isInteger(hops) && hops >= 1 && hops <= 10 ? hops : 1;
+}
+
+/**
+ * Client IP for rate limiting: the X-Forwarded-For entry added by the outermost trusted
+ * proxy (see `trustedProxyHops`), then `X-Real-IP`, else "unknown".
+ *
+ * Taking the right-hand entry (not the first) stops clients choosing their own bucket by
+ * sending a forged X-Forwarded-For (QA-AUTH M1). Caveat: with no proxy at all, a client
+ * that sends the header itself still controls the value (Next keeps it as-is) — production
+ * should run behind a proxy that sets it. All requests without a usable IP share "unknown".
+ */
+export function getClientIp(headers: Headers, hops: number = trustedProxyHops()): string {
+  const forwarded = (headers.get("x-forwarded-for") ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  const fromProxy = forwarded.length > 0 ? forwarded[Math.max(0, forwarded.length - hops)] : null;
+  return cleanIp(fromProxy ?? null) ?? cleanIp(firstHeaderValue(headers.get("x-real-ip"))) ?? "unknown";
 }
 
 // ---------------------------------------------------------------------------

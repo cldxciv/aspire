@@ -1,6 +1,6 @@
 import { getProgram, getProgramSlugs } from "@/lib/data";
 import { apiItem, notFoundResponse } from "@/lib/server/http";
-import { slugSchema } from "@/lib/server/public-content";
+import { slugSchema, withoutInternalFields } from "@/lib/server/public-content";
 
 /**
  * GET /api/programs/[slug]
@@ -17,5 +17,5 @@ export async function GET(_request: Request, { params }: { params: Promise<{ slu
   const { slug } = await params;
   const program = slugSchema.safeParse(slug).success ? await getProgram(slug) : null;
   if (!program) return notFoundResponse("Program not found.");
-  return apiItem(program);
+  return apiItem(withoutInternalFields(program));
 }

@@ -1,6 +1,6 @@
 import { getCentre, getCentres, STATIC_PARAM_FALLBACK } from "@/lib/data";
 import { apiItem, notFoundResponse } from "@/lib/server/http";
-import { slugSchema } from "@/lib/server/public-content";
+import { slugSchema, toPublicCentre } from "@/lib/server/public-content";
 
 /**
  * GET /api/centres/[slug]
@@ -18,5 +18,5 @@ export async function GET(_request: Request, { params }: { params: Promise<{ slu
   const { slug } = await params;
   const centre = slugSchema.safeParse(slug).success ? await getCentre(slug) : null;
   if (!centre) return notFoundResponse("Centre not found.");
-  return apiItem(centre);
+  return apiItem(toPublicCentre(centre));
 }
