@@ -1,5 +1,5 @@
-import { BriefcaseBusiness, FileText, History, Inbox, KeyRound, LogIn, MapPin, Trophy, UsersRound } from "lucide-react";
-import { ButtonLink, Notice } from "@/components/ui";
+import { History, Inbox, KeyRound, LogIn, MonitorCheck, Route, UsersRound } from "lucide-react";
+import { ButtonLink } from "@/components/ui";
 import { stockImages } from "@/content/images";
 import type { Locale } from "@/i18n/config";
 import type { Messages } from "@/i18n/messages/types";
@@ -7,18 +7,22 @@ import { localePath } from "@/i18n/paths";
 import { buildLoginHref, CHANGE_PASSWORD_PATH, CRM_HOME } from "@/lib/auth/paths";
 import type { Role } from "@/lib/auth/roles";
 import { localizeImage } from "@/lib/data";
-import { AccountPanel, NotConnected, PortalPageHeader, PortalPanel, QuickLinks, StatTiles } from "./PortalBlocks";
+import { AccountPanel, PortalPageHeader, PortalPanel, QuickLinks, StatTiles } from "./PortalBlocks";
 
-/** Account counts from the account database (real numbers, not metrics). */
-export type AccountCounts = { students: number; parents: number; admins: number; disabled: number; pending: number };
+/**
+ * Account counts from the account database (real numbers, not metrics). `staff` = counsellor and
+ * centre-manager accounts (core role `staff`, D-038).
+ */
+export type AccountCounts = { staff: number; admins: number; students: number; parents: number; disabled: number; pending: number };
 
 export function countAccounts(
   users: readonly { role: Role; disabled: boolean; mustChangePassword: boolean }[],
 ): AccountCounts {
   return {
+    staff: users.filter((u) => u.role === "staff").length,
+    admins: users.filter((u) => u.role === "admin").length,
     students: users.filter((u) => u.role === "student").length,
     parents: users.filter((u) => u.role === "parent").length,
-    admins: users.filter((u) => u.role === "admin").length,
     disabled: users.filter((u) => u.disabled).length,
     pending: users.filter((u) => u.mustChangePassword && !u.disabled).length,
   };
@@ -97,9 +101,10 @@ export function AdminOverview({
         noValueLabel={t.blocks.noValue}
         defaultNote={t.blocks.noLiveData}
         tiles={[
+          tile(o.stats.staff, counts?.staff),
+          tile(o.stats.admins, counts?.admins),
           tile(o.stats.students, counts?.students),
           tile(o.stats.parents, counts?.parents),
-          tile(o.stats.admins, counts?.admins),
           tile(o.stats.disabled, counts?.disabled),
           tile(o.stats.pending, counts?.pending),
         ]}
@@ -109,42 +114,13 @@ export function AdminOverview({
         <QuickLinks
           area="admin"
           links={[
-            { title: o.areas.crmTitle, description: o.areas.crmBody, href: href(CRM_HOME), icon: BriefcaseBusiness },
+            { title: o.areas.crmTitle, description: o.areas.crmBody, href: href(CRM_HOME), icon: Inbox },
+            { title: o.areas.websiteTitle, description: o.areas.websiteBody, href: href("/admin/website"), icon: MonitorCheck },
             { title: o.areas.usersTitle, description: o.areas.usersBody, href: href("/admin/users"), icon: UsersRound },
             { title: o.areas.auditTitle, description: o.areas.auditBody, href: href("/admin/audit"), icon: History },
-            { title: o.areas.enquiriesTitle, description: o.areas.enquiriesBody, href: href("/admin/enquiries"), icon: Inbox },
-            { title: o.areas.contentTitle, description: o.areas.contentBody, href: href("/admin/content"), icon: FileText },
-            { title: o.areas.centresTitle, description: o.areas.centresBody, href: href("/admin/centres"), icon: MapPin },
-            { title: o.areas.resultsTitle, description: o.areas.resultsBody, href: href("/admin/results"), icon: Trophy },
+            { title: o.areas.comingTitle, description: o.areas.comingBody, href: href("/admin/coming"), icon: Route },
           ]}
         />
-      </PortalPanel>
-
-      <Notice variant="warning" className="mt-6" title={o.notConnectedTitle}>
-        {o.notConnectedBody}
-      </Notice>
-    </>
-  );
-}
-
-type SectionKey = "content" | "centres" | "results";
-
-/** Admin areas with no data store yet: header + one honest empty state. */
-export function AdminSection({ section, preview, t }: { section: SectionKey; preview: boolean; t: Messages<"portal"> }) {
-  const page = t.admin[section];
-  return (
-    <>
-      <PortalPageHeader
-        area="admin"
-        eyebrow={t.areas.admin.label}
-        title={page.title}
-        description={page.description}
-        badge={preview ? t.blocks.previewBadge : undefined}
-      />
-      <PortalPanel id={`admin-${section}-panel`} title={page.panelTitle}>
-        <NotConnected title={page.emptyTitle} system={page.system} requiresLabel={t.blocks.requires}>
-          {page.body}
-        </NotConnected>
       </PortalPanel>
     </>
   );

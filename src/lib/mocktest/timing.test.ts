@@ -144,7 +144,7 @@ describe("shared devices: sign-out clears the tools' storage (L9)", () => {
     ]);
     expect(clearToolStorage(store)).toBe(7);
     expect([...store.map.keys()]).toEqual(["aspire.ask.feedback.v1", "theme"]);
-    expect(TOOL_STORAGE_PREFIXES).toEqual(["aspire.mocktest.", "aspire.planner."]);
+    expect(TOOL_STORAGE_PREFIXES).toEqual(["aspire.mocktest.", "aspire.planner.", "aspire.leadgate."]);
   });
 
   it("never throws: no storage, or storage that throws", () => {

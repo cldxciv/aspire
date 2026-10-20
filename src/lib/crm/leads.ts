@@ -122,7 +122,10 @@ function toLeadDetail(db: DatabaseSync, row: LeadRow, now: number): LeadDetail {
   }
   const names = findDisplayNames(db, [...ids]);
   const activities = activityRows.map((activity) => toLeadActivity(activity, names));
-  const consent = activities.find((activity) => activity.type === "submission" && typeof activity.meta.consentText === "string");
+  // The sentence behind the lead's own consent version (a lead-gate capture keeps an earlier enquiry
+  // consent on the lead while its submission records the gate sentence), else the latest one.
+  const withText = activities.filter((activity) => activity.type === "submission" && typeof activity.meta.consentText === "string");
+  const consent = withText.find((activity) => activity.meta.consentTextVersion === row.consentTextVersion) ?? withText[0];
   return {
     ...toLeadSummary(row, now, { fullPhone: true }),
     contactName: row.contactName,

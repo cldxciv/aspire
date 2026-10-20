@@ -1,4 +1,4 @@
-import { ArrowLeft, Eye } from "lucide-react";
+import { Eye, Globe } from "lucide-react";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher";
@@ -16,17 +16,20 @@ import type { Role } from "@/lib/auth/roles";
 import { cn } from "@/lib/cn";
 import { resolveCrmViewer } from "@/lib/crm/access";
 import { crmPermissions } from "@/lib/crm/types";
-import { crmNavItems, portalAreas, visibleStaffNavKeys, type PortalArea } from "./areas";
+import { crmNavItems, portalAreas, visibleStaffNavKeys, type CrmNavKey, type PortalArea } from "./areas";
+import { ConsoleTopBarTools } from "./ConsoleTopBar";
 import { PortalLanguageSwitcher } from "./PortalLanguageSwitcher";
 import { PortalBreadcrumb, PortalNav, PortalNavLinks, type PortalBreadcrumbMessages, type PortalNavMessages } from "./PortalNav";
 import { PortalUserMenu, type PortalUserMenuMessages } from "./PortalUserMenu";
 
 /**
  * Portal chrome shared by the student, parent, admin and staff (CRM, `/crm`) areas (and, with
- * `area={null}`, the role-agnostic /account pages): navy top bar (localised logo link, role badge, language
- * switcher, account menu with sign-out), a preview banner only for data-free previews, the
- * sidebar navigation and the page's `<main>` landmark. The skip link that targets `#main`
- * lives in `src/app/[lang]/(portal)/layout.tsx`.
+ * `area={null}`, the role-agnostic /account pages): navy top bar (localised logo link, role badge
+ * linking to the area home, "View website" at every width, language switcher, account menu with
+ * sign-out), a preview banner only for data-free previews, the sidebar navigation and the page's
+ * `<main>` landmark. The console areas (admin and staff) also get "Find an enquiry" and
+ * "+ Add enquiry" in the bar (docs/admin-console-plan.md §2.2). The skip link that targets
+ * `#main` lives in `src/app/[lang]/(portal)/layout.tsx`.
  *
  * The bar and sidebar are static and prerender into the shell; everything that depends on the
  * session (account menu, preview banner) streams in under <Suspense>. Access checks happen per
@@ -46,31 +49,43 @@ export async function PortalShell({ area, children }: { area: PortalArea | null;
   const homePath = area ? portalAreas[area].nav[0].href : "/";
   const nav = area === "staff" ? staffNavMessages(t, crm) : area ? navMessages(t, area, crm) : null;
   const areaLabel = area === "staff" ? crm.area.label : area ? t.areas[area].label : "";
+  const consoleArea = area === "admin" || area === "staff";
 
   return (
     <div className="flex flex-1 flex-col bg-surface">
       <header data-surface="dark" className="bg-navy text-white shadow-[0_4px_18px_rgb(3_16_32/0.18)]">
         <div aria-hidden="true" className={cn("h-1", config ? config.strip : "bg-gold")} />
-        <Container className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+        <Container className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
           <Logo tone="dark" locale={locale} label={common.logo.homeLabel} className="shrink-0" />
           {area && config && AreaIcon && (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide",
-                config.badge,
-              )}
+            // The area badge doubles as "Home" (the area's own home page).
+            <Link
+              href={localePath(homePath, locale)}
+              aria-label={format(t.shell.homeLink, { area: areaLabel })}
+              className="inline-flex min-h-11 shrink-0 items-center rounded-full px-0.5 hover:underline"
             >
-              <AreaIcon aria-hidden="true" className="size-3.5" />
-              {areaLabel}
-            </span>
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide",
+                  config.badge,
+                )}
+              >
+                <AreaIcon aria-hidden="true" className="size-3.5" />
+                {areaLabel}
+              </span>
+            </Link>
           )}
+          {consoleArea && <ConsoleTopBarTools locale={locale} t={t.shell} />}
           <div className="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
             <Link
               href={localePath("/", locale)}
-              className="hidden min-h-11 items-center gap-1.5 rounded-control px-1 text-sm font-bold text-white hover:text-gold hover:underline xl:inline-flex"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-control px-1 text-sm font-bold text-white hover:text-gold hover:underline"
             >
-              <ArrowLeft aria-hidden="true" className="size-4" />
-              {t.shell.backToWebsite}
+              <Globe aria-hidden="true" className="size-4 shrink-0" />
+              <span aria-hidden="true" className="sm:hidden">
+                {t.shell.viewWebsiteShort}
+              </span>
+              <span className="sr-only sm:not-sr-only">{t.shell.viewWebsite}</span>
             </Link>
             <Suspense fallback={<LanguageSwitcher path={homePath} locale={locale} label={common.languageSwitcher.label} />}>
               <PortalLanguageSwitcher locale={locale} label={common.languageSwitcher.label} />
@@ -93,7 +108,7 @@ export async function PortalShell({ area, children }: { area: PortalArea | null;
           <div className="min-w-0 md:sticky md:top-4 md:max-h-[calc(100dvh-2rem)] md:self-start md:overflow-y-auto">
             {area === "staff" ? (
               // Counsellors don't see manager-only items; the static shell starts with the counsellor set.
-              // Admins get the whole admin console nav (CRM pages as its "Leads & admissions" group).
+              // Admins get the whole admin console nav (CRM pages as its "Admission engine" group).
               <Suspense
                 fallback={<PortalNavLinks area={area} locale={locale} messages={nav} visibleKeys={visibleStaffNavKeys(false)} pathname={null} />}
               >
@@ -125,37 +140,47 @@ export async function PortalShell({ area, children }: { area: PortalArea | null;
   );
 }
 
+/**
+ * Console names of the CRM pages: `crm.nav`, with the plain names of `portal.crmNav` winning
+ * ("Enquiries", "Today's calls"; docs/admin-console-plan.md decision 2). Admin and staff
+ * sidebars and the admin breadcrumb all use these, so a page has one name everywhere.
+ */
+export function crmPageLabels(t: Messages<"portal">, crm: Messages<"crm">): Record<CrmNavKey, string> {
+  return { ...crm.nav, ...t.crmNav };
+}
+
 /** Student / parent / admin nav labels; the admin console also needs `crm` for its CRM group. */
 export function navMessages(t: Messages<"portal">, area: Exclude<Role, "staff">, crm?: Messages<"crm">): PortalNavMessages {
   const { sectionsLabel, ...items } = t.nav;
   return {
     label: format(sectionsLabel, { area: t.areas[area].label }),
     sidebarTitle: t.areas[area].sidebarTitle,
-    items: { ...crm?.nav, ...items },
+    items: { ...(crm ? crmPageLabels(t, crm) : {}), ...items },
     groups: t.navGroups,
     menu: t.shell.menu,
   };
 }
 
-/** Breadcrumb an admin sees on every CRM page: Staff admin › Leads & admissions › <page>. */
+/** Breadcrumb an admin sees on every CRM page: Staff admin › Admission engine › <page>. */
 export function crmBreadcrumbMessages(t: Messages<"portal">, crm: Messages<"crm">): PortalBreadcrumbMessages {
+  const labels = crmPageLabels(t, crm);
   return {
     label: t.shell.breadcrumbLabel,
     trail: [
       { label: t.areas.admin.label, href: portalAreas.admin.nav[0].href },
-      { label: t.navGroups.leads, href: crmNavItems[0].href },
+      { label: t.navGroups.admission, href: crmNavItems[0].href },
     ],
-    pages: crmNavItems.map((item) => ({ label: crm.nav[item.key as keyof Messages<"crm">["nav"]], href: item.href, exact: item.exact })),
+    pages: crmNavItems.map((item) => ({ label: labels[item.key as CrmNavKey], href: item.href, exact: item.exact })),
     fallback: crm.lead.metaTitle,
   };
 }
 
-/** Staff (CRM) area: labels from the `crm` messages. */
+/** Staff (CRM) area: the console names of the CRM pages (`crmPageLabels`). */
 export function staffNavMessages(t: Messages<"portal">, crm: Messages<"crm">): PortalNavMessages {
   return {
     label: format(t.nav.sectionsLabel, { area: crm.area.label }),
     sidebarTitle: crm.area.sidebarTitle,
-    items: crm.nav,
+    items: crmPageLabels(t, crm),
   };
 }
 

@@ -270,6 +270,19 @@ const mocktest = {
     leaderboard: "Leaderboard",
     /** D-039: links to the enquiry form with `from=mock-test` (no score or answers are passed). */
     counsellor: "Talk to a counsellor",
+    /**
+     * "Ask Rancho about my weak topics": opens the Rancho chat with this prompt prefilled and a short
+     * context — test title, a 10-point score band and topic names only (no questions or answers).
+     */
+    askRancho: "Ask Rancho about my weak topics",
+    askRanchoPrompt: "Which of my weak topics should I start with, and how can I improve them?",
+    askRanchoContext: "{test}: score {band} of the maximum; topics that need work: {topics}",
+    /** Shown instead when every topic of the attempt is strong (no "weak topics" to ask about). */
+    askRanchoStrong: "Ask Rancho what to practise next",
+    askRanchoStrongPrompt: "Every topic in this test looks strong. What should I practise next to score even higher?",
+    askRanchoAllStrong: "{test}: score {band} of the maximum; every topic strong",
+    askRanchoBand: "{low}–{high} %",
+    askRanchoBelowZero: "below 0 %",
   },
   certificate: {
     heading: "Certificate of participation",

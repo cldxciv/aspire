@@ -24,6 +24,7 @@ import { format } from "@/i18n/format";
 import { messagesFor } from "@/i18n/messages";
 import { localePath } from "@/i18n/paths";
 import type { HomeToolsData } from "./home-tools-data";
+import { AskRanchoLink } from "./HomeToolsAskRancho";
 import { HomeToolsPlanner } from "./HomeToolsPlanner";
 import { HomeToolsPredictor } from "./HomeToolsPredictor";
 import { HomeToolsTabs } from "./HomeToolsTabs";
@@ -107,6 +108,12 @@ export function HomeTools({ tools, locale, tone = "white" }: { tools: HomeToolsD
             basedOn: tp.result.basedOn,
             basedOnSample: tp.result.basedOnSample,
             bandNote: tp.result.bandNote,
+            rangeScore: tp.share.rangeScore,
+            rangePercentile: tp.share.rangePercentile,
+            askRancho: tp.result.askRancho,
+            askRanchoPrompt: tp.result.askRanchoPrompt,
+            askRanchoContext: tp.result.askRanchoContext,
+            askRanchoSample: tp.result.askRanchoSample,
           }}
         />
       </div>
@@ -209,9 +216,10 @@ export function HomeTools({ tools, locale, tone = "white" }: { tools: HomeToolsD
         {ta.answer.disclaimer}
       </p>
       <PanelActions>
-        <ButtonLink href={href("/tools/ask")}>
+        {/* Opens the floating Rancho chat once hydrated; a plain link to /tools/ask without JS. */}
+        <AskRanchoLink href={href("/tools/ask")} detail={{}} variant="primary" mascot={false}>
           {ta.form.heading} <ArrowRight aria-hidden="true" className="size-4" />
-        </ButtonLink>
+        </AskRanchoLink>
       </PanelActions>
     </>
   );
@@ -231,6 +239,7 @@ export function HomeTools({ tools, locale, tone = "white" }: { tools: HomeToolsD
       />
       <div className="mt-5">
         <HomeToolsPlanner
+          locale={locale}
           messages={{
             exam: tpl.form.exam,
             exams: tpl.exams,
@@ -241,6 +250,9 @@ export function HomeTools({ tools, locale, tone = "white" }: { tools: HomeToolsD
             tomorrow: tpl.today.countdownTomorrow,
             past: t.planner.past,
             tooFar: tpl.form.errors.examDateFar,
+            askRancho: t.planner.askRancho,
+            askRanchoPrompt: t.planner.askRanchoPrompt,
+            askRanchoContext: t.planner.askRanchoContext,
           }}
         />
       </div>

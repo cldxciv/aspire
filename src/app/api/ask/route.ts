@@ -11,13 +11,13 @@ import { unstable_rethrow } from "next/navigation";
 import { NextResponse } from "next/server";
 
 import { resolveAsker, type Asker } from "@/lib/ask/asker";
-import { createAskClient, streamAnswer, type AskModelInput } from "@/lib/ask/claude";
+import { createAskClient, startAskConversation, type AskConversationResult, type AskLoopEvent, type AskModelInput } from "@/lib/ask/claude";
 import { getAskConfig, type AskConfig } from "@/lib/ask/config";
-import { ASK_MAX_BODY_BYTES, ASK_MAX_IMAGE_BYTES, type AskStatus, type AskStreamEvent } from "@/lib/ask/constants";
+import { ASK_MAX_BODY_BYTES, ASK_MAX_IMAGE_BYTES, type AskAnswerMeta, type AskStatus, type AskStreamEvent } from "@/lib/ask/constants";
 import { checkImage } from "@/lib/ask/image";
 import { askExceptionCode, askLog, type AskLogEntry, type AskLogReason } from "@/lib/ask/log";
 import { ASK_PROMPT_VERSION } from "@/lib/ask/prompt";
-import { ASK_FIELD_MESSAGES, askFieldErrors, askRequestSchema, cleanQuestion } from "@/lib/ask/schema";
+import { ASK_FIELD_MESSAGES, askFieldErrors, askRequestSchema, cleanQuestion, cleanToolContext } from "@/lib/ask/schema";
 import { createTrailerFilter } from "@/lib/ask/trailer";
 import { exhaustedAllowance, reserveQuestion, secondsUntilNextIstDay, usageStatus, type Reservation } from "@/lib/ask/usage";
 import { recordDoubtTopic } from "@/lib/ask/weak-topics";
@@ -33,12 +33,17 @@ import { getDb } from "@/lib/db/connection";
  * GET /api/ask → `{ ok, data: AskStatus }`: whether it is connected, and today's allowance.
  *
  * POST /api/ask — JSON ≤ ~5.6 MB: `{ question?, subject?, language, image?: { mediaType, data },
- * photoConsent? }`. Order: same-origin (403) → configured (503 `not_configured`) → allowance
+ * photoConsent?, toolContext?: { tool, summary } }`. Order: same-origin (403) → configured (503 `not_configured`) → allowance
  * already used up (429, checked before the body is read) → JSON body (415 / 413 / 400 / 422) →
  * photo re-checked by magic bytes, ≤ 4 MB (413 / 422) → daily allowance reserved (429 +
  * Retry-After) → Claude. Upstream failures before the answer starts: 503 (busy, or
  * `not_configured` for a rejected key) / 502, and the question is not counted. Otherwise 200 with
  * an NDJSON stream of `AskStreamEvent`s; the model's topic trailer is stripped from the text.
+ * Rancho may use Aspire's tools while answering (src/lib/ask/tools.ts, at most 3 calls): each
+ * successful result is streamed as a `card` event before the text that discusses it. One
+ * question is one allowance unit however many model turns it takes; the logged token counts are
+ * summed over all turns (on a failure part-way: over the turns that finished). The trailer is
+ * stripped per model turn, so one written before a tool call cannot hide the later answer.
  *
  * Privacy: the photo lives in memory for this request only; nothing of the question, photo or
  * answer is stored or logged. Signed-in students get (subject, topic) counters for weak-topic
@@ -174,8 +179,10 @@ export async function POST(request: Request) {
     }
     const body = parsed.data;
     const question = cleanQuestion(body.question);
+    const toolContext = cleanToolContext(body.toolContext);
     logBase.image = Boolean(body.image);
     logBase.language = body.language;
+    if (toolContext) logBase.fromTool = toolContext.tool;
 
     const fieldErrors = askFieldErrors(body, question);
     if (fieldErrors) {
@@ -212,18 +219,19 @@ export async function POST(request: Request) {
     }
     reservation = reserved;
 
-    // The upstream call is aborted through the response stream's cancel() when the browser goes
+    // The upstream calls are aborted through the response stream's cancel() when the browser goes
     // away (not via request.signal, whose timing around streamed responses is framework-specific).
-    const stream = streamAnswer(createAskClient(config.apiKey, config.workspaceId), config, {
+    const conversation = startAskConversation(createAskClient(config.apiKey, config.workspaceId), config, {
       question,
       subject: body.subject ?? "auto",
       language: body.language,
       image,
+      toolContext,
     });
-    const events = stream[Symbol.asyncIterator]();
+    const events = conversation.events;
 
     // Wait for the first event so connection / key / rate-limit errors become a proper status.
-    let first: IteratorResult<unknown>;
+    let first: IteratorResult<AskLoopEvent, AskConversationResult>;
     try {
       first = await events.next();
     } catch (error) {
@@ -243,7 +251,6 @@ export async function POST(request: Request) {
     const held = reservation;
     reservation = null; // from here the stream owns the reservation
     const encoder = new TextEncoder();
-    const filter = createTrailerFilter();
 
     const pump = async (controller: ReadableStreamDefaultController<Uint8Array>) => {
       let open = true;
@@ -253,27 +260,51 @@ export async function POST(request: Request) {
           controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
         } catch {
           open = false; // the browser went away
+          conversation.abort();
         }
       };
+      // Text or a card reached the student (a later failure then no longer gives the question back).
       let shown = false;
+      // One trailer filter per model turn: a trailer the model wrote before a tool call must not
+      // swallow the answer of a later turn. The last turn that had a trailer gives the meta.
+      let filter = createTrailerFilter();
+      let meta: AskAnswerMeta | null = null;
+      let textSent = false;
+      let turnEnded = false;
+      const sendText = (text: string) => {
+        if (!text) return;
+        // Text written before a tool call and the next turn's text are separate paragraphs.
+        const separated = turnEnded && textSent ? `\n\n${text}` : text;
+        turnEnded = false;
+        textSent = true;
+        shown = true;
+        send({ t: "delta", text: separated });
+      };
+      const closeTurn = () => {
+        const ended = filter.end();
+        sendText(ended.tail);
+        if (ended.meta) meta = ended.meta;
+        filter = createTrailerFilter();
+      };
       send({ t: "start", remaining: held.remaining, limit: held.limit });
       try {
-        let step = first as IteratorResult<{ type: string; delta?: { type: string; text?: string } }>;
+        let step = first;
         while (!step.done) {
           const event = step.value;
-          if (event.type === "content_block_delta" && event.delta?.type === "text_delta" && event.delta.text) {
-            const visible = filter.push(event.delta.text);
-            if (visible) {
-              shown = true;
-              send({ t: "delta", text: visible });
-            }
+          if (event.kind === "text") {
+            sendText(filter.push(event.text));
+          } else if (event.kind === "turn_end") {
+            closeTurn();
+            turnEnded = true;
+          } else if (event.kind === "card") {
+            shown = true;
+            send({ t: "card", card: event.card });
           }
-          step = (await events.next()) as typeof step;
+          step = await events.next();
         }
-        const final = await stream.finalMessage();
-        const { tail, meta } = filter.end();
-        if (tail) send({ t: "delta", text: tail });
-        const stop = mapStop(final.stop_reason);
+        const final = step.value;
+        closeTurn();
+        const stop = mapStop(final.stop);
         send({ t: "done", stop, meta: stop === "refusal" ? null : meta });
 
         if (asker.studentId && (stop === "end_turn" || stop === "max_tokens")) {
@@ -287,18 +318,27 @@ export async function POST(request: Request) {
           ...logBase,
           outcome: stop === "refusal" ? "refused" : stop === "max_tokens" ? "truncated" : "answered",
           durationMs: Date.now() - startedAt,
-          inputTokens: final.usage.input_tokens,
-          outputTokens: final.usage.output_tokens,
-          cacheReadTokens: final.usage.cache_read_input_tokens ?? undefined,
+          inputTokens: final.usage.inputTokens,
+          outputTokens: final.usage.outputTokens,
+          cacheReadTokens: final.usage.cacheReadTokens,
+          toolCalls: final.toolCalls,
+          modelTurns: final.turns,
         });
       } catch (error) {
         const aborted = error instanceof APIUserAbortError || !open;
         if (!aborted && !shown) held.release();
+        // Earlier finished turns were billed even though this one failed: log what is known.
+        const progress = conversation.progress();
         askLog({
           ...logBase,
           outcome: aborted ? "client_aborted" : "upstream_error",
           reason: aborted ? "mid_stream" : (upstreamFailure(error)?.reason ?? askExceptionCode(error)),
           durationMs: Date.now() - startedAt,
+          inputTokens: progress.usage.inputTokens,
+          outputTokens: progress.usage.outputTokens,
+          cacheReadTokens: progress.usage.cacheReadTokens,
+          toolCalls: progress.toolCalls,
+          modelTurns: progress.turns,
         });
         if (!aborted) send({ t: "error", code: shown ? "interrupted" : "upstream" });
       } finally {
@@ -317,7 +357,7 @@ export async function POST(request: Request) {
         void pump(controller);
       },
       cancel() {
-        stream.abort();
+        conversation.abort();
       },
     });
 

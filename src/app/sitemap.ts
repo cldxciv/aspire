@@ -1,9 +1,14 @@
 import type { MetadataRoute } from "next";
 import { siteConfig } from "@/config/site";
+import { SYLLABUS_STATUS } from "@/content/planner/syllabus";
 import { locales } from "@/i18n/config";
 import { languageAlternates } from "@/i18n/metadata";
 import { localePath } from "@/i18n/paths";
+import { showPlaceholderContent } from "@/lib/content-mode";
 import { getArticles, getPrograms } from "@/lib/data";
+import { getVisibleMockTests } from "@/lib/mocktest/catalog";
+import { isLeaderboardTest } from "@/lib/mocktest/timing";
+import { getPredictorData } from "@/lib/predictor/data";
 
 const staticRoutes = [
   "/",
@@ -18,12 +23,26 @@ const staticRoutes = [
   "/privacy",
   "/terms",
   "/tools",
-  "/tools/predictor",
-  "/tools/mock-tests",
-  "/tools/mock-tests/leaderboard",
+  // Rancho, the AI doubt solver: live (the Ask page and the Rancho app home).
   "/tools/ask",
-  "/tools/planner",
+  "/rancho",
 ];
+
+/**
+ * Tool pages that only work with content Aspire has not published yet. Each is listed only while
+ * its page shows the tool, using the same check as the page itself; otherwise the page is a
+ * "coming soon" notice and stays out of the sitemap (in production today, none of the four is listed).
+ */
+function availableToolRoutes(): string[] {
+  const mockTests = getVisibleMockTests();
+  const tools: [path: string, available: boolean][] = [
+    ["/tools/predictor", getPredictorData() !== null],
+    ["/tools/mock-tests", mockTests.length > 0],
+    ["/tools/mock-tests/leaderboard", mockTests.some(isLeaderboardTest)],
+    ["/tools/planner", SYLLABUS_STATUS === "published" || showPlaceholderContent()],
+  ];
+  return tools.filter(([, available]) => available).map(([path]) => path);
+}
 
 /** Absolute URL for a public href (`/` → the bare origin, matching the previous sitemap). */
 function absolute(href: string): string {
@@ -31,13 +50,14 @@ function absolute(href: string): string {
 }
 
 /**
- * Public routes only — portal, login and API routes are never listed. Every page is listed
+ * Public routes only — portal, CRM, login and API routes are never listed. Every page is listed
  * once per locale (English unprefixed, Hindi under /hi) with hreflang alternates (D-028).
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [programs, articles] = await Promise.all([getPrograms(), getArticles()]);
   const pages: { path: string; lastModified?: string }[] = [
     ...staticRoutes.map((path) => ({ path })),
+    ...availableToolRoutes().map((path) => ({ path })),
     ...programs.map((p) => ({ path: `/programs/${p.slug}`, lastModified: p.updatedAt })),
     ...articles.map((a) => ({ path: `/resources/${a.slug}`, lastModified: a.publishedAt })),
   ];

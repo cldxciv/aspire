@@ -203,7 +203,7 @@ export type PortalBreadcrumbMessages = {
 };
 
 /**
- * "Staff admin › Leads & admissions › Pipeline": the way back to the admin console on every CRM
+ * "Staff admin › Admission engine › Pipeline": the way back to the admin console on every CRM
  * page an admin opens. The last crumb is the current page (`aria-current="page"`, not a link).
  */
 export function PortalBreadcrumbLinks({ locale, messages, pathname }: { locale: Locale; messages: PortalBreadcrumbMessages; pathname: string | null }) {

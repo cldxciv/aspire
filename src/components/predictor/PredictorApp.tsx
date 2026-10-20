@@ -3,11 +3,13 @@
 import { Calculator } from "lucide-react";
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { predictorBand, toolEnquiryHref } from "@/components/forms/enquiry-context";
+import { AskRanchoLink } from "@/components/home/HomeToolsAskRancho";
 import { Badge, Button, ButtonLink } from "@/components/ui";
 import { useLocale } from "@/i18n/client";
 import type { Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
 import type { Messages } from "@/i18n/messages/types";
+import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
 import {
   GENDERS,
@@ -32,6 +34,7 @@ import {
 } from "@/lib/predictor/engine";
 import { formatNumber, formatPercentileRange, formatRankRange } from "./format";
 import { OptionList } from "./OptionList";
+import { predictorRanchoDetail } from "./rancho";
 import { SharePanel } from "./SharePanel";
 import { WhatIfPanel } from "./WhatIfPanel";
 
@@ -357,7 +360,10 @@ export function predictorEnquiryHref(result: CollegeMatchPrediction, table: Exam
   });
 }
 
-/** Exported for tests. `table` (the exam's score table) adds the score band to the counsellor link. */
+/**
+ * Exported for tests. `table` (the exam's score table) adds the score band to the counsellor link
+ * and enables "Ask Rancho how to improve" (exam, score range and rank band only; ./rancho.ts).
+ */
 export function ResultBody({
   result,
   messages: t,
@@ -412,6 +418,25 @@ export function ResultBody({
         </div>
       </dl>
       <p className="text-sm text-muted">{t.result.bandNote}</p>
+      {table && (
+        <div>
+          <AskRanchoLink
+            href={localePath("/tools/ask", locale)}
+            detail={predictorRanchoDetail(band, table, locale, {
+              exams: t.form.exams,
+              crl: t.result.crl,
+              range: t.result.range,
+              rangeScore: t.share.rangeScore,
+              rangePercentile: t.share.rangePercentile,
+              askRanchoPrompt: t.result.askRanchoPrompt,
+              askRanchoContext: t.result.askRanchoContext,
+              askRanchoSample: t.result.askRanchoSample,
+            })}
+          >
+            {t.result.askRancho}
+          </AskRanchoLink>
+        </div>
+      )}
 
       <div>
         <h3 className="text-lg font-extrabold text-navy">{boh ? t.result.optionsTitleBoh : t.result.optionsTitle}</h3>

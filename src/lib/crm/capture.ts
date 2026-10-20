@@ -11,8 +11,10 @@ import { insertActivity } from "./repo/activities";
 import { findLeadById, findLeadByPhone, insertLead, updateLead, type LeadRow, type LeadUpdate } from "./repo/leads";
 import type { Meta } from "./repo/rows";
 import {
+  GATE_SUBMITTERS,
   MANUAL_LEAD_SOURCES,
   type CaptureLeadInput,
+  type CaptureLeadOptions,
   type CaptureLeadResult,
   type CrmResult,
   type CrmViewer,
@@ -113,9 +115,17 @@ const MERGE_FIELDS: readonly EditableLeadField[] = [
  * fields that no staff member has edited are filled, consent version/time and the latest message
  * are updated, first-touch attribution is kept, and a `lost` lead is reopened as `new`. A new lead
  * is auto-assigned (rules → round-robin → unassigned). Audited as `crm.lead_capture` (no personal
- * data). Synchronous; throws only on database errors.
+ * data). Synchronous; throws only on database errors. Joins the caller's transaction if one is open.
+ *
+ * `options.gate` (lead gate, docs/lead-gate-plan.md): an existing lead is never reopened or
+ * re-assigned and keeps its own consent fields; see `CaptureLeadOptions`.
  */
-export function captureLead(input: CaptureLeadInput, now: number = Date.now()): CaptureLeadResult {
+export function captureLead(
+  input: CaptureLeadInput,
+  now: number = Date.now(),
+  options: CaptureLeadOptions = {},
+): CaptureLeadResult {
+  const gate = options.gate === true;
   const consentVersion = cleanText(input?.consent?.textVersion, 64);
   if (!consentVersion) return { ok: false, error: "consent_missing" };
   const phone = normalizePhoneE164(input.phone);
@@ -141,22 +151,28 @@ export function captureLead(input: CaptureLeadInput, now: number = Date.now()): 
   if (topic) meta.topic = topic;
   const reference = cleanText(input.reference, 40);
   if (reference && /^[A-Z]{2,5}-[0-9A-Z]{4,20}$/.test(reference)) meta.reference = reference;
+  if ((GATE_SUBMITTERS as readonly unknown[]).includes(input.submittedBy)) meta.submittedBy = input.submittedBy as string;
 
   const db = getDb();
   return withTransaction(db, (): CaptureLeadResult => {
     const existing = findLeadByPhone(db, phone);
     if (existing) {
-      const merged = mergeSubmission(existing, fields, context, message, consentVersion, consentAt, now);
+      const lost = existing.stage === "lost";
+      const reopen = lost && !gate;
+      const merged = mergeSubmission(existing, fields, context, message, consentVersion, consentAt, now, {
+        reopen,
+        keepConsent: gate && existing.consentTextVersion !== null,
+      });
       updateLead(db, existing.id, merged.update);
       insertActivity(db, {
         leadId: existing.id,
         type: "submission",
         body: message,
-        meta: { ...meta, filled: merged.filled },
+        meta: { ...meta, filled: merged.filled, ...(lost && gate ? { onLostLead: true } : {}) },
         actorId: null,
         at: now,
       });
-      if (existing.stage === "lost") {
+      if (reopen) {
         insertActivity(db, {
           leadId: existing.id,
           type: "stage_change",
@@ -165,13 +181,16 @@ export function captureLead(input: CaptureLeadInput, now: number = Date.now()): 
           at: now,
         });
       }
-      const fresh = findLeadById(db, existing.id);
-      const assigneeId = fresh ? autoAssign(db, fresh, now) : existing.assignedTo;
+      let assigneeId = existing.assignedTo;
+      if (!gate) {
+        const fresh = findLeadById(db, existing.id);
+        assigneeId = fresh ? autoAssign(db, fresh, now) : existing.assignedTo;
+      }
       crmAudit(db, {
         actorId: null,
         action: CRM_AUDIT.leadCapture,
         target: existing.id,
-        details: { source, isNew: false, reopened: existing.stage === "lost", assigned: assigneeId !== null },
+        details: { source, isNew: false, reopened: reopen, assigned: assigneeId !== null },
         now,
       });
       return { ok: true, leadId: existing.id, isNew: false, assigneeId };
@@ -199,7 +218,7 @@ export function captureLead(input: CaptureLeadInput, now: number = Date.now()): 
       nextTaskDueAt: null,
     });
     insertActivity(db, { leadId: id, type: "submission", body: message, meta: { ...meta, filled: [] }, actorId: null, at: now });
-    const row = findLeadById(db, id);
+    const row = options.assignNew === false ? null : findLeadById(db, id);
     const assigneeId = row ? autoAssign(db, row, now) : null;
     crmAudit(db, {
       actorId: null,
@@ -220,14 +239,17 @@ function mergeSubmission(
   consentVersion: string,
   consentAt: number,
   now: number,
+  rules: { reopen: boolean; keepConsent: boolean } = { reopen: true, keepConsent: false },
 ): { update: LeadUpdate; filled: string[] } {
   const update: LeadUpdate = {
     updatedAt: now,
     lastActivityAt: now,
     submissionCount: existing.submissionCount + 1,
-    consentTextVersion: consentVersion,
-    consentAt,
   };
+  if (!rules.keepConsent) {
+    update.consentTextVersion = consentVersion;
+    update.consentAt = consentAt;
+  }
   const filled: string[] = [];
   for (const field of MERGE_FIELDS) {
     const incoming = fields[field];
@@ -239,7 +261,7 @@ function mergeSubmission(
     if (context[key] !== null && existing[key] === null) update[key] = context[key];
   }
   if (message) update.message = message;
-  if (existing.stage === "lost") {
+  if (existing.stage === "lost" && rules.reopen) {
     update.stage = "new";
     update.lostReason = null;
   }

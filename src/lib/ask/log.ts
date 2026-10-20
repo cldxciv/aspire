@@ -1,10 +1,14 @@
 import "server-only";
 
+import type { RanchoTool } from "./cards";
+
 /**
  * Structured logging for Rancho, the AI doubt solver, with fixed codes only (D-035). Never logged: the question,
  * the photo, the answer, the topic, an IP address, an account id or login, the API key, or an
  * upstream error message (those can echo request content). Token counts are logged so the
- * owner can watch costs.
+ * owner can watch costs (summed over every model turn when Rancho uses tools; for a question that
+ * failed or was cancelled part-way, over the turns that finished, so `modelTurns` can be one more
+ * than the turns the tokens cover).
  */
 
 export type AskLogOutcome =
@@ -62,6 +66,12 @@ export interface AskLogEntry {
   inputTokens?: number;
   outputTokens?: number;
   cacheReadTokens?: number;
+  /** Tool calls Rancho ran for this question (counts only, never the inputs or results). */
+  toolCalls?: number;
+  /** Model requests for this question (1 without tools). */
+  modelTurns?: number;
+  /** The tool an "Ask Rancho about this" handoff came from (never its summary). */
+  fromTool?: RanchoTool;
 }
 
 export function askLog(entry: AskLogEntry): void {
@@ -87,6 +97,9 @@ export function askLog(entry: AskLogEntry): void {
     ...(typeof entry.inputTokens === "number" ? { inputTokens: entry.inputTokens } : {}),
     ...(typeof entry.outputTokens === "number" ? { outputTokens: entry.outputTokens } : {}),
     ...(typeof entry.cacheReadTokens === "number" ? { cacheReadTokens: entry.cacheReadTokens } : {}),
+    ...(typeof entry.toolCalls === "number" ? { toolCalls: entry.toolCalls } : {}),
+    ...(typeof entry.modelTurns === "number" ? { modelTurns: entry.modelTurns } : {}),
+    ...(entry.fromTool ? { fromTool: entry.fromTool } : {}),
   });
   if (level === "error") console.error(line);
   else if (level === "warn") console.warn(line);

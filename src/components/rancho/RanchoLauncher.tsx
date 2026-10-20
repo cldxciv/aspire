@@ -9,6 +9,7 @@ import { localePath } from "@/i18n/paths";
 
 import { RanchoMascot } from "./RanchoMascot";
 import { isRanchoHiddenPath } from "./rancho-chat";
+import { listenForRanchoOpen, type RanchoHandoff } from "./rancho-handoff";
 
 // The chat panel (and the answer renderer it uses) only downloads when the student first opens it.
 const loadPanel = () => import("./RanchoChatPanel");
@@ -41,7 +42,11 @@ function isOverForm(button: HTMLElement): boolean {
  * Floating "Ask Rancho" button, bottom-right on every public page (mounted by RanchoDock in the
  * (site) layout). 56px round, clear of the iOS home indicator / notch (safe-area insets), above page
  * content (z-30) but below the sticky header and its menu (z-40) and full-screen overlays. Hidden
- * on the Ask page, during a mock test attempt and in print.
+ * on the Rancho pages (/tools/ask, /rancho), during a mock test attempt and in print.
+ *
+ * It also answers "Ask Rancho about this" from the student tools (`openRancho()` →
+ * `RANCHO_OPEN_EVENT`, rancho-handoff.ts): the panel opens with the prompt prefilled and the tool's
+ * context attached to the next question.
  */
 export function RanchoLauncher({ messages: t }: { messages: Messages<"rancho"> }) {
   const pathname = usePathname();
@@ -52,6 +57,7 @@ export function RanchoLauncher({ messages: t }: { messages: Messages<"rancho"> }
   const [loaded, setLoaded] = useState(false);
   const [lastPath, setLastPath] = useState(pathname);
   const [stepAside, setStepAside] = useState(false);
+  const [handoff, setHandoff] = useState<RanchoHandoff | null>(null);
 
   // Navigating (a link in the panel, back/forward) closes the panel; the conversation stays.
   if (pathname !== lastPath) {
@@ -70,6 +76,17 @@ export function RanchoLauncher({ messages: t }: { messages: Messages<"rancho"> }
   );
 
   const hidden = isRanchoHiddenPath(pathname);
+
+  // "Ask Rancho about this" from a tool on this page: open the panel with that context. (Where the
+  // launcher is hidden, the page's own Rancho chat listens instead.)
+  useEffect(() => {
+    if (hidden) return;
+    return listenForRanchoOpen((next) => {
+      setHandoff(next);
+      setLoaded(true);
+      setOpen(true);
+    });
+  }, [hidden]);
 
   // Step aside (fade out, out of the tab order) while a form is underneath the button, e.g. the
   // home hero enquiry form on phones, and while typing in a form on touch screens, where the
@@ -147,6 +164,7 @@ export function RanchoLauncher({ messages: t }: { messages: Messages<"rancho"> }
             messages={t.panel}
             locale={locale}
             links={links}
+            handoff={handoff}
           />
         </Suspense>
       )}

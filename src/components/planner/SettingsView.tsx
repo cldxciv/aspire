@@ -1,8 +1,9 @@
 "use client";
 
-import { BellRing, CalendarArrowDown, CloudCheck, Download, Trash2 } from "lucide-react";
+import { BellRing, CalendarArrowDown, CloudCheck, Download, Smartphone, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { Button, Notice } from "@/components/ui";
+import { useStandalone } from "@/components/pwa/install-store";
+import { Button, ButtonLink, Notice } from "@/components/ui";
 import { format } from "@/i18n/format";
 import type { DateKey } from "@/lib/planner/dates";
 import { buildIcs, revisionEvents } from "@/lib/planner/ics";
@@ -12,13 +13,6 @@ import { useBrowserValue } from "./hooks";
 import { minutesToTime, timeToMinutes, type PlannerData, type PlannerMessages } from "./model";
 import { PlanForm } from "./PlanForm";
 import type { PlannerSnapshot } from "./planner-store";
-
-export interface InstallState {
-  canPrompt: boolean;
-  installed: boolean;
-  ios: boolean;
-  prompt: () => void;
-}
 
 function Card({ id, icon, title, children }: { id: string; icon: ReactNode; title: string; children: ReactNode }) {
   return (
@@ -45,7 +39,7 @@ export function SettingsView({
   state,
   plan,
   snapshot,
-  install,
+  ranchoAppHref,
   onSettings,
   onImport,
   onDeclineImport,
@@ -57,13 +51,16 @@ export function SettingsView({
   state: PlannerState;
   plan: StudyPlan | null;
   snapshot: PlannerSnapshot;
-  install: InstallState;
+  /** /rancho in the page's locale: the installable Rancho app (the planner has no install prompt of its own). */
+  ranchoAppHref: string;
   onSettings: (settings: PlannerSettings) => void;
   onImport: () => void;
   onDeclineImport: () => void;
   onReset: () => void;
 }) {
   const settings = state.settings;
+  // Running as the installed Rancho app: no "Get the Rancho app" card (false on the server).
+  const standalone = useStandalone();
   const initialPermission = useBrowserValue(readPermission, "default");
   const [permission, setPermission] = useState<Permission | null>(null);
   const currentPermission = permission ?? initialPermission;
@@ -194,24 +191,17 @@ export function SettingsView({
           )}
         </Card>
 
-        <Card id="planner-install" icon={<Download aria-hidden="true" className="size-5 text-blue" />} title={t.settings.installTitle}>
-          {install.installed ? (
-            <p className="font-semibold text-[#0f5a3c]">{t.settings.installed}</p>
-          ) : (
-            <>
-              <p>{t.settings.installBody}</p>
-              {install.canPrompt ? (
-                <div>
-                  <Button variant="dark" onClick={install.prompt}>
-                    {t.settings.installButton}
-                  </Button>
-                </div>
-              ) : (
-                <p>{install.ios ? t.settings.installIos : t.settings.installOther}</p>
-              )}
-            </>
-          )}
-        </Card>
+        {/* Not inside the installed Rancho app (its scope includes the planner). */}
+        {!standalone && (
+          <Card id="planner-app" icon={<Smartphone aria-hidden="true" className="size-5 text-blue" />} title={t.settings.appTitle}>
+            <p>{t.settings.appBody}</p>
+            <div>
+              <ButtonLink href={ranchoAppHref} variant="dark">
+                {t.settings.appLink}
+              </ButtonLink>
+            </div>
+          </Card>
+        )}
 
         <Card id="planner-sync" icon={<CloudCheck aria-hidden="true" className="size-5 text-blue" />} title={t.settings.syncTitle}>
           <p className="font-semibold text-navy" role="status">

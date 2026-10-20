@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { TOOL_CONTEXT_MAX_CHARS, type RanchoTool, type RanchoToolContext } from "./cards";
 import {
   ASK_IMAGE_TYPES,
   ASK_LANGUAGES,
@@ -8,10 +9,20 @@ import {
   ASK_SUBJECT_HINTS,
 } from "./constants";
 
+/** Tools that can hand a question over to Rancho (`RanchoTool` in ./cards). */
+export const RANCHO_TOOL_IDS = ["predictor", "mock-test", "planner"] as const satisfies readonly RanchoTool[];
+// Compile-time check that the list covers the whole union.
+type MissingToolId = Exclude<RanchoTool, (typeof RANCHO_TOOL_IDS)[number]>;
+const toolIdsComplete: MissingToolId extends never ? true : false = true;
+void toolIdsComplete;
+
 /**
  * `POST /api/ask` JSON body (≤ ASK_MAX_BODY_BYTES):
- * `{ question?, subject?, language, image?: { mediaType, data (base64) }, photoConsent? }`.
+ * `{ question?, subject?, language, image?: { mediaType, data (base64) }, photoConsent?, toolContext? }`.
  * At least a question or an image is required; an image requires `photoConsent: true`.
+ * `toolContext` (`RanchoToolContext`, ./cards): `{ tool, summary ≤ TOOL_CONTEXT_MAX_CHARS }` from an
+ * "Ask Rancho about this" handoff. It is untrusted plain text: cleaned with `cleanToolContext()`
+ * and given to the model as marked background information, never as instructions.
  */
 export const askRequestSchema = z.object({
   question: z.string().max(ASK_MAX_QUESTION_CHARS * 2).optional(),
@@ -25,6 +36,13 @@ export const askRequestSchema = z.object({
     .nullable()
     .optional(),
   photoConsent: z.boolean().optional(),
+  toolContext: z
+    .object({
+      tool: z.enum(RANCHO_TOOL_IDS),
+      summary: z.string().max(TOOL_CONTEXT_MAX_CHARS),
+    })
+    .nullable()
+    .optional(),
 });
 
 export type AskRequestBody = z.infer<typeof askRequestSchema>;
@@ -36,6 +54,26 @@ export function cleanQuestion(value: string | undefined): string {
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
     .replace(/\n{4,}/g, "\n\n\n")
     .trim();
+}
+
+/**
+ * A handoff summary as one plain line: control characters (newlines included) become spaces,
+ * whitespace collapses, and the prompt's own wrapper tags cannot be opened or closed from it.
+ */
+export function cleanToolSummary(value: string): string {
+  return value
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+    .replace(/<\s*\/?\s*(?:question|tool_context|aspire-meta)\b[^>]*>/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, TOOL_CONTEXT_MAX_CHARS);
+}
+
+/** The validated handoff, cleaned; null when absent or empty after cleaning. */
+export function cleanToolContext(value: AskRequestBody["toolContext"]): RanchoToolContext | null {
+  if (!value) return null;
+  const summary = cleanToolSummary(value.summary);
+  return summary ? { tool: value.tool, summary } : null;
 }
 
 export const ASK_FIELD_MESSAGES = {

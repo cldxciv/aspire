@@ -33,7 +33,7 @@ const tools = {
     },
     planner: {
       title: "Study planner",
-      body: "A day-by-day plan to your exam date, spaced revision, formula flashcards, streaks and XP. Works on your phone and can be installed like an app.",
+      body: "A day-by-day plan to your exam date, spaced revision, formula flashcards, streaks and XP. Works on your phone, and inside the Rancho app.",
     },
   },
   /** Accessible name of the Rancho mascot illustration on the Ask Rancho card. */

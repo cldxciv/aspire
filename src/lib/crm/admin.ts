@@ -6,6 +6,7 @@ import { getDb, withTransaction } from "@/lib/db/connection";
 import { findUserById } from "@/lib/db/users";
 
 import { CRM_AUDIT, CRM_MESSAGES, crmAudit, fail, ok } from "./access";
+import { deleteGateDataForLead } from "./gate";
 import { cleanSlug, toIso } from "./pure";
 import { insertActivity, scrubActivities } from "./repo/activities";
 import { findLeadById, openLeadCounts, updateLead } from "./repo/leads";
@@ -55,6 +56,9 @@ const KEEP_META_KEYS = [
   "dueAt",
   "assigneeId",
   "existing",
+  // Lead gate (docs/lead-gate-plan.md): who filled in the gate form, and that it landed on a lost lead.
+  "submittedBy",
+  "onLostLead",
 ] as const;
 
 export const ERASED_TASK_TITLE = "[erased]";
@@ -62,6 +66,8 @@ export const ERASED_TASK_TITLE = "[erased]";
 /**
  * Wipes a lead's personal data and keeps an anonymised stub (stage, source, centre, program, class,
  * dates, assignee) so funnel counts stay right. Admin only. Idempotent.
+ * Lead gate: also deletes the lead's passes (every browser is asked again) and all its `tool_use`
+ * entries (not needed for funnel counts); the audit row carries the two counts.
  */
 export function eraseLead(
   viewer: CrmViewer,
@@ -88,10 +94,18 @@ export function eraseLead(
       erasedBy: viewer.userId,
       updatedAt: now,
     });
+    const gate = deleteGateDataForLead(db, leadId);
     scrubActivities(db, leadId, KEEP_META_KEYS);
     scrubTasks(db, leadId, ERASED_TASK_TITLE, now);
     insertActivity(db, { leadId, type: "erase", actorId: viewer.userId, at: now });
-    crmAudit(db, { actorId: viewer.userId, action: CRM_AUDIT.leadErase, target: leadId, now });
+    crmAudit(db, {
+      actorId: viewer.userId,
+      action: CRM_AUDIT.leadErase,
+      target: leadId,
+      // ("pass…" keys would be dropped by the audit sanitiser)
+      details: { gateBrowsers: gate.passesRevoked, toolUsesDeleted: gate.toolUsesDeleted },
+      now,
+    });
     return ok({ leadId, erasedAt: toIso(now) });
   });
 }

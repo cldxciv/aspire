@@ -3,9 +3,13 @@
  * admin account tools. English is the source of truth for the key shape; TypeScript then
  * requires the same keys in ../hi/portal.ts. Plain object, no `as const`. See src/i18n/README.md.
  *
- * Honesty rule (D-029): no LMS or student-information system is connected, so portals show the
- * signed-in account and "not connected" states only. Never add copy that implies live grades,
- * attendance, timetables or enquiries.
+ * Honesty rule (D-029): no LMS or student-information system is connected, so the student and
+ * parent portals show the signed-in account, practice-tool activity and "not connected" states
+ * only. Never add copy that implies live grades, attendance or timetables. Website enquiries ARE
+ * stored, as leads in the admissions CRM (`/crm`, D-039); the console says so plainly.
+ *
+ * Admin console names (docs/admin-console-plan.md, decision 2): the owner's words for the group
+ * headings (`navGroups`), plain words for the pages (`nav`, `crmNav`).
  */
 const portal = {
   areas: {
@@ -20,22 +24,43 @@ const portal = {
     resources: "Study material",
     progress: "Progress",
     updates: "Updates",
+    home: "Home",
+    coming: "What's coming",
+    website: "What's on the website",
     users: "User accounts",
-    audit: "Audit log",
+    audit: "Activity log",
     mcp: "AI agent access",
-    enquiries: "Enquiries",
-    content: "Content",
-    centres: "Centres",
-    results: "Results",
   },
-  /** Sidebar group headings of the admin console. */
+  /**
+   * Plain console names for admissions (CRM) pages whose `crm.nav` label differs (decision 2).
+   * Used by the console sidebar (admin and staff) and the admin breadcrumb; the other CRM pages
+   * keep their `crm.nav` label.
+   */
+  crmNav: {
+    inbox: "Enquiries",
+    today: "Today's calls",
+  },
+  /**
+   * Console sections (the owner's words). A group appears in the sidebar only once one of its
+   * pages works; the rest are listed on "What's coming".
+   */
   navGroups: {
-    leads: "Leads & admissions",
+    dashboard: "Dashboard",
+    admission: "Admission engine",
+    leadGeneration: "Lead generation",
     website: "Website & content",
-    access: "Accounts & access",
+    search: "Google & AI search",
+    access: "Users & access",
+    settings: "Settings & audit",
   },
   shell: {
-    backToWebsite: "Back to website",
+    viewWebsite: "View website",
+    viewWebsiteShort: "Website",
+    findLabel: "Find an enquiry",
+    findPlaceholder: "Name or phone",
+    findSubmit: "Find",
+    addEnquiry: "Add enquiry",
+    homeLink: "{area} home",
     accountLabel: "Your account",
     signedInAs: "Signed in as {name}",
     notSignedIn: "Not signed in",
@@ -185,38 +210,286 @@ const portal = {
   admin: {
     overview: {
       metaTitle: "Staff admin",
-      metaDescription: "Aspire staff admin: user accounts, the audit log and the areas still to be connected.",
+      metaDescription: "Aspire staff admin: enquiries, what's on the website, accounts and the activity log.",
       title: "Admin overview",
-      lead: "Manage portal accounts and review the audit log. Enquiries, content, centres and results are not connected yet.",
+      lead: "Every enquiry from the website and the free tools is saved in Enquiries. From here you also manage staff and portal accounts and check what's on the website.",
       previewLead: "A data-free preview of the staff admin area. Sign in with an admin account to manage users.",
-      statsLabel: "Portal accounts",
+      statsLabel: "Accounts",
       statNote: "From the account database",
       stats: {
+        staff: "Staff accounts (counsellors and managers)",
+        admins: "Admin accounts",
         students: "Student accounts",
         parents: "Parent accounts",
-        admins: "Admin accounts",
         disabled: "Disabled accounts",
         pending: "Waiting for a password change",
       },
       areasTitle: "Admin areas",
       areas: {
-        crmTitle: "Leads & admissions",
-        crmBody: "Enquiries from the website and tools as leads: inbox, follow-ups, pipeline and reports.",
+        crmTitle: "Enquiries",
+        crmBody: "Every enquiry from the website and the free tools: today's calls, pipeline and reports.",
+        websiteTitle: "What's on the website",
+        websiteBody: "How many programs, centres and results the site shows, and which are still demo.",
+        comingTitle: "What's coming",
+        comingBody: "The pages and features planned next, phase by phase.",
         usersTitle: "User accounts",
         usersBody: "Create accounts, reset passwords and link parents to students.",
-        auditTitle: "Audit log",
+        auditTitle: "Activity log",
         auditBody: "Sign-ins, password changes and every admin change.",
-        enquiriesTitle: "Enquiries",
-        enquiriesBody: "Website enquiries, once an enquiry store is connected.",
-        contentTitle: "Content",
-        contentBody: "Programs, FAQs and articles, once a CMS is connected.",
-        centresTitle: "Centres",
-        centresBody: "Verified centre details for the public directory.",
-        resultsTitle: "Results",
-        resultsBody: "Verified, consented results only.",
       },
-      notConnectedTitle: "Still to be connected",
-      notConnectedBody: "Enquiries, content, centres and results have no data store yet, so those pages can't view or change real records.",
+    },
+    website: {
+      metaTitle: "What's on the website",
+      metaDescription: "What the public website shows right now: counts, demo records and names shown without recorded consent.",
+      title: "What's on the website",
+      lead: "What the public website shows right now, counted from the same source the website reads.",
+      modeDemoTitle: "Demo mode: sample content is shown",
+      modeDemoBody: "The website shows placeholder records, each marked DEMO, and asks search engines not to list it. Leaving demo mode today would hide every placeholder below.",
+      modeLiveTitle: "Production mode: only approved content is shown",
+      modeLiveBody: "Placeholder records are hidden. Only records marked as approved appear on the website.",
+      totalsLabel: "Totals",
+      totals: {
+        shown: "Records on the website",
+        demo: "Demo (placeholder) records",
+        withoutConsent: "Names shown without recorded consent",
+      },
+      totalsNote: "Counted when this page loaded",
+      listTitle: "By type of content",
+      listDescription: "Approved records are real and checked. Demo records are placeholders that must be replaced or approved before go-live.",
+      shown: "On the website",
+      demo: "Demo",
+      approved: "Approved",
+      withoutConsent: "Names without recorded consent",
+      consentWarning: "{count} names are shown only because the site is in demo mode.",
+      openPage: "Open the page",
+      types: {
+        programs: "Programs",
+        centres: "Centres",
+        results: "Selections (results page)",
+        rankers: "Rankers list",
+        testimonials: "Testimonials",
+        stats: "Headline numbers",
+        articles: "Articles",
+        faqs: "FAQs",
+      },
+      changeTitle: "How to change it today",
+      changeBody: "Website content lives in code files. To add, correct or remove anything, ask your developer; the change goes live with the next release.",
+      changeNext: "Approving records and recording consent (Phase 3a), then editing in the console (Phase 3), are listed on What's coming.",
+      comingLink: "See what's coming",
+    },
+    coming: {
+      metaTitle: "What's coming",
+      metaDescription: "The admin console pages and features planned next, by phase.",
+      title: "What's coming",
+      lead: "Every page in the sidebar works today. Everything below is planned, in this order, and appears in the sidebar only once it works.",
+      sectionLabel: "Section",
+      phases: {
+        p1a: {
+          name: "Phase 1a · Clean up the console",
+          status: "Being built now",
+          outcome: "Nothing says “not connected”, Back returns to where you were, and staff add, edit and erase enquiries on screen.",
+        },
+        p1b: {
+          name: "Phase 1b · Your numbers and faster follow-ups",
+          status: "Next",
+          outcome: "Five numbers by centre against target, one-step call logging and where enquiries come from.",
+        },
+        p2: {
+          name: "Phase 2 · Admission season",
+          status: "Planned",
+          outcome: "The scholarship test, visits and demo classes run in the console, and counsellors have a fact sheet.",
+        },
+        p3: {
+          name: "Phase 3 · Edit the website without a developer",
+          status: "Planned",
+          outcome: "Records approved and consent recorded, so the site can leave demo mode; then announcements and editors.",
+        },
+        p4: {
+          name: "Phase 4 · Go-live: Google & AI search",
+          status: "With the go-live date",
+          outcome: "Search work starts when the site leaves demo mode on its final web address.",
+        },
+        p5: {
+          name: "Phase 5 · Marketing extras",
+          status: "Planned",
+          outcome: "Downloads behind a form, visit counts if you approve them, and alerts inside the console.",
+        },
+        p6: {
+          name: "Phase 6 · Only with your approval",
+          status: "Only if you approve",
+          outcome: "Paid services and extra modules, decided case by case.",
+        },
+      },
+      items: {
+        addEnquiry: {
+          title: "Add an enquiry",
+          body: "Walk-ins, phone calls and referrals, with how the family gave consent. A family already on file opens their record instead.",
+        },
+        editErase: {
+          title: "Edit and erase enquiries",
+          body: "Correct names and classes on screen. Admins can erase a record, with a reason.",
+        },
+        backButton: {
+          title: "Back returns to where you were",
+          body: "From Today's calls, Pipeline or a search, not always the inbox.",
+        },
+        dashboardNumbers: {
+          title: "Five numbers by centre",
+          body: "Enquiries today and this week, not yet called, overdue follow-ups, admissions against target and top sources, plus a “Needs attention” list.",
+        },
+        callOutcomes: {
+          title: "One-tap call outcomes",
+          body: "Log a call and set the next follow-up in one step, with suggested times and follow-up rules by stage.",
+        },
+        whatsappTemplates: {
+          title: "WhatsApp templates",
+          body: "Ready messages in English, Hindi and Hinglish. Staff always press send themselves.",
+        },
+        enquiryDetails: {
+          title: "More enquiry details and duplicate suggestions",
+          body: "School, board, town, hostel, how they heard and intake session; possible duplicates shown to staff.",
+        },
+        admissionsTargets: {
+          title: "Admissions done and targets",
+          body: "Admitted students this session against your targets, by centre and program.",
+        },
+        leaveCover: {
+          title: "Leave cover and lost-enquiry review",
+          body: "Hand a counsellor's enquiries to someone else in one go; managers review lost enquiries weekly.",
+        },
+        sources: {
+          title: "Where enquiries come from",
+          body: "Source, campaign tag, Google Maps and referring site (including ChatGPT and other AI assistants), with how many reached counselling and admission.",
+        },
+        freeTools: {
+          title: "Free tools & Rancho",
+          body: "Tool use per day and enquiries per tool; grows when the tool contact form ships.",
+        },
+        searchOverview: {
+          title: "Enquiries from Google and AI assistants",
+          body: "The search numbers that can be measured today.",
+        },
+        people: {
+          title: "People: one list for every account",
+          body: "Staff show their role and centres, and staff are created in one place only.",
+        },
+        siteStatus: {
+          title: "Site status and go-live checklist",
+          body: "Demo or production mode, last backup, free disk and what still blocks go-live.",
+        },
+        readableLog: {
+          title: "Readable activity log",
+          body: "Plain words for every action; repeated record views grouped together.",
+        },
+        factSheet: {
+          title: "Fact sheet",
+          body: "Per centre: batches, start dates, timings, fees, test dates, scholarship slabs and hostel. Internal only.",
+        },
+        visits: {
+          title: "Visits & demo classes",
+          body: "A calendar per centre for counselling visits and trial classes.",
+        },
+        scholarshipTest: {
+          title: "Scholarship test",
+          body: "Registration, roll numbers, admit slips, check-in, scores, slabs and the offer call.",
+        },
+        frontDesk: {
+          title: "Front desk",
+          body: "A receptionist login to add walk-ins and find a family by phone.",
+        },
+        importPaper: {
+          title: "Import paper enquiries",
+          body: "From school seminars, paper forms and newspaper coupons, with a duplicate check.",
+        },
+        campaignLinks: {
+          title: "Campaign links & QR",
+          body: "Tagged links and printable QR codes for posters, seminars and ads, with enquiries per campaign.",
+        },
+        rolesTable: {
+          title: "Roles & permissions",
+          body: "A read-only table of who can do what.",
+        },
+        privacy: {
+          title: "Data & privacy",
+          body: "Erase requests and the retention clean-up (earlier if the tool contact form needs it).",
+        },
+        approvals: {
+          title: "Approvals & consent",
+          body: "Approve each record and record permission for every named student, parent or teacher (3a).",
+        },
+        announcements: {
+          title: "Announcements & banner",
+          body: "Test dates, new batches and results day, in English and Hindi (3b).",
+        },
+        editors: {
+          title: "Editors for results, centres, programs, FAQs and articles",
+          body: "Draft, preview and publish, with history (3c).",
+        },
+        media: {
+          title: "Media library",
+          body: "Upload photos with alt text and size limits (3c).",
+        },
+        hindiReview: {
+          title: "Hindi review",
+          body: "Hindi text still marked “machine draft” (3c).",
+        },
+        logFilters: {
+          title: "Activity log filters",
+          body: "By person, action and date, with export.",
+        },
+        titles: {
+          title: "Page titles & share previews",
+          body: "Google and WhatsApp previews, with missing and too-long warnings.",
+        },
+        businessFacts: {
+          title: "Business facts & structured data",
+          body: "One verified fact sheet that search engines read.",
+        },
+        centrePages: {
+          title: "Centre pages & Google Business Profile",
+          body: "One web page per centre and a profile checklist for each.",
+        },
+        crawlers: {
+          title: "Crawlers, sitemap & verification",
+          body: "Search Console, Bing, and which AI crawlers may read the site.",
+        },
+        redirects: {
+          title: "Redirects",
+          body: "Keep old and printed links working.",
+        },
+        social: {
+          title: "Social sharing",
+          body: "Social profile links and WhatsApp share texts with tagged links.",
+        },
+        gatedDownloads: {
+          title: "Downloads behind a form",
+          body: "Prospectus and sample papers in exchange for contact details.",
+        },
+        funnel: {
+          title: "Visits & funnel",
+          body: "Cookie-free visit counts through to admission, only if you approve them.",
+        },
+        alerts: {
+          title: "New-enquiry alerts",
+          body: "A bell and a browser alert while the console is open.",
+        },
+        leaderboard: {
+          title: "Leaderboard moderation",
+          body: "Remove abusive names from the mock-test leaderboards.",
+        },
+        paid: {
+          title: "Paid messaging and payments",
+          body: "WhatsApp Business API, SMS, email and a payment gateway.",
+        },
+        feesOffers: {
+          title: "Fees, offers and documents",
+          body: "Only if Aspire has no fee system already.",
+        },
+        portalAccounts: {
+          title: "Portal accounts for new admissions",
+          body: "Turn an admitted student into student and parent accounts.",
+        },
+      },
     },
     users: {
       metaTitle: "User accounts",
@@ -307,9 +580,9 @@ const portal = {
       },
     },
     audit: {
-      metaTitle: "Audit log",
+      metaTitle: "Activity log",
       metaDescription: "Sign-ins, password changes and admin changes to Aspire portal accounts.",
-      title: "Audit log",
+      title: "Activity log",
       lead: "Sign-ins, sign-outs, password changes and every admin change, newest first. Passwords are never recorded.",
       previewLead: "The audit log needs an admin sign-in. This preview shows no entries.",
       previewEmpty: "Sign in with an admin account to see the audit log.",
@@ -349,48 +622,6 @@ const portal = {
         student: "Student: {value}",
         displayNameChanged: "Display name changed",
       },
-    },
-    enquiries: {
-      metaTitle: "Enquiries admin",
-      metaDescription: "Website enquiries will be listed here once an enquiry store is connected.",
-      title: "Enquiries",
-      description: "Enquiries submitted through the website will be listed here once an enquiry store is connected.",
-      liveTitle: "Live enquiries",
-      emptyTitle: "No enquiry store connected",
-      system: "an enquiry store or CRM with staff permissions and audit logging",
-      body: "This website does not store enquiries (the enquiries API answers “not configured”), so none can be listed here yet.",
-      demoTitle: "Table layout demo",
-      demoDescription: "For reviewing the interface only. Rows are fictional and changes stay in this browser tab.",
-    },
-    content: {
-      metaTitle: "Content admin",
-      metaDescription: "Programs, FAQs and articles will be edited here once a content system is connected.",
-      title: "Content",
-      description: "Programs, FAQs and resource articles will be edited here once a content system is connected.",
-      panelTitle: "Content library",
-      emptyTitle: "No content management connected",
-      system: "a content management system (CMS) with a draft → review → publish workflow",
-      body: "Site content currently comes from placeholder files in the codebase and is shown only in preview builds (marked DEMO) until Aspire verifies it.",
-    },
-    centres: {
-      metaTitle: "Centres admin",
-      metaDescription: "Verified centre details will be managed here once a centre records source is connected.",
-      title: "Centres",
-      description: "Verified centre details for the public directory will be managed here.",
-      panelTitle: "Centre directory",
-      emptyTitle: "No centre records connected",
-      system: "a centre records source (CMS or operations database) with verified addresses and contact details",
-      body: "Centre addresses, phone numbers and opening hours stay hidden on the public site until Aspire verifies them.",
-    },
-    results: {
-      metaTitle: "Results admin",
-      metaDescription: "Verified, consented results will be managed here once a results register is connected.",
-      title: "Results",
-      description: "Verified, consented results for the public results archive will be managed here.",
-      panelTitle: "Results register",
-      emptyTitle: "No results register connected",
-      system: "a verified results register with source evidence and written consent records",
-      body: "Results, ranks and student names are published only with source evidence and consent. None are loaded.",
     },
   },
   tools: {
@@ -519,33 +750,6 @@ const portal = {
       mockTest: "Mock test finished",
       planner: "Studied with the study planner",
       doubt: "Doubt asked",
-    },
-  },
-  demoTable: {
-    badge: "Demo · local only",
-    notice: "Fictional sample rows. Changes stay in this browser tab and are never saved or sent.",
-    caption: "Demo enquiries: fictional sample rows, local to this browser tab only.",
-    filterLabel: "Filter by status",
-    allStatuses: "All statuses",
-    addRow: "Add sample row",
-    reset: "Reset demo",
-    resetDone: "Demo table reset.",
-    added: "{applicant} added to this page only. Nothing was saved.",
-    changed: "{applicant} set to {status} on this page only. Nothing was saved.",
-    statusFor: "Status for {applicant}",
-    applicant: "Sample applicant {letter}",
-    noRows: "No sample rows with this status.",
-    columns: {
-      reference: "Reference",
-      applicant: "Applicant",
-      program: "Program",
-      status: "Status",
-      changeStatus: "Change status",
-    },
-    statuses: {
-      new: "New",
-      contacted: "Contacted",
-      inReview: "In review",
     },
   },
   errors: {

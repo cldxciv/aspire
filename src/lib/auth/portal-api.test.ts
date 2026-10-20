@@ -16,7 +16,9 @@ vi.mock("next/server", async (importOriginal) => ({
 const { resetDatabaseForTests } = await import("@/lib/db/connection");
 const { createSession } = await import("./sessions");
 const { createTestUser, linkTestParent, params, TestBrowser } = await import("./testing/harness");
-const adminEnquiries = await import("@/app/api/admin/enquiries/route");
+// GET /api/admin/enquiries (a 503 stub) was removed: website enquiries are CRM leads (D-039). The
+// admin audit list stands in as the admin-only GET for the deny-by-default checks.
+const adminAudit = await import("@/app/api/admin/audit/route");
 const studentMe = await import("@/app/api/student/me/route");
 const parentStudents = await import("@/app/api/parent/students/route");
 const parentStudent = await import("@/app/api/parent/students/[studentId]/route");
@@ -40,7 +42,7 @@ async function signedIn(role: "student" | "parent" | "admin", loginId: string, e
 }
 
 const call = {
-  adminEnquiries: (b: Browser) => b.send(adminEnquiries.GET, "/api/admin/enquiries"),
+  adminAudit: (b: Browser) => b.send(adminAudit.GET, "/api/admin/audit"),
   studentMe: (b: Browser) => b.send(studentMe.GET, "/api/student/me"),
   parentStudents: (b: Browser) => b.send(parentStudents.GET, "/api/parent/students"),
   parentStudent: (b: Browser, studentId: string) =>
@@ -61,8 +63,8 @@ afterEach(() => {
 describe("portal APIs when signed out (deny by default)", () => {
   const anonymous = () => new TestBrowser(cookieState);
 
-  it("GET /api/admin/enquiries → 401", async () => {
-    await expectEnvelope(await call.adminEnquiries(anonymous()), 401, "unauthenticated");
+  it("GET /api/admin/audit → 401", async () => {
+    await expectEnvelope(await call.adminAudit(anonymous()), 401, "unauthenticated");
   });
 
   it("GET /api/student/me → 401", async () => {
@@ -82,7 +84,7 @@ describe("portal APIs when signed out (deny by default)", () => {
     const b = anonymous();
     for (const value of ["admin", "role=admin", "A".repeat(43)]) {
       b.jar.set("aspire_session", value);
-      await expectEnvelope(await call.adminEnquiries(b), 401, "unauthenticated");
+      await expectEnvelope(await call.adminAudit(b), 401, "unauthenticated");
     }
   });
 
@@ -95,11 +97,14 @@ describe("portal APIs when signed out (deny by default)", () => {
 });
 
 describe("portal APIs with a real session", () => {
-  it("admin enquiries: an admin gets 503 not_configured (nothing is stored), others 403", async () => {
+  it("admin audit: an admin gets the list, others 403", async () => {
     const { b: admin } = await signedIn("admin", "admin.one");
-    await expectEnvelope(await call.adminEnquiries(admin), 503, "not_configured");
+    const response = await call.adminAudit(admin);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({ ok: true });
     const { b: student } = await signedIn("student", "learner.one");
-    await expectEnvelope(await call.adminEnquiries(student), 403, "forbidden");
+    await expectEnvelope(await call.adminAudit(student), 403, "forbidden");
   });
 
   it("student me: the student's own account and an explicit not-connected list", async () => {

@@ -118,6 +118,8 @@ export const CRM_AUDIT = {
   taskDone: "crm.task_done",
   export: "crm.export",
   leadErase: "crm.lead_erase",
+  /** Lead gate: the family chose "Stop Aspire contacting me" (docs/lead-gate-plan.md). */
+  gateWithdraw: "crm.gate_withdraw",
   staffUpsert: "crm.staff_upsert",
   rulesSet: "crm.rules_set",
 } as const;

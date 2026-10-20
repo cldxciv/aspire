@@ -69,7 +69,19 @@ describe("RanchoLauncher", () => {
     expect(messagesFor("hi", "rancho").launcher.label).toContain("रैंचो");
   });
 
-  it.each(["/tools/ask", "/hi/tools/ask", "/en/tools/ask", "/tools/ask/", "/tools/mock-tests/jee-main-sample-1", "/hi/tools/mock-tests/neet-1"])(
+  it.each([
+    "/tools/ask",
+    "/hi/tools/ask",
+    "/en/tools/ask",
+    "/tools/ask/",
+    "/rancho",
+    "/hi/rancho",
+    "/en/rancho",
+    "/rancho/",
+    "/rancho/install",
+    "/tools/mock-tests/jee-main-sample-1",
+    "/hi/tools/mock-tests/neet-1",
+  ])(
     "is hidden on %s",
     (pathname) => {
       expect(isRanchoHiddenPath(pathname)).toBe(true);
@@ -77,7 +89,7 @@ describe("RanchoLauncher", () => {
     },
   );
 
-  it.each(["/", "/hi", "/about", "/hi/programs/iit-jee", "/tools", "/hi/tools", "/tools/mock-tests", "/tools/mock-tests/leaderboard", "/tools/mock-tests/verify", "/tools/mock-tests/x/result", "/tools/asking", null])(
+  it.each(["/", "/hi", "/about", "/hi/programs/iit-jee", "/tools", "/hi/tools", "/tools/mock-tests", "/tools/mock-tests/leaderboard", "/tools/mock-tests/verify", "/tools/mock-tests/x/result", "/tools/asking", "/ranchos", "/tools/rancho", null])(
     "is shown on %s",
     (pathname) => {
       expect(isRanchoHiddenPath(pathname)).toBe(false);

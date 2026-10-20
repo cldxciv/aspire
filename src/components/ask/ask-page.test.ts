@@ -30,8 +30,20 @@ describe("Rancho page (/tools/ask)", () => {
 
     expect(html.match(/<h1[\s>]/g)).toHaveLength(1);
     expect(html).toContain(escape(t.hero.title));
-    expect(html).toContain(escape(t.form.heading));
-    expect(html).toContain(escape(t.form.privacyNote));
+    // The doubt solver is the same chat as the floating panel (RanchoChat, page variant): a card, not a dialog.
+    expect(html).toMatch(/<section aria-labelledby="([^"]+)" data-rancho-chat="page"/);
+    expect(html).not.toContain("<dialog");
+    expect(html).toMatch(new RegExp(`<h2 id="[^"]+" tabindex="-1"[^>]*>${escape(t.chat.name)}</h2>`));
+    expect(html).toContain(escape(t.chat.greeting));
+    expect(html).toContain(escape(t.chat.privacy));
+    expect(html).toContain(escape(t.chat.disclaimer));
+    // Answer language: a labelled select (English / हिंदी), starting with the page's language.
+    const languageId = html.match(/<select id="([^"]+)" title="[^"]*"[^>]*>(?:(?!<\/select>).)*value="hi"/)?.[1];
+    expect(html).toContain(`<label for="${languageId}" class="sr-only">${escape(t.chat.answerLanguage)}</label>`);
+    expect(html).toMatch(new RegExp(`<option value="${lang}" lang="${lang}" selected="">`));
+    // One composer row with the photo button, the field and Send.
+    expect(html).toMatch(/<form [^>]*data-rancho-composer=""/);
+    expect(html).toMatch(new RegExp(`<span class="sr-only">${escape(t.chat.send)}</span></button>`));
     expect(html).toContain(escape(t.stuck.title));
     expect(html).toContain(escape(t.honest.items.sources));
     expect(html).toContain(escape(t.honest.items.ai));
@@ -47,9 +59,10 @@ describe("Rancho page (/tools/ask)", () => {
     expect(html).not.toContain(escape(common.labels.illustrativeStockPhoto));
     // The AI caveat stays prominent: in the hero note and in the honest notes.
     expect(t.hero.note).toMatch(/AI/);
-    // Photo upload with camera capture, and a subject select with all subjects.
-    expect(html).toMatch(/type="file"[^>]*accept="image\/\*"[^>]*capture="environment"/);
-    for (const subject of ["physics", "chemistry", "maths", "biology"]) expect(html).toContain(`value="${subject}"`);
+    // Photo upload (camera or gallery, like the panel), and subject chips with all subjects before the first question.
+    expect(html).toMatch(/<input type="file" accept="image\/\*"/);
+    expect(html).not.toContain("capture=");
+    for (const subject of ["physics", "chemistry", "maths", "biology"]) expect(html).toMatch(new RegExp(`type="radio"[^>]*value="${subject}"`));
     expect(text).not.toMatch(/\b(undefined|NaN|null)\b/);
 
     const prefix = lang === "hi" ? "/hi" : "";
@@ -102,6 +115,25 @@ describe("the doubt solver is called Rancho everywhere", () => {
       expect(item, lang).toBeDefined();
       expect(item).toMatch(lang === "hi" ? /^रैंचो \(हमारा AI डाउट सॉल्वर\)/ : /^Rancho \(our AI doubt solver\)/);
       expect(item).toContain("Anthropic");
+    }
+  });
+
+  it("says who turns speech into text (Chrome → Google), that Aspire never gets the audio, and how Listen works", () => {
+    const en = messagesFor("en", "legal").privacy.tools.items.find((text) => /^Rancho/.test(text)) ?? "";
+    expect(en).toMatch(/Voice typing \(🎤\).*in Chrome, the browser's own speech service \(run by Google\)/);
+    expect(en).toMatch(/never the audio/);
+    expect(en).toMatch(/Listen \(🔊\) reads answers aloud with your device's own voices/);
+    // Tool handoffs: described generically (each tool's button has its own "Ask Rancho …" label).
+    expect(en).toMatch(/“Ask Rancho …” button in another tool \(such as the predictor, mock tests or study planner\), a short summary/);
+    expect(en).not.toContain("Ask Rancho about this");
+    const hi = messagesFor("hi", "legal").privacy.tools.items.find((text) => /^रैंचो/.test(text)) ?? "";
+    expect(hi).toMatch(/🎤.*Chrome.*Google/);
+    expect(hi).toContain("🔊");
+    for (const lang of ["en", "hi"] as const) {
+      const note = messagesFor(lang, "rancho").panel.voice.note;
+      expect(note).toContain("Chrome");
+      expect(note).toContain("Google");
+      expect(note).toContain("Aspire");
     }
   });
 });

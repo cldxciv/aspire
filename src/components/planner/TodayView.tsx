@@ -2,9 +2,11 @@
 
 import { CalendarClock, Flame, Snowflake, Sparkles, Trophy } from "lucide-react";
 import type { ReactNode } from "react";
+import { AskRanchoLink } from "@/components/home/HomeToolsAskRancho";
 import { Badge, Button, ButtonLink } from "@/components/ui";
 import type { Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
+import { localePath } from "@/i18n/paths";
 import type { DueItems } from "@/lib/planner/actions";
 import { diffDays, type DateKey } from "@/lib/planner/dates";
 import { planDayFor } from "@/lib/planner/plan";
@@ -13,6 +15,7 @@ import { isBitSet, type PlannerState } from "@/lib/planner/state";
 import type { StudyPlan } from "@/lib/planner/types";
 import { BlockList } from "./BlockList";
 import { formatDate, formatNumber, LONG_DATE, SHORT_DATE, type PlannerData, type PlannerMessages } from "./model";
+import { plannerRanchoDetail } from "./rancho";
 
 function Stat({ icon, label, value, note }: { icon: ReactNode; label: string; value: string; note?: string }) {
   return (
@@ -62,6 +65,19 @@ export function TodayView({
   const frozen = new Set(streak.frozenDates);
   const n = (value: number) => formatNumber(value, locale);
   const dueTotal = due.topics.length + due.cards.length;
+  // Exam, days left and today's topic names only (./rancho.ts); none on days without topics.
+  const ranchoDetail = day
+    ? plannerRanchoDetail(
+        { exam: settings.exam, daysLeft, day, data, locale },
+        {
+          exams: t.exams,
+          subjects: t.subjects,
+          askRanchoPrompt: t.today.askRanchoPrompt,
+          askRanchoContext: t.today.askRanchoContext,
+          askRanchoContextTomorrow: t.today.askRanchoContextTomorrow,
+        },
+      )
+    : null;
 
   let countdown: string;
   if (daysLeft > 1) countdown = format(t.today.countdown, { days: n(daysLeft), exam });
@@ -121,6 +137,11 @@ export function TodayView({
               <>
                 <BlockList t={t} data={data} day={day} mask={mask} onToggle={onToggle} />
                 <p className="mt-2 text-xs text-muted">{t.today.tickHint}</p>
+                {ranchoDetail && (
+                  <AskRanchoLink href={localePath("/tools/ask", locale)} detail={ranchoDetail} size="sm" className="mt-3">
+                    {t.today.askRancho}
+                  </AskRanchoLink>
+                )}
               </>
             ) : (
               <p className="text-sm text-muted">

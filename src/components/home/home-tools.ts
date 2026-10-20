@@ -1,3 +1,5 @@
+import { format } from "@/i18n/format";
+import { clampToolSummary, type RanchoOpenDetail } from "@/lib/ask/cards";
 import { addDays, diffDays, istDateKey, istInstant, isDateKey, type DateKey } from "@/lib/planner/dates";
 import { PLAN_LIMITS } from "@/lib/planner/plan";
 import {
@@ -103,6 +105,20 @@ export function examCountdown(examDate: string, today: DateKey | null): ExamCoun
   if (days === 1) return { kind: "tomorrow" };
   if (days > PLAN_LIMITS.maxDays) return { kind: "tooFar" };
   return { kind: "days", days };
+}
+
+/**
+ * "Ask Rancho for a plan" from the countdown: the exam and the days left only (nothing else is
+ * typed in the widget). Null unless the countdown shows a number of days.
+ */
+export function countdownRanchoDetail(
+  countdown: ExamCountdown,
+  exam: string,
+  t: { askRanchoPrompt: string; askRanchoContext: string },
+): RanchoOpenDetail | null {
+  if (countdown.kind !== "days") return null;
+  const summary = format(t.askRanchoContext, { exam, days: countdown.days.toLocaleString("en-IN") });
+  return { prompt: t.askRanchoPrompt, toolContext: { tool: "planner", summary: clampToolSummary(summary) } };
 }
 
 /** Milliseconds from `nowMs` to the next midnight in India time (always > 0), when "today" changes. */

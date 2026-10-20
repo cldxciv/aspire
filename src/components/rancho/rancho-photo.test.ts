@@ -290,15 +290,19 @@ describe("RanchoChatPanel composer", () => {
   });
   const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/'/g, "&#x27;").replace(/"/g, "&quot;");
 
-  it.each(["en", "hi"] as const)("has a camera button next to Send and an image input that offers camera or gallery (%s)", (locale) => {
+  it.each(["en", "hi"] as const)("has a camera button in the composer row and an image input that offers camera or gallery (%s)", (locale) => {
     const t = messagesFor(locale, "rancho").panel;
     const html = renderToStaticMarkup(
       createElement(RanchoChatPanel, { id: "rancho-panel", open: false, onClose: () => {}, messages: t, locale, links: links(locale) }),
     );
-    // Camera button (accessible name "Add a photo"), right before Send.
-    expect(html).toMatch(
-      new RegExp(`<button type="button" title="${escape(t.photo.add)}"[^>]*>.*?<span class="sr-only">${escape(t.photo.add)}</span></button><button type="submit"`),
+    // Camera button (accessible name "Add a photo"), first in the composer row, before the field and Send.
+    const row = html.slice(html.indexOf('<div class="flex items-end gap-2">'));
+    expect(row).toMatch(
+      new RegExp(
+        `^<div class="flex items-end gap-2"><div class="[^"]*"><button type="button" title="${escape(t.photo.add)}"[^>]*>.*?<span class="sr-only">${escape(t.photo.add)}</span></button><textarea`,
+      ),
     );
+    expect(row.indexOf("<textarea")).toBeLessThan(row.indexOf('<button type="submit"'));
     // One hidden file input: any image, no `capture` (so phones offer the camera and the gallery).
     expect(html.match(/type="file"/g)).toHaveLength(1);
     const input = html.match(/<input type="file"[^>]*>/)?.[0] ?? "";
@@ -309,14 +313,12 @@ describe("RanchoChatPanel composer", () => {
     // No photo yet: no preview, no confirmation box.
     expect(html).not.toContain("data-rancho-photo");
     expect(html).not.toContain('type="checkbox"');
-    // The smaller link to the full page replaces "Photo question? Open Rancho".
-    const fullPage = html.match(new RegExp(`<a [^>]*>${escape(t.fullPageLink)}</a>`))?.[0] ?? "";
+    // The full page stays one tap away: the expand icon in the header (a 44px target, named by its text).
+    const fullPage = html.match(new RegExp(`<a [^>]*>(?:(?!</a>).)*<span class="sr-only">${escape(t.fullPageLink)}</span></a>`))?.[0] ?? "";
     expect(fullPage).toContain(`href="${links(locale).ask}"`);
-    // Small text with a real hit area (≥ 24px, WCAG 2.5.8).
-    expect(fullPage).toContain("text-xs");
-    expect(fullPage).toContain("min-h-8");
-    // Send is only aria-disabled while a photo is being prepared.
-    expect(html).toMatch(/<button type="submit" class="/);
+    expect(fullPage).toContain("size-11");
+    // Send is a round icon button, only aria-disabled while a photo is being prepared.
+    expect(html).toMatch(new RegExp(`<button type="submit" title="${escape(t.send)}" class="[^"]*rounded-full`));
     expect(html).not.toMatch(/<button type="submit"[^>]*\saria-disabled="/);
   });
 
@@ -324,7 +326,7 @@ describe("RanchoChatPanel composer", () => {
     // Next's <Activity> (cacheComponents) hides a left route and runs its effect cleanups but keeps
     // its state, so the cleanup must not leave messages pointing at revoked object URLs, a turn
     // waiting for an aborted answer, or an open modal dialog that keeps the next page inert.
-    const source = readFileSync(fileURLToPath(new URL("./RanchoChatPanel.tsx", import.meta.url)), "utf8").replace(/\r\n/g, "\n");
+    const source = readFileSync(fileURLToPath(new URL("./RanchoChat.tsx", import.meta.url)), "utf8").replace(/\r\n/g, "\n");
     const block = source.match(/useEffect\(\(\) => \{\n\s*mountedRef\.current = true;[\s\S]*?\n {2}\}, \[previewUrls\]\);/)?.[0] ?? "";
     expect(block).not.toBe("");
     const cleanup = block.slice(block.indexOf("return () => {"));
@@ -340,6 +342,9 @@ describe("RanchoChatPanel composer", () => {
     ]) {
       expect(cleanup, step).toContain(step);
     }
+    // A handoff's prefill survives React's dev double-mount: the draft is not cleared here.
+    expect(cleanup).not.toContain('setQuestion("")');
+    expect(cleanup).not.toContain("setToolContext(null)");
   });
 });
 

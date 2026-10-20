@@ -28,7 +28,8 @@ const predictor = {
   },
   form: {
     title: "Your details",
-    privacy: "What you enter stays in this browser and is not saved on our servers — unless you choose to send an enquiry, which then includes your exam and score range.",
+    privacy:
+      "What you enter stays in this browser and is not saved on our servers — unless you choose to send an enquiry or ask Rancho about your result, which then includes your exam and score range.",
     exam: "Exam",
     exams: {
       "jee-main": "JEE Main",
@@ -130,6 +131,14 @@ const predictor = {
     optionsListLabel: "{tag} options",
     ctaText: "Want a plan for these colleges? Aspire's counsellors can help.",
     ctaButton: "Talk to a counsellor",
+    /**
+     * "Ask Rancho how to improve": opens the Rancho chat with this prompt prefilled (the visitor
+     * still presses Send) and a short context — exam, score range, rank band, sample label only.
+     */
+    askRancho: "Ask Rancho how to improve",
+    askRanchoPrompt: "How can I move up from this rank band?",
+    askRanchoContext: "{exam}, {range}: {rank} band {band}",
+    askRanchoSample: "(sample data)",
   },
   whatIf: {
     title: "What if I score more?",

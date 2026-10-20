@@ -3,6 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import { enquirySchema, type EnquiryResponse } from "@/lib/contracts/enquiry";
+import { enquiryLeadGateCookie } from "@/lib/lead-gate/server";
 
 import { createDestination } from "./destinations";
 import { getSiteOrigin, parseEnquiryDestination, parseEnquiryStore, type Env } from "./env";
@@ -48,6 +49,11 @@ export interface EnquiryHandlerDeps {
   webhookTimeoutMs?: number;
   generateReference?: () => string;
   maxBodyBytes: number;
+  /**
+   * Lead gate: `Set-Cookie` value that unlocks the free tools after a stored enquiry, or null
+   * (gate off, already unlocked, any failure). src/lib/lead-gate/server.ts `enquiryLeadGateCookie`.
+   */
+  leadGateCookie: (request: Request, input: { leadId: string; consentVersion: string }) => string | null;
 }
 
 /** Process-wide limiters for the real route (single instance only — see rate-limit.ts). */
@@ -81,6 +87,7 @@ export function createEnquiryHandler(overrides: Partial<EnquiryHandlerDeps> = {}
     logger: defaultLogger,
     now: () => new Date(),
     maxBodyBytes: MAX_ENQUIRY_BODY_BYTES,
+    leadGateCookie: (request, input) => enquiryLeadGateCookie(request, input),
     ...overrides,
   };
 
@@ -162,8 +169,8 @@ export function createEnquiryHandler(overrides: Partial<EnquiryHandlerDeps> = {}
         fetchImpl: deps.fetchImpl,
         webhookTimeoutMs: deps.webhookTimeoutMs,
       });
-      const received = (reference: string) =>
-        respond({ ok: true, status: "received", reference, message: ENQUIRY_MESSAGES.received }, 201);
+      const received = (reference: string, headers?: HeadersInit) =>
+        respond({ ok: true, status: "received", reference, message: ENQUIRY_MESSAGES.received }, 201, headers);
 
       if (store.mode === "crm") {
         const outcome = await captureEnquiry(enquiry, {
@@ -192,7 +199,15 @@ export function createEnquiryHandler(overrides: Partial<EnquiryHandlerDeps> = {}
                     : {}),
               });
             }
-            return received(outcome.reference);
+            {
+              // Lead gate (docs/lead-gate-plan.md §5): a stored enquiry also unlocks the free tools on
+              // this browser (header only; the frozen body is unchanged; never fails the enquiry).
+              const cookie =
+                !outcome.honeypot && outcome.leadId
+                  ? deps.leadGateCookie(request, { leadId: outcome.leadId, consentVersion: enquiry.consentVersion })
+                  : null;
+              return received(outcome.reference, cookie ? { "Set-Cookie": cookie } : undefined);
+            }
           case "phone_capped":
             log({ outcome: "phone_rate_limited", source: enquiry.source });
             return apiError(429, "rate_limited", ENQUIRY_MESSAGES.phoneRateLimited, {

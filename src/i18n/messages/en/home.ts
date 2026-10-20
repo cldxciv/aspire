@@ -101,6 +101,10 @@ const home = {
       daysLeft: "{days} days to {exam}",
       today: "{exam} is today — all the best!",
       past: "That date has passed. Choose your next exam date.",
+      /** Opens the Rancho chat with this prompt prefilled and a short context: exam and days left only. */
+      askRancho: "Ask Rancho for a plan",
+      askRanchoPrompt: "Can you help me plan my preparation for the days I have left?",
+      askRanchoContext: "{exam}, {days} days to the exam",
       featuresLabel: "What the planner does",
       features: {
         plan: "A day-by-day plan to your exam date",

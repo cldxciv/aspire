@@ -9,7 +9,13 @@ import "server-only";
  *
  * Signatures (see each module for details):
  *   resolveCrmViewer(session)                                → CrmViewer | null
- *   captureLead(input: CaptureLeadInput, now?)               → CaptureLeadResult
+ *   captureLead(input: CaptureLeadInput, now?, CaptureLeadOptions?) → CaptureLeadResult
+ *   Lead gate (docs/lead-gate-plan.md; public, no viewer):
+ *     unlockGateLead(GateUnlockInput, now?)                  → GateUnlockResult (capture + pass, one transaction)
+ *     issueGatePassForLead(leadId, NewGatePass, now?)        → boolean (after a stored enquiry; never records use)
+ *     findGatePass(passHash, now?) / revokeGatePass(passHash) / revokeGatePassesForLead(leadId)
+ *     recordToolUse(leadId, ToolUseInput, now?)              → { recorded, uses? } (one entry per tool + key + IST day)
+ *     withdrawGateConsent(leadId, now?)                      → { withdrawn, passesRevoked }
  *   leadInputFromEnquiry(enquiry, { consentTextVersion?, consentAt?, context?, reference? }?) → CaptureLeadInput
  *     (consent version + context default to the enquiry's own `consentVersion` / `context`)
  *   createManualLead(viewer, input: ManualLeadInput, now?)   → CrmResult<{ leadId, isNew }>
@@ -60,3 +66,21 @@ export {
   writeStaffMembership,
 } from "./admin";
 export { normalizePhoneE164, istDayBounds, csvCell } from "./pure";
+export {
+  findGatePass,
+  GATE_PASS_TTL_MS,
+  issueGatePassForLead,
+  MAX_GATE_PASSES_PER_LEAD,
+  recordToolUse,
+  revokeGatePass,
+  revokeGatePassesForLead,
+  sweepToolUse,
+  TOOL_USE_TTL_MS,
+  unlockGateLead,
+  withdrawGateConsent,
+  type GatePass,
+  type GateUnlockInput,
+  type GateUnlockResult,
+  type NewGatePass,
+  type ToolUseInput,
+} from "./gate";

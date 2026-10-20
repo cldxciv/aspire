@@ -8,11 +8,13 @@ import { rejectCrossOrigin } from "@/lib/auth/request";
 import { portalApiItem } from "@/lib/auth/responses";
 import { serverError } from "@/lib/auth/route-helpers";
 import { resolveSessionToken, revokeSessionToken } from "@/lib/auth/sessions";
+import { clearLeadGateOnSignOut } from "@/lib/lead-gate/server";
 
 /**
  * POST /api/auth/logout — same-origin only (403 otherwise). Deletes the session row
  * behind the cookie and expires the cookie. Idempotent: signed-out callers also get
- * 200 `{ signedOut: true }`. No request body.
+ * 200 `{ signedOut: true }`. No request body. Also revokes and expires the lead-gate pass
+ * cookie (`aspire_tool_pass`), when one was sent.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -31,6 +33,8 @@ export async function POST(request: NextRequest) {
 
     const response = portalApiItem({ signedOut: true });
     clearSessionCookie(response);
+    // Shared devices: signing out also forgets this browser's lead-gate pass (docs/lead-gate-plan.md §3).
+    clearLeadGateOnSignOut(request, response);
     authLog({ action: "logout", outcome: "success" });
     return response;
   } catch (error) {

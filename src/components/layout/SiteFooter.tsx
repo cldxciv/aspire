@@ -21,8 +21,9 @@ import { SocialIcon } from "./SocialIcon";
  */
 export async function SiteFooter() {
   const locale = await getLocale();
-  const [t, contact, profile] = await Promise.all([
+  const [t, ranchoApp, contact, profile] = await Promise.all([
     getMessages("common"),
+    getMessages("ranchoApp"),
     getContactDetails(locale),
     getInstituteProfile(locale),
   ]);
@@ -151,6 +152,12 @@ export async function SiteFooter() {
               <li>
                 <Link href={href("/terms")} className={smallLinkClasses}>
                   {t.footer.terms}
+                </Link>
+              </li>
+              <li>
+                {/* The installable Rancho app home (components/pwa). */}
+                <Link href={href("/rancho")} className={smallLinkClasses}>
+                  {ranchoApp.footerLink}
                 </Link>
               </li>
               <li>

@@ -22,6 +22,8 @@ import enPlanner from "./en/planner";
 import enMcp from "./en/mcp";
 import enCrm from "./en/crm";
 import enRancho from "./en/rancho";
+import enRanchoApp from "./en/ranchoApp";
+import enLeadGate from "./en/leadGate";
 import hiAbout from "./hi/about";
 import hiAdmissions from "./hi/admissions";
 import hiAuth from "./hi/auth";
@@ -44,6 +46,8 @@ import hiPlanner from "./hi/planner";
 import hiMcp from "./hi/mcp";
 import hiCrm from "./hi/crm";
 import hiRancho from "./hi/rancho";
+import hiRanchoApp from "./hi/ranchoApp";
+import hiLeadGate from "./hi/leadGate";
 import type { Catalog, Messages, Namespace } from "./types";
 
 export type { Catalog, Messages, Namespace } from "./types";
@@ -77,6 +81,8 @@ const catalogs: Readonly<Record<Locale, Catalog>> = {
     mcp: enMcp,
     crm: enCrm,
     rancho: enRancho,
+    ranchoApp: enRanchoApp,
+    leadGate: enLeadGate,
   },
   hi: {
     common: hiCommon,
@@ -101,6 +107,8 @@ const catalogs: Readonly<Record<Locale, Catalog>> = {
     mcp: hiMcp,
     crm: hiCrm,
     rancho: hiRancho,
+    ranchoApp: hiRanchoApp,
+    leadGate: hiLeadGate,
   },
 };
 

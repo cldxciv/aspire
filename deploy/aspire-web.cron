@@ -1,0 +1,11 @@
+# Aspire website: scheduled ops jobs (deploy/README.md → Backups, Disk hygiene).
+# Install: install -m 644 /opt/aspire-web/release/deploy/aspire-web.cron /etc/cron.d/aspire-web
+# Times are the server's clock: 21:30 = 03:00 IST when the server runs on UTC (check: timedatectl).
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Nightly encrypted off-server backup of the database (writes data/ops/backup-status.json).
+30 21 * * * root /opt/aspire-web/bin/backup.sh >> /var/log/aspire-web-backup.log 2>&1
+
+# Disk check every 6 hours: logs only when under 3 GB free; always updates data/ops/disk-status.json.
+15 */6 * * * root /opt/aspire-web/bin/disk-check.sh --quiet --status >> /var/log/aspire-web-disk.log 2>&1

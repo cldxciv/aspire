@@ -182,7 +182,7 @@ describe("sitemap and robots", () => {
     });
   });
 
-  it("robots keeps portal, account and login pages out in both locales", () => {
+  it("robots keeps portal, CRM, account and login pages out in both locales", () => {
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "false");
     const rules = robots().rules;
     const disallow = (Array.isArray(rules) ? rules[0] : rules).disallow;
@@ -191,11 +191,13 @@ describe("sitemap and robots", () => {
       "/student",
       "/parent",
       "/admin",
+      "/crm",
       "/account",
       "/login",
       "/hi/student",
       "/hi/parent",
       "/hi/admin",
+      "/hi/crm",
       "/hi/account",
       "/hi/login",
     ]);

@@ -6,11 +6,11 @@ const planner = {
   meta: {
     title: "Study planner",
     description:
-      "A free day-by-day study plan to your JEE, NEET, BOH or Class 9–10 exam date, with spaced revision, formula flashcards, streaks and XP. Works offline and installs like an app — in English and Hindi.",
+      "A free day-by-day study plan to your JEE, NEET, BOH or Class 9–10 exam date, with spaced revision, formula flashcards, streaks and XP. Works offline and is part of the Rancho app — in English and Hindi.",
   },
   hero: {
     title: "Smart study planner",
-    lead: "A day-by-day plan to your exam date, spaced revision, formula flashcards, streaks and XP. Free, works offline and installs on your phone like an app.",
+    lead: "A day-by-day plan to your exam date, spaced revision, formula flashcards, streaks and XP. Free, works offline and comes with the Rancho app for your phone.",
     crumb: "Study planner",
   },
   sample: {
@@ -160,6 +160,14 @@ const planner = {
     stripFrozen: "{date}: covered by a streak freeze",
     stripMissed: "{date}: no study",
     noBlocks: "No study blocks are planned for this day.",
+    /**
+     * "Ask Rancho to explain today's topics": opens the Rancho chat with this prompt prefilled and a
+     * short context — exam, days left and today's topic names only.
+     */
+    askRancho: "Ask Rancho to explain today's topics",
+    askRanchoPrompt: "Can you explain today's topics simply, with a quick example for each?",
+    askRanchoContext: "{exam}, {days} days to the exam. Today's topics: {topics}",
+    askRanchoContextTomorrow: "{exam}, the exam is tomorrow. Today's topics: {topics}",
   },
   stats: {
     streak: "Day streak",
@@ -282,12 +290,10 @@ const planner = {
     notifyUnsupported: "This browser does not support notifications.",
     notificationTitle: "Time to revise",
     notificationBody: "Your Aspire planner has {count} items left for today.",
-    installTitle: "Install the planner",
-    installBody: "Add the planner to your home screen to open it like an app. Once opened, it also works offline.",
-    installButton: "Install app",
-    installIos: "On iPhone or iPad: tap Share, then “Add to Home Screen”.",
-    installOther: "In Chrome or Edge, use “Install app” in the browser menu or the install icon in the address bar.",
-    installed: "The planner is installed on this device.",
+    /** The installable app is Rancho (/rancho); the planner has no install prompt of its own. */
+    appTitle: "Get the Rancho app",
+    appBody: "Add Rancho, Aspire's app, to your home screen: ask your doubts and open the planner and the other student tools from there. Once opened, the planner also works offline.",
+    appLink: "Get the Rancho app",
     syncTitle: "Saving and privacy",
     syncGuest: "Saved in this browser only. Sign in with your Aspire student account to back up your plan, use it on other devices and join the leaderboard.",
     syncSaved: "Saved to your Aspire account and this device.",

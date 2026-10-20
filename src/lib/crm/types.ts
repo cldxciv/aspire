@@ -68,6 +68,14 @@ export function stageOrdinal(stage: LeadStage): number {
  * source (`/^[a-z][a-z0-9_-]{0,31}$/`) is accepted and reported as itself.
  */
 export const PUBLIC_LEAD_SOURCES = ["hero", "admissions", "contact", "quick", "tool"] as const;
+/**
+ * Source of leads captured by the lead gate (contact details before a free tool's result;
+ * docs/lead-gate-plan.md): the existing `tool` value; `LeadContext.tool` names the tool that asked.
+ */
+export const GATE_LEAD_SOURCE = "tool";
+/** Who filled in the lead gate ("I am the student / parent or guardian"); kept on the submission activity. */
+export const GATE_SUBMITTERS = ["student", "parent"] as const;
+export type GateSubmitter = (typeof GATE_SUBMITTERS)[number];
 export const MANUAL_LEAD_SOURCES = ["walk_in", "phone_call", "referral", "other"] as const;
 export const KNOWN_LEAD_SOURCES = [...PUBLIC_LEAD_SOURCES, ...MANUAL_LEAD_SOURCES] as const;
 export type ManualLeadSource = (typeof MANUAL_LEAD_SOURCES)[number];
@@ -117,6 +125,8 @@ export const ACTIVITY_TYPES = [
   "task_done",
   "merge", // reserved (Phase 2)
   "erase",
+  "tool_use", // a free tool used after the lead gate (one entry per tool + key + IST day; docs/lead-gate-plan.md)
+  "consent_withdrawn", // the family chose "Stop Aspire contacting me" under a tool (lead gate)
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
@@ -133,7 +143,11 @@ export interface LeadActivity {
    * assignment { from: userId|null, to: userId|null, fromName?, toName?, auto?: boolean, via? } (who assigned = actorName;
    *   null actor = automatic) · task_created { taskId, dueAt, assigneeId, assigneeName? } ·
    * call/whatsapp { outcome } · field_update { fields: string[] } · task_created/task_done { taskId, dueAt? } ·
-   * created { source }.
+   * created { source } ·
+   * lead gate (docs/lead-gate-plan.md): submission also { submittedBy?: "student" | "parent", onLostLead?: true } ·
+   * tool_use { tool, key, exam?, band?, testId?, scoreBand?, page?, uses, lastAt } (never answers, questions,
+   *   photos, exact scores, category, state, gender or dates; deleted on erase and after TOOL_USE_TTL_MS) ·
+   * consent_withdrawn { via: "lead_gate", browsersForgotten }.
    */
   meta: Record<string, string | number | boolean | null | string[]>;
   /** Staff user id, or null for the system / the public. */
@@ -312,6 +326,21 @@ export interface CaptureLeadInput {
   context?: LeadContext;
   /** The enquiry reference shown to the family (ENQ-…), kept on the submission activity. */
   reference?: string | null;
+  /** Lead gate: who filled in the form. Kept on the submission activity (not a lead field). */
+  submittedBy?: GateSubmitter | null;
+}
+
+/** How `captureLead` treats a submission (defaults: an ordinary public enquiry). */
+export interface CaptureLeadOptions {
+  /**
+   * A lead-gate capture (source `tool`). On an EXISTING lead it never reopens a lost lead (the
+   * submission is appended with `onLostLead: true`), never re-runs auto-assignment, and keeps the
+   * lead's own consent version and time when it already has one (the submission activity still
+   * records the gate consent shown). Reasons: docs/lead-gate-plan.md §2 (critiques 0.2, 0.3, 1.1, 1.14).
+   */
+  gate?: boolean;
+  /** Auto-assign a NEW lead (default true). `LEAD_GATE_ASSIGN=none` keeps gate leads in the Unassigned queue. */
+  assignNew?: boolean;
 }
 
 export type CaptureLeadResult =

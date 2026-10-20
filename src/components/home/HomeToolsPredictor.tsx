@@ -4,8 +4,10 @@ import { Calculator } from "lucide-react";
 import { useId, useRef, useState, type FormEvent } from "react";
 import { formatNumber, formatPercentileRange, formatRankRange } from "@/components/predictor/format";
 import { Button } from "@/components/ui";
+import { predictorRanchoDetail } from "@/components/predictor/rancho";
 import type { Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
+import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
 import {
   loadedExams,
@@ -17,6 +19,7 @@ import {
   type RankBandPrediction,
 } from "@/lib/predictor/engine";
 import { miniEstimate } from "./home-tools";
+import { AskRanchoLink } from "./HomeToolsAskRancho";
 
 /** Strings from the `predictor` namespace (form + result) and `home.tools.predictor`, picked on the server. */
 export interface HomeToolsPredictorMessages {
@@ -38,6 +41,12 @@ export interface HomeToolsPredictorMessages {
   basedOn: string;
   basedOnSample: string;
   bandNote: string;
+  rangeScore: string;
+  rangePercentile: string;
+  askRancho: string;
+  askRanchoPrompt: string;
+  askRanchoContext: string;
+  askRanchoSample: string;
 }
 
 export const controlClass =
@@ -174,7 +183,18 @@ export function HomeToolsPredictor({
       </p>
       <div className="mt-4">
         {band ? (
-          <HomeToolsBand band={band} locale={locale} messages={t} />
+          <>
+            <HomeToolsBand band={band} locale={locale} messages={t} />
+            {/* Exam, score range and rank band only (predictor/rancho.ts), like the full predictor. */}
+            <AskRanchoLink
+              href={localePath("/tools/ask", locale)}
+              detail={predictorRanchoDetail(band, table, locale, t)}
+              size="sm"
+              className="mt-3"
+            >
+              {t.askRancho}
+            </AskRanchoLink>
+          </>
         ) : (
           <p className="flex min-h-[6.5rem] items-center rounded-control border border-dashed border-[#cbd8e7] bg-[#f8fbff] p-4 text-sm text-muted">
             {t.empty}

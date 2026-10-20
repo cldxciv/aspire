@@ -8,7 +8,10 @@ import { messagesFor } from "@/i18n/messages";
 import type { ApiFailure } from "@/lib/auth/client-api";
 import { AdminOverview, countAccounts } from "./AdminViews";
 import { AUDIT_LIMITS, AuditLog, auditActionLabel, auditDetails, parseAuditLimit } from "./AuditLog";
-import { DemoEnquiriesTable } from "./DemoEnquiriesTable";
+import { ConsoleTopBarTools } from "./ConsoleTopBar";
+import { ComingView, WebsiteStatusView } from "./ConsoleViews";
+import { consoleRoadmap } from "./console-roadmap";
+import { countRecords, getWebsiteInventory, type WebsiteInventory } from "./website-inventory";
 import type { WeakTopic } from "@/lib/ask/weak-topics";
 import type { AttemptsSummary, SavedAttemptSummary } from "@/lib/mocktest/types";
 import { addDays } from "@/lib/planner/dates";
@@ -25,9 +28,9 @@ import {
   type ToolAudience,
 } from "./learner-tools-view";
 import { ParentOverview, ParentProgress, ParentUpdates } from "./ParentViews";
-import { crmNavItems, isActivePortalItem, portalAreas, visibleStaffNavKeys } from "./areas";
+import { ADD_ENQUIRY_HREF, crmNavItems, isActivePortalItem, portalAreas, visibleStaffNavKeys } from "./areas";
 import { PortalBreadcrumbLinks, PortalNavLinks } from "./PortalNav";
-import { crmBreadcrumbMessages, navMessages, staffNavMessages } from "./PortalShell";
+import { crmBreadcrumbMessages, crmPageLabels, navMessages, staffNavMessages } from "./PortalShell";
 import { PortalUserMenu } from "./PortalUserMenu";
 import { StudentOverview, StudentProgress, StudentSection } from "./StudentViews";
 import { adminFailureMessage, filterUsers, UserManager, type AdminUserView } from "./UserManager";
@@ -410,8 +413,10 @@ describe("parent views", () => {
 });
 
 describe("admin views", () => {
-  it("counts accounts from the database rows", () => {
-    expect(countAccounts(USERS)).toEqual({ students: 3, parents: 1, admins: 1, disabled: 1, pending: 1 });
+  it("counts accounts from the database rows, staff included", () => {
+    expect(countAccounts(USERS)).toEqual({ staff: 0, admins: 1, students: 3, parents: 1, disabled: 1, pending: 1 });
+    const staff = { ...userBase, id: "c1", role: "staff" as const, displayName: "Counsellor One", loginId: "counsellor.one" };
+    expect(countAccounts([...USERS, staff, { ...staff, id: "c2", disabled: true }])).toMatchObject({ staff: 2, disabled: 2 });
   });
 
   it("overview shows real counts when signed in and '—' in preview", () => {
@@ -427,11 +432,18 @@ describe("admin views", () => {
     expect(html).toContain(m.portal.admin.overview.statNote);
     expect(html).toContain('href="/admin/users"');
     expect(html).toContain('href="/admin/audit"');
-    // The admissions CRM is one of the admin areas.
+    // The admissions CRM (Enquiries), the website status page and What's coming are admin areas.
     expect(html).toContain('href="/crm"');
     expect(html).toContain(esc(m.portal.admin.overview.areas.crmTitle));
+    expect(html).toContain('href="/admin/website"');
+    expect(html).toContain('href="/admin/coming"');
+    expect(html).toContain(esc(m.portal.admin.overview.stats.staff));
+    // No stale "not connected" copy and no links to the retired pages.
+    expect(html).not.toContain(m.portal.blocks.notConnected);
+    expect(html).not.toMatch(/not connected/i);
+    expect(html).not.toMatch(/href="\/admin\/(enquiries|content|centres|results)"/);
     const preview = inLocale("hi", createElement(AdminOverview, { locale: "hi", m: views("hi"), account: null }));
-    expect(preview.split(messagesFor("hi", "portal").blocks.noValue).length - 1).toBe(5);
+    expect(preview.split(messagesFor("hi", "portal").blocks.noValue).length - 1).toBe(6);
     expectLocalisedLinks(preview, "hi");
   });
 
@@ -523,12 +535,125 @@ describe("admin views", () => {
     for (const raw of [undefined, "", "7", "1000", "abc", "-50"]) expect(parseAuditLimit(raw)).toBe(50);
   });
 
-  it("demo enquiries table is localised and labelled as fictional", () => {
-    const t = messagesFor("hi", "portal").demoTable;
-    const html = renderToStaticMarkup(createElement(DemoEnquiriesTable, { t }));
-    expect(html).toContain(t.badge);
-    expect(html).toContain("नमूना आवेदक A");
-    expect(html).not.toContain("Sample applicant");
+});
+
+// ---------------------------------------------------------------------------------------------
+// Console status pages (admin-console plan, Phase 1a): What's on the website, What's coming.
+
+describe("what's on the website", () => {
+  const INVENTORY: WebsiteInventory = {
+    demoMode: true,
+    rows: [
+      countRecords("programs", [{ status: "published" }, { status: "placeholder" }, { status: "placeholder" }], "/programs"),
+      countRecords(
+        "rankers",
+        [
+          { status: "placeholder", consentStatus: "pending" },
+          { status: "placeholder", consentStatus: "pending" },
+          { status: "published", consentStatus: "granted" },
+        ],
+        "/results",
+        true,
+      ),
+    ],
+  };
+
+  it("counts shown, demo, approved and names without consent per type", () => {
+    expect(INVENTORY.rows).toEqual([
+      { key: "programs", shown: 3, demo: 2, approved: 1, withoutConsent: null, href: "/programs" },
+      { key: "rankers", shown: 3, demo: 2, approved: 1, withoutConsent: 2, href: "/results" },
+    ]);
+  });
+
+  it("reads every type through data.ts, in demo mode during tests", async () => {
+    const inventory = await getWebsiteInventory();
+    expect(inventory.demoMode).toBe(true);
+    expect(inventory.rows.map((row) => row.key)).toEqual(["programs", "centres", "results", "rankers", "testimonials", "stats", "articles", "faqs"]);
+    for (const row of inventory.rows) {
+      expect(row.demo + row.approved, row.key).toBe(row.shown);
+      expect(row.withoutConsent === null, row.key).toBe(!["results", "rankers", "testimonials"].includes(row.key));
+    }
+    expect(inventory.rows.find((row) => row.key === "rankers")?.shown).toBeGreaterThan(0);
+  });
+
+  it.each(["en", "hi"] as const)("renders totals, one card per type and localised links (%s)", (locale) => {
+    const t = messagesFor(locale, "portal");
+    const html = inLocale(locale, createElement(WebsiteStatusView, { inventory: INVENTORY, preview: false, locale, t }));
+    expectHeadingOrder(html);
+    expectLabelledByTargets(html);
+    expect(html).toContain(esc(t.admin.website.modeDemoTitle));
+    expect(html).toContain(esc(t.admin.website.types.programs));
+    expect(html).toContain(esc(format(t.admin.website.consentWarning, { count: 2 })));
+    // Totals: 6 records shown, 4 demo, 2 names without consent.
+    expect(visibleText(html)).toMatch(new RegExp(`${esc(t.admin.website.totals.shown)}\\s+6\\b`));
+    expect(html.match(/<li /g)).toHaveLength(2);
+    const prefix = locale === "hi" ? "/hi" : "";
+    expect(html).toContain(`href="${prefix}/programs"`);
+    expect(html).toContain(`href="${prefix}/admin/coming"`);
+    expectLocalisedLinks(html, locale);
+    expect(html).not.toMatch(/not connected/i);
+    expect(html).not.toContain(t.blocks.notConnected);
+  });
+
+  it("production mode says only approved content is shown", () => {
+    const t = messagesFor("en", "portal");
+    const html = inLocale("en", createElement(WebsiteStatusView, { inventory: { ...INVENTORY, demoMode: false }, preview: true, locale: "en", t }));
+    expect(html).toContain(esc(t.admin.website.modeLiveTitle));
+    expect(html).toContain(esc(t.blocks.previewBadge));
+  });
+});
+
+describe("what's coming", () => {
+  it("lists every planned item exactly once, each with copy", () => {
+    const keys = consoleRoadmap.flatMap((phase) => phase.items.map((item) => item.key));
+    for (const locale of ["en", "hi"] as const) {
+      const coming = messagesFor(locale, "portal").admin.coming;
+      expect([...keys].sort()).toEqual(Object.keys(coming.items).sort());
+      expect(consoleRoadmap.map((phase) => phase.phase).sort()).toEqual(Object.keys(coming.phases).sort());
+    }
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("sections with no working page yet have no sidebar group; every section has planned items", () => {
+    const sidebarSections = new Set(portalAreas.admin.groups?.map((group) => group.key));
+    // Lead generation and Google & AI search have no working page yet: no sidebar group.
+    expect(sidebarSections.has("leadGeneration")).toBe(false);
+    expect(sidebarSections.has("search")).toBe(false);
+    const sections = new Set(consoleRoadmap.flatMap((phase) => phase.items.map((item) => item.section)));
+    expect(sections).toEqual(new Set(["dashboard", "admission", "leadGeneration", "website", "search", "access", "settings"]));
+  });
+
+  it.each(["en", "hi"] as const)("renders one panel per phase with its status and section labels (%s)", (locale) => {
+    const t = messagesFor(locale, "portal");
+    const html = inLocale(locale, createElement(ComingView, { preview: false, t }));
+    expectHeadingOrder(html);
+    expectLabelledByTargets(html);
+    expect(html.match(/<h2 /g)).toHaveLength(consoleRoadmap.length);
+    for (const phase of Object.values(t.admin.coming.phases)) {
+      expect(html).toContain(esc(phase.name));
+      expect(html).toContain(esc(phase.status));
+    }
+    expect(html).toContain(esc(t.navGroups.leadGeneration));
+    expect(html).toContain(esc(t.admin.coming.items.scholarshipTest.title));
+  });
+});
+
+describe("console top bar", () => {
+  it.each(["en", "hi"] as const)("find an enquiry searches the inbox; add enquiry opens it with add=1 (%s)", (locale) => {
+    const t = messagesFor(locale, "portal").shell;
+    const prefix = locale === "hi" ? "/hi" : "";
+    const html = inLocale(locale, createElement(ConsoleTopBarTools, { locale, t }));
+    expect(html).toMatch(new RegExp(`<form [^>]*action="${prefix}/crm"`));
+    expect(html).toContain('role="search"');
+    expect(html).toContain(`aria-label="${esc(t.findLabel)}"`);
+    const input = /<input [^>]*>/.exec(html)?.[0] ?? "";
+    expect(input).toContain('name="q"');
+    expect(input).toContain('type="search"');
+    expect(html).toContain(`<label for="console-find-enquiry" class="sr-only">${esc(t.findLabel)}</label>`);
+    expect(html).toContain(`href="${prefix}/crm?add=1"`);
+    expect(ADD_ENQUIRY_HREF).toBe("/crm?add=1");
+    expect(html).toContain(esc(t.addEnquiry));
+    expect(html).toContain(esc(t.findSubmit));
   });
 });
 
@@ -571,11 +696,13 @@ describe("portal chrome", () => {
 });
 
 // ---------------------------------------------------------------------------------------------
-// Admin console navigation: the CRM is a "Leads & admissions" group of the admin nav, never a
+// Admin console navigation: the CRM is the "Admission engine" group of the admin nav, never a
 // dead end. Staff (counsellors / managers) keep the flat CRM nav.
 
 const CRM_PAGES = ["/crm", "/crm/today", "/crm/pipeline", "/crm/reports", "/crm/staff"] as const;
-const ADMIN_PAGES = ["/admin", "/admin/enquiries", "/admin/content", "/admin/centres", "/admin/results", "/admin/users", "/admin/audit", "/admin/mcp"] as const;
+const ADMIN_PAGES = ["/admin", "/admin/coming", "/admin/website", "/admin/users", "/admin/mcp", "/admin/audit"] as const;
+/** Retired admin pages: they redirect (to `/crm` or `/admin/website`) and are not in the sidebar. */
+const RETIRED_PAGES = ["/admin/enquiries", "/admin/content", "/admin/centres", "/admin/results"] as const;
 
 function adminNav(locale: Locale, path: string): string {
   const portal = messagesFor(locale, "portal");
@@ -589,25 +716,33 @@ function adminNav(locale: Locale, path: string): string {
 /** hrefs of the links marked `aria-current="page"`. */
 const currentHrefs = (html: string) => [...html.matchAll(/<a [^>]*aria-current="page"[^>]*>/g)].map((m) => /href="([^"]+)"/.exec(m[0])?.[1]);
 
-/** The CRM nav label of a CRM page path. */
-function crmLabel(crm: ReturnType<typeof messagesFor<"crm">>, path: string): string {
+/** The console label of a CRM page path ("Enquiries", "Today's calls", "Pipeline", …). */
+function crmLabel(portal: ReturnType<typeof messagesFor<"portal">>, crm: ReturnType<typeof messagesFor<"crm">>, path: string): string {
   const item = crmNavItems.find((entry) => entry.href === path);
   if (!item) throw new Error(path);
-  return crm.nav[item.key as keyof typeof crm.nav];
+  return crmPageLabels(portal, crm)[item.key as keyof typeof crm.nav];
 }
 
 describe.each(["en", "hi"] as const)("admin console navigation (%s)", (locale) => {
   const portal = messagesFor(locale, "portal");
   const crm = messagesFor(locale, "crm");
   const prefix = locale === "hi" ? "/hi" : "";
+  const groupKeys = (portalAreas.admin.groups ?? []).map((group) => group.key).filter((key) => key !== null);
 
   function expectBothGroups(html: string) {
     for (const path of [...ADMIN_PAGES, ...CRM_PAGES]) expect(html, path).toContain(`href="${prefix}${path}"`);
-    for (const label of Object.values(portal.navGroups)) expect(html).toContain(esc(label));
-    for (const label of Object.values(crm.nav)) expect(html).toContain(esc(label));
+    for (const path of RETIRED_PAGES) expect(html, path).not.toContain(`href="${prefix}${path}"`);
+    // Groups per decision 2: Dashboard, Admission engine, Website & content, Users & access,
+    // Settings & audit. Sections with no working page yet are not in the sidebar.
+    expect(groupKeys).toEqual(["dashboard", "admission", "website", "access", "settings"]);
+    for (const key of groupKeys) expect(html).toContain(esc(portal.navGroups[key]));
+    for (const key of ["leadGeneration", "search"] as const) expect(html).not.toContain(esc(portal.navGroups[key]));
+    for (const label of Object.values(crmPageLabels(portal, crm))) expect(html).toContain(esc(label));
+    expect(html).toContain(esc(portal.crmNav.inbox));
+    expect(html).toContain(esc(portal.crmNav.today));
     expect(html).toContain(esc(portal.areas.admin.sidebarTitle));
     // Group headings label their lists; every aria-labelledby / aria-controls target exists.
-    expect(html.match(/<ul aria-labelledby="/g)).toHaveLength(Object.keys(portal.navGroups).length);
+    expect(html.match(/<ul aria-labelledby="/g)).toHaveLength(groupKeys.length);
     expectLabelledByTargets(html);
     const controls = /aria-controls="([^"]+)"/.exec(html)?.[1];
     expect(controls && html.includes(`id="${controls}"`)).toBe(true);
@@ -615,7 +750,7 @@ describe.each(["en", "hi"] as const)("admin console navigation (%s)", (locale) =
     expect(html).toContain(esc(portal.shell.menu));
   }
 
-  it.each(ADMIN_PAGES)("on %s: admin sections and the Leads & admissions group, one current page", (path) => {
+  it.each(ADMIN_PAGES)("on %s: admin sections and the Admission engine group, one current page", (path) => {
     const html = adminNav(locale, path);
     expectBothGroups(html);
     expect(currentHrefs(html)).toEqual([`${prefix}${path}`]);
@@ -628,20 +763,20 @@ describe.each(["en", "hi"] as const)("admin console navigation (%s)", (locale) =
     expect(html).toContain(`href="${prefix}/admin"`);
     // The collapsed mobile menu button names the current page.
     const button = /<button[^>]*>([\s\S]*?)<\/button>/.exec(html)?.[1] ?? "";
-    expect(button).toContain(esc(crmLabel(crm, path)));
+    expect(button).toContain(esc(crmLabel(portal, crm, path)));
   });
 
   it("a lead's own page highlights nothing (Inbox matches /crm only)", () => {
     expect(currentHrefs(adminNav(locale, "/crm/leads/abc123"))).toEqual([]);
   });
 
-  it.each([...CRM_PAGES, "/crm/leads/abc123"])("breadcrumb on %s: back to the admin console, then Leads & admissions", (path) => {
+  it.each([...CRM_PAGES, "/crm/leads/abc123"])("breadcrumb on %s: back to the admin console, then Admission engine", (path) => {
     const messages = crmBreadcrumbMessages(portal, crm);
     const html = renderToStaticMarkup(createElement(PortalBreadcrumbLinks, { locale, messages, pathname: `${prefix}${path}` }));
     expect(html).toContain(`aria-label="${esc(portal.shell.breadcrumbLabel)}"`);
     expect(html).toMatch(new RegExp(`<a [^>]*href="${prefix}/admin"[^>]*>.*?${esc(portal.areas.admin.label)}</a>`));
-    expect(html).toMatch(new RegExp(`<a [^>]*href="${prefix}/crm"[^>]*>.*?${esc(portal.navGroups.leads)}</a>`));
-    const current = path.startsWith("/crm/leads/") ? crm.lead.metaTitle : crmLabel(crm, path);
+    expect(html).toMatch(new RegExp(`<a [^>]*href="${prefix}/crm"[^>]*>.*?${esc(portal.navGroups.admission)}</a>`));
+    const current = path.startsWith("/crm/leads/") ? crm.lead.metaTitle : crmLabel(portal, crm, path);
     expect(html).toMatch(new RegExp(`<span aria-current="page"[^>]*>${esc(current)}</span>`));
     expect(html.match(/aria-current="page"/g)).toHaveLength(1);
     expectLocalisedLinks(html, locale);
@@ -664,6 +799,9 @@ describe.each(["en", "hi"] as const)("admin console navigation (%s)", (locale) =
       expect(html).toContain(esc(crm.area.sidebarTitle));
       expect(currentHrefs(html)).toEqual([`${prefix}/crm/today`]);
       expect(html.includes(`href="${prefix}/crm/staff"`)).toBe(canManage);
+      // Same plain page names as the admin console (decision 2).
+      expect(html).toContain(esc(portal.crmNav.inbox));
+      expect(html).toContain(esc(portal.crmNav.today));
     }
   });
 
@@ -684,7 +822,9 @@ describe("portal nav config", () => {
     const admin = portalAreas.admin;
     expect(admin.groups?.flatMap((group) => group.items)).toEqual(admin.nav);
     expect(new Set(admin.nav.map((item) => item.href)).size).toBe(admin.nav.length);
-    expect(admin.groups?.find((group) => group.key === "leads")?.items.slice(0, crmNavItems.length)).toEqual(crmNavItems);
+    expect(admin.groups?.find((group) => group.key === "admission")?.items).toEqual(crmNavItems);
+    // The area home leads the first group ("Dashboard").
+    expect(admin.nav[0]).toMatchObject({ key: "home", href: "/admin" });
     expect(portalAreas.staff.nav).toBe(crmNavItems);
     expect(portalAreas.staff.groups).toBeUndefined();
   });

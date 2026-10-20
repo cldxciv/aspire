@@ -1,0 +1,9 @@
+# Aspire website ops logs (deploy/aspire-web.cron).
+# Install: install -m 644 /opt/aspire-web/release/deploy/aspire-web.logrotate /etc/logrotate.d/aspire-web
+/var/log/aspire-web-*.log {
+  monthly
+  rotate 6
+  compress
+  missingok
+  notifempty
+}

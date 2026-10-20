@@ -1,0 +1,135 @@
+# Off-PC build check (docs/admin-console-plan.md §5.2, §8 Agent C; deploy/README.md → CI).
+# Typecheck, lint, the full vitest suite and a production `next build` in demo mode, exactly as the
+# VPS builds it, then a check that pages were prerendered. Needs no secrets: the build never reads
+# ANTHROPIC_API_KEY or the server's .env.
+name: CI
+
+on:
+  push:
+    branches: [main, develop, "feature/**"]
+    paths-ignore: ["docs/**", "reference/**", "specs/**", "**/*.md"]
+  pull_request:
+    branches: [main, develop, "feature/**"]
+    paths-ignore: ["docs/**", "reference/**", "specs/**", "**/*.md"]
+  workflow_dispatch:
+    inputs:
+      docker_image:
+        description: "Also build the production Docker image (no push; adds about 10 minutes)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  verify:
+    name: Typecheck, lint, test, build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      # next-env.d.ts and .next/types (PageProps, LayoutProps, next/root-params) are generated, not committed.
+      - name: Generate Next.js types
+        run: npx next typegen
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint .
+
+      # No build-time variables here: tests stub what they need, and a preset
+      # SHOW_PLACEHOLDER_CONTENT or NEXT_PUBLIC_SITE_URL would change what they assert.
+      - name: Unit tests
+        run: npx vitest run
+
+      - name: Restore the Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**', 'public/**', 'next.config.ts', 'tsconfig.json') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+
+      # Same settings the VPS bakes into the image today (demo mode; see deploy/README.md).
+      - name: Production build (demo mode)
+        env:
+          SHOW_PLACEHOLDER_CONTENT: "true"
+          NEXT_PUBLIC_SITE_URL: https://aspire.thechunkmedia.com
+        run: npx next build
+
+      # Fails when the manifest is missing or broken, or when key pages are no longer prerendered
+      # (a page that silently became fully dynamic). Edit EXPECTED_PRERENDERED when routes change.
+      - name: Check the prerender manifest
+        env:
+          EXPECTED_PRERENDERED: "/en /hi /en/about /hi/about /en/tools /hi/tools"
+        run: |
+          node <<'EOF'
+          const fs = require("node:fs");
+          const file = ".next/prerender-manifest.json";
+          const fail = (message) => { console.log(`::error title=Prerender manifest::${message}`); process.exit(1); };
+          if (!fs.existsSync(file)) fail(`${file} is missing: next build did not finish prerendering`);
+          let manifest;
+          try { manifest = JSON.parse(fs.readFileSync(file, "utf8")); } catch (error) { fail(`${file} does not parse: ${error.message}`); }
+          const routes = Object.keys(manifest.routes ?? {}).sort();
+          const dynamic = Object.keys(manifest.dynamicRoutes ?? {}).sort();
+          if (routes.length === 0) fail("no prerendered routes at all");
+          const missing = (process.env.EXPECTED_PRERENDERED ?? "").split(/\s+/).filter(Boolean).filter((route) => !routes.includes(route));
+          if (missing.length > 0) fail(`expected prerendered pages are missing: ${missing.join(", ")}. First routes found: ${routes.slice(0, 20).join(", ")}`);
+          const summary = [
+            `### Prerender manifest`,
+            `- ${routes.length} prerendered routes, ${dynamic.length} dynamic route patterns`,
+            `- checked: ${process.env.EXPECTED_PRERENDERED}`,
+          ].join("\n");
+          console.log(summary);
+          if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
+          EOF
+
+      - name: Keep the prerender manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: prerender-manifest
+          path: .next/prerender-manifest.json
+          retention-days: 14
+
+  # Optional, manual only (Actions → CI → Run workflow → tick the box): proves the Dockerfile builds.
+  # Nothing is pushed anywhere; see deploy/README.md for building the release image in CI later.
+  docker-image:
+    name: Docker image builds (no push)
+    if: github.event_name == 'workflow_dispatch' && inputs.docker_image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: aspire-web:ci-${{ github.sha }}
+          build-args: |
+            NEXT_PUBLIC_SITE_URL=https://aspire.thechunkmedia.com
+            SHOW_PLACEHOLDER_CONTENT=true

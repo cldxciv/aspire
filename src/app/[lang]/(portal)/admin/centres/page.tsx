@@ -1,18 +1,11 @@
-import type { Metadata } from "next";
-import { AdminSection } from "@/components/portal/AdminViews";
-import { PortalGate } from "@/components/portal/PortalGate";
-import { getMessages } from "@/i18n/server";
+import { redirect } from "next/navigation";
+import { getLocale } from "@/i18n/server";
+import { localePath } from "@/i18n/paths";
 
-export async function generateMetadata(): Promise<Metadata> {
-  const t = await getMessages("portal");
-  return { title: t.admin.centres.metaTitle, description: t.admin.centres.metaDescription };
-}
-
-export default async function AdminCentresPage() {
-  const t = await getMessages("portal");
-  return (
-    <PortalGate area="admin" path="/admin/centres">
-      {(access) => <AdminSection section="centres" preview={access.kind === "preview"} t={t} />}
-    </PortalGate>
-  );
+/**
+ * Old address: the admin Content, Centres and Results pages were merged into "What's on the
+ * website" (`/admin/website`), which this address redirects to (in the same language).
+ */
+export default async function AdminCentresRedirect() {
+  redirect(localePath("/admin/website", await getLocale()));
 }

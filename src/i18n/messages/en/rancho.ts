@@ -12,7 +12,9 @@ const rancho = {
     hint: "Stuck on a doubt? Ask Rancho, Aspire's AI study buddy.",
   },
   panel: {
-    title: "Ask Rancho",
+    /** Visible name in the chat header; it also names the chat (the dialog and the page card are labelled by it). */
+    name: "Rancho",
+    /** Under the name until today's allowance is known. */
     subtitle: "Aspire's AI doubt solver",
     /** Accessible name of the mascot picture in the panel header. */
     mascotLabel: "Rancho, Aspire's snow leopard mascot",
@@ -22,6 +24,8 @@ const rancho = {
       "Hi, I'm Rancho! Send me one Physics, Chemistry, Maths or Biology question, typed or as a photo, and I'll explain it step by step.",
     aiNote: "I'm an AI, not a person, and I answer each question on its own.",
     subjectLegend: "Subject",
+    /** Above the subject chips before the first question. */
+    subjectHint: "Subject (optional)",
     subjects: {
       auto: "Any",
       physics: "Physics",
@@ -41,15 +45,149 @@ const rancho = {
     stopped: "You stopped this answer.",
     truncated: "This answer was cut short because it got very long. Try asking about one part at a time.",
     refused: "Rancho can't help with that. Try a Physics, Chemistry, Maths or Biology question.",
-    remaining: "{remaining} of {limit} questions left today",
+    /** Short form in the chat header. */
+    remainingShort: "{remaining} of {limit} left today",
     remainingNone: "No questions left today",
     disclaimer: "AI can make mistakes — check with your teacher.",
     privacy:
       "Don't type names or personal details. Your question and any photo are processed by Anthropic's API (Claude) to write the answer and aren't stored.",
     privacyLink: "Privacy notice",
+    /** Short link in the one-line disclaimer under the composer. */
+    privacyShort: "Privacy",
+    /** ⓘ button next to the one-line disclaimer: shows the full AI, privacy and voice notes. */
+    infoLabel: "About Rancho, AI and your privacy",
     studentNote: "You're signed in: the subject and topic of each doubt are saved to your account to show your weak areas.",
-    /** Small link to /tools/ask under the composer. */
+    /** Expand button in the floating panel's header (opens /tools/ask). */
     fullPageLink: "Open the full Rancho page",
+    /** One line under the latest answer, before the "Talk to a counsellor" link. */
+    stuck: "Still stuck?",
+    copy: "Copy answer",
+    copied: "Answer copied",
+    /** Page chat only: the 👍 / 👎 counts stay on the device (nothing is sent). */
+    helpful: {
+      yes: "Helpful",
+      no: "Not helpful",
+      thanks: "Thanks! Saved on this device only.",
+    },
+    /** Tag under an answer: subject · topic · level. */
+    difficulty: {
+      easy: "Easy",
+      medium: "Medium",
+      hard: "Hard",
+    },
+    /** Page chat only: language of the answers (and of voice typing / reading aloud). */
+    answerLanguage: "Answer language",
+    languages: {
+      en: "English",
+      hi: "हिंदी",
+    },
+    /** 🎤 voice typing, 🔊 reading answers aloud, and voice mode. */
+    voice: {
+      start: "Speak your question",
+      stop: "Stop listening",
+      listening: "Listening… speak now",
+      heard: "Got it. Check your question, then press Send.",
+      nothingHeard: "I didn't catch that. Press the microphone and try again.",
+      listen: "Listen to this answer",
+      stopReading: "Stop reading",
+      mode: "Voice mode: read answers aloud after you speak",
+      modeOn: "Voice mode on: answers to spoken questions are read aloud.",
+      modeOff: "Voice mode off.",
+      note: "Voice: 🎤 uses your browser's speech recognition. In Chrome, the browser's speech service (Google) turns your voice into text; Aspire never receives the audio, only the text you send. 🔊 Listen reads answers aloud with your device's own voices.",
+      errors: {
+        denied: "Microphone access is blocked. Allow it for this site in your browser settings, or type your question.",
+        noMic: "No microphone was found. Type your question instead.",
+        network: "Voice typing needs an internet connection. Type your question instead.",
+        other: "Voice typing stopped. Try again, or type your question.",
+      },
+      /** Words used when an answer's maths is read aloud ({x} = the base, {n} = the power). */
+      say: {
+        equals: "equals",
+        plus: "plus",
+        minus: "minus",
+        times: "times",
+        dividedBy: "divided by",
+        over: "over",
+        per: "per",
+        squared: "{x} squared",
+        cubed: "{x} cubed",
+        power: "{x} to the power {n}",
+        sqrt: "square root of {x}",
+        cbrt: "cube root of {x}",
+        plusMinus: "plus or minus",
+        approx: "approximately",
+        notEqual: "is not equal to",
+        lessEq: "is less than or equal to",
+        greaterEq: "is greater than or equal to",
+        less: "is less than",
+        greater: "is greater than",
+        arrow: "gives",
+        equilibrium: "is in equilibrium with",
+        degrees: "degrees",
+        percent: "percent",
+        infinity: "infinity",
+        integral: "integral of",
+        sum: "sum of",
+        /** LaTeX with limits: \int_a^b, \sum_{i=1}^{n}, \lim_{x \to a}, \log_b. */
+        integralFromTo: "integral from {a} to {b} of",
+        sumFromTo: "sum from {a} to {b} of",
+        limit: "limit as {x} tends to {a} of",
+        logBase: "log to the base {b} of",
+        half: "one half",
+        third: "one third",
+        quarter: "one quarter",
+        threeQuarters: "three quarters",
+      },
+    },
+    /** "Ask Rancho about this" from a student tool: a removable chip above the composer. */
+    handoff: {
+      /** Chip label, followed by the tool's short summary. */
+      from: "From {tool}",
+      remove: "Remove this context",
+      tools: {
+        predictor: "Predictor",
+        "mock-test": "Mock tests",
+        planner: "Study planner",
+      },
+    },
+    /** Results from Aspire's tools that Rancho shows inside an answer. */
+    cards: {
+      sample: "Sample data",
+      exams: {
+        "jee-main": "JEE Main",
+        "jee-advanced": "JEE Advanced",
+        "neet-ug": "NEET-UG",
+        neet: "NEET-UG",
+        boh: "BOH (Brain of Himachal)",
+        foundation: "Class 9–10 Foundation",
+        JEE_MAIN: "JEE Main",
+        NEET: "NEET-UG",
+        BOH: "BOH (Brain of Himachal)",
+      },
+      rankBand: {
+        title: "Rank estimate · {exam}",
+        fromScore: "For a score of {value}",
+        fromPercentile: "For a percentile of {value}",
+        rank: "Rank {min} – {max}",
+        percentile: "Percentile {min} – {max}",
+        percentileOne: "Percentile {value}",
+        cta: "See colleges & full prediction",
+      },
+      mockTests: {
+        title: "Mock tests for you",
+        meta: "{questions} questions · {minutes} min",
+        start: "Start",
+        leaderboard: "Leaderboard",
+      },
+      plan: {
+        title: "Study plan · {exam}",
+        daysLeft: "{days} days left",
+        dayLeft: "1 day left",
+        today: "The exam is today",
+        examOn: "Exam on {date}",
+        cta: "Build my full plan",
+      },
+    },
     /** Photo questions in the panel (same rules as the Ask page: question text optional, no faces or names). */
     photo: {
       /** Accessible name (and tooltip) of the camera button next to Send. */

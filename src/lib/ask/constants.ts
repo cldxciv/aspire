@@ -1,3 +1,5 @@
+import type { AskCardEvent } from "./cards";
+
 /**
  * Constants of Rancho, the AI doubt solver, shared by the API route and the browser UI (client-safe: no secrets,
  * no server imports). See docs/ask-aspire.md.
@@ -53,9 +55,15 @@ export interface AskAnswerMeta {
 /**
  * `POST /api/ask` streams newline-delimited JSON (`application/x-ndjson`), one event per line.
  * Errors before the answer starts are ordinary JSON envelopes with an HTTP error status.
+ *
+ * `card` (./cards, `AskCardEvent`): the result of one of Aspire's tools that Rancho used while
+ * answering (rank band, mock tests, exam countdown). It arrives before the answer text that
+ * discusses it; there can be zero to three per answer. Clients that do not know an event type
+ * skip it.
  */
 export type AskStreamEvent =
   | { t: "start"; remaining: number; limit: number }
   | { t: "delta"; text: string }
+  | AskCardEvent
   | { t: "done"; stop: "end_turn" | "max_tokens" | "refusal" | "other"; meta: AskAnswerMeta | null }
   | { t: "error"; code: "upstream" | "interrupted" };

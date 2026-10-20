@@ -1,3 +1,5 @@
+import { parseToolCard } from "@/components/rancho/rancho-cards";
+import type { AskCardEvent } from "@/lib/ask/cards";
 import type { AskStreamEvent } from "@/lib/ask/constants";
 
 /**
@@ -53,9 +55,25 @@ export function failureFromResponse(status: number, body: unknown, retryAfterHea
   return { kind: "generic" };
 }
 
-function isStreamEvent(value: unknown): value is AskStreamEvent {
-  if (typeof value !== "object" || value === null) return false;
+/**
+ * One event of the `POST /api/ask` stream as the browser reads it: the answer events plus tool cards
+ * (`{ t: "card", card }`, src/lib/ask/cards.ts), whose card has been checked by `parseToolCard`.
+ */
+export type AskClientEvent = AskStreamEvent | AskCardEvent;
+
+/** A known, well-formed event (cards are replaced by their checked copy); null for anything else. */
+function toStreamEvent(value: unknown): AskClientEvent | null {
+  if (typeof value !== "object" || value === null) return null;
   const event = value as Record<string, unknown>;
+  if (event.t === "card") {
+    // Unknown card kinds (a newer server) and malformed cards are skipped, not shown.
+    const card = parseToolCard(event.card);
+    return card ? { t: "card", card } : null;
+  }
+  return isAnswerEvent(event) ? (event as AskStreamEvent) : null;
+}
+
+function isAnswerEvent(event: Record<string, unknown>): boolean {
   switch (event.t) {
     case "start":
       return typeof event.remaining === "number" && typeof event.limit === "number";
@@ -70,16 +88,16 @@ function isStreamEvent(value: unknown): value is AskStreamEvent {
   }
 }
 
-/** Splits streamed text into complete NDJSON lines; malformed lines are skipped. */
+/** Splits streamed text into complete NDJSON lines; malformed lines and unknown events are skipped. */
 export function createNdjsonDecoder() {
   let buffer = "";
-  const parseLines = (lines: string[]): AskStreamEvent[] => {
-    const events: AskStreamEvent[] = [];
+  const parseLines = (lines: string[]): AskClientEvent[] => {
+    const events: AskClientEvent[] = [];
     for (const line of lines) {
       if (!line.trim()) continue;
       try {
-        const value: unknown = JSON.parse(line);
-        if (isStreamEvent(value)) events.push(value);
+        const event = toStreamEvent(JSON.parse(line) as unknown);
+        if (event) events.push(event);
       } catch {
         // ignore a corrupt line rather than failing the whole answer
       }
@@ -87,13 +105,13 @@ export function createNdjsonDecoder() {
     return events;
   };
   return {
-    push(chunk: string): AskStreamEvent[] {
+    push(chunk: string): AskClientEvent[] {
       buffer += chunk;
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
       return parseLines(lines);
     },
-    end(): AskStreamEvent[] {
+    end(): AskClientEvent[] {
       const rest = buffer;
       buffer = "";
       return parseLines([rest]);

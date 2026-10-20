@@ -4,6 +4,7 @@ import { Award, FileText, Lock, MessageCircle, RotateCcw, Trophy } from "lucide-
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toolEnquiryHref } from "@/components/forms/enquiry-context";
+import { AskRanchoLink } from "@/components/home/HomeToolsAskRancho";
 import { Badge, Button, ButtonLink, EmptyState, Notice } from "@/components/ui";
 import { useLocale } from "@/i18n/client";
 import { format } from "@/i18n/format";
@@ -15,6 +16,7 @@ import { isLeaderboardTest } from "@/lib/mocktest/timing";
 import type { RunnerTest, SavedAttemptSummary, ScoredAttempt } from "@/lib/mocktest/types";
 import { formatDateTime, formatDuration, percent, type MocktestMessages } from "./format";
 import { apiJson, useScoredAttempt, useSessionStatus, type AttemptSource } from "./hooks";
+import { mockTestRancho } from "./rancho";
 import { ProjectionPanel, SolutionReview, StudyPlanView, TimeChart, TopicHeatmap } from "./ResultParts";
 
 /** Query string that identifies an attempt (`attempt=` local id or `saved=` server id). */
@@ -120,6 +122,8 @@ function ResultBody({
   const base = `/tools/mock-tests/${test.id}`;
   const submittedAt = source.attempt.submittedAt;
   const autoSubmitted = source.kind === "local" && source.attempt.submitReason === "timeout";
+  // Rancho gets the test title, a score band and topic names only — no questions or answers.
+  const rancho = result.topics.length > 0 ? mockTestRancho(test, result, locale, tr) : null;
 
   return (
     <div className="space-y-6">
@@ -189,6 +193,13 @@ function ResultBody({
 
       <Panel id="mt-heatmap" title={tr.heatmapTitle} description={tr.heatmapDescription}>
         <TopicHeatmap result={result} test={test} t={tr} lang={locale} />
+        {rancho && (
+          <div className="mt-4">
+            <AskRanchoLink href={localePath("/tools/ask", locale)} detail={rancho.detail} size="sm">
+              {rancho.label}
+            </AskRanchoLink>
+          </div>
+        )}
       </Panel>
 
       <Panel id="mt-time" title={tr.timeTitle} description={tr.timeDescription}>

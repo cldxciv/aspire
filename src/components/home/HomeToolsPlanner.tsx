@@ -1,11 +1,14 @@
 "use client";
 
 import { useId, useState, useSyncExternalStore } from "react";
+import type { Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
+import { localePath } from "@/i18n/paths";
 import { addDays, istDateKey, type DateKey } from "@/lib/planner/dates";
 import { PLAN_LIMITS } from "@/lib/planner/plan";
 import { EXAM_IDS, type ExamId } from "@/lib/planner/types";
-import { examCountdown, msUntilNextIstMidnight, splitTemplate, type ExamCountdown } from "./home-tools";
+import { countdownRanchoDetail, examCountdown, msUntilNextIstMidnight, splitTemplate, type ExamCountdown } from "./home-tools";
+import { AskRanchoLink } from "./HomeToolsAskRancho";
 import { controlClass, labelClass } from "./HomeToolsPredictor";
 
 /** Strings from `planner` (form, exams, today) and `home.tools.planner`, picked on the server. */
@@ -19,6 +22,9 @@ export interface HomeToolsPlannerMessages {
   tomorrow: string;
   past: string;
   tooFar: string;
+  askRancho: string;
+  askRanchoPrompt: string;
+  askRanchoContext: string;
 }
 
 /**
@@ -54,13 +60,14 @@ const serverToday = (): DateKey | null => null;
  * browser with the planner's IST date helpers. Nothing is stored or sent, and the inputs have no
  * `name`, so nothing typed can reach a URL.
  */
-export function HomeToolsPlanner({ messages: t }: { messages: HomeToolsPlannerMessages }) {
+export function HomeToolsPlanner({ locale, messages: t }: { locale: Locale; messages: HomeToolsPlannerMessages }) {
   const ids = useId();
   const today = useSyncExternalStore(subscribeToday, browserToday, serverToday);
   const [exam, setExam] = useState<ExamId>(EXAM_IDS[0]);
   const [examDate, setExamDate] = useState("");
   const countdown = examCountdown(examDate, today);
   const examLabel = t.exams[exam];
+  const ranchoDetail = countdownRanchoDetail(countdown, examLabel, t);
 
   return (
     <div>
@@ -96,6 +103,11 @@ export function HomeToolsPlanner({ messages: t }: { messages: HomeToolsPlannerMe
       <div aria-live="polite" aria-atomic="true" className="mt-4">
         <CountdownView countdown={countdown} exam={examLabel} messages={t} />
       </div>
+      {ranchoDetail && (
+        <AskRanchoLink href={localePath("/tools/ask", locale)} detail={ranchoDetail} size="sm" className="mt-3">
+          {t.askRancho}
+        </AskRanchoLink>
+      )}
     </div>
   );
 }

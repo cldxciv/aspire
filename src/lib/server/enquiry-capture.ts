@@ -92,6 +92,8 @@ export type CaptureOutcome =
       honeypot: boolean;
       store?: CaptureStore;
       forward?: CaptureForward;
+      /** The CRM lead it was stored as / appended to (store `stored` / `duplicate` only). Never logged or returned. */
+      leadId?: string;
       /** Log-safe sink failure code when the store failed but the webhook took it. */
       storeCode?: string;
       forwardReason?: "timeout" | "network" | "http_status";
@@ -138,10 +140,13 @@ export async function captureEnquiry(enquiry: Enquiry, deps: CaptureDeps): Promi
 
   let store: CaptureStore;
   let storeCode: string | undefined;
+  let leadId: string | undefined;
   try {
     const result = await deps.leadSink.capture(buildLeadCapture(enquiry, reference, receivedAt));
-    if (result.ok) store = result.duplicate ? "duplicate" : "stored";
-    else {
+    if (result.ok) {
+      store = result.duplicate ? "duplicate" : "stored";
+      leadId = result.leadId;
+    } else {
       store = "failed";
       storeCode = safeSinkCode(result.code);
     }
@@ -170,6 +175,7 @@ export async function captureEnquiry(enquiry: Enquiry, deps: CaptureDeps): Promi
       honeypot: false,
       store,
       forward,
+      ...(leadId ? { leadId } : {}),
       ...(storeCode ? { storeCode } : {}),
       ...(forwardReason ? { forwardReason } : {}),
       ...(httpStatus !== undefined ? { httpStatus } : {}),

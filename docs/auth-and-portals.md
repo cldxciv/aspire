@@ -6,7 +6,7 @@ Owner: AUTH workstream (was PORTAL). Decisions: D-011 (deny by default, proxy is
 
 - **Sign-in works at the API level** for all three roles: `POST /api/auth/login` checks a login id + password against a local SQLite user store and sets an `HttpOnly` session cookie. `getSession()` validates that cookie against the database on every request.
 - **The UI is built (AUTH-2), in English and Hindi (`/hi/...`).** See "Pages" below: `/login` with Student / Parent / Admin tabs, `/forgot-password` (contact the office — no email service, no fake reset), `/account/password` (change password; also where `mustChangePassword` accounts are sent), the student / parent / admin portals, and admin user management (`/admin/users`) + audit log (`/admin/audit`).
-- **Portal data stays honest.** No LMS or student-information system is connected. Since M6 the portals show real data from the site's own tools (mock tests, study planner, Ask Aspire topics) via `src/components/portal/learner-tools.ts`; timetable, classroom results and attendance remain `notConnected`. Nothing invents grades, attendance or enquiries. `/api/admin/enquiries` stays `503 not_configured` because enquiries are never stored.
+- **Portal data stays honest.** No LMS or student-information system is connected. Since M6 the portals show real data from the site's own tools (mock tests, study planner, Ask Aspire topics) via `src/components/portal/learner-tools.ts`; timetable, classroom results and attendance remain `notConnected`. Nothing invents grades or attendance. **Enquiries are stored:** since M7 every valid website and tool enquiry is saved as a lead in the admissions CRM (`ENQUIRY_STORE=crm`, the default; D-039, `docs/crm.md`), and staff and admins work them in the Enquiries inbox at `/crm`. The old `GET /api/admin/enquiries` 503 stub and the admin "Enquiries" page are gone; `/admin/enquiries` redirects to `/crm`.
 - **Accounts:** the first admin is created with `npm run auth:create-admin`. Admins then create student, parent and admin accounts via `/api/admin/users`. In development, `npm run auth:seed` creates four demo accounts.
 
 ## Architecture
@@ -130,7 +130,6 @@ Each guard checks the same origin first (for writes), then `requireRole("admin")
 | `GET /api/student/me` | `requireRole("student")` | 401 | `{ id, displayName, loginId, notConnected: ["timetable","results","attendance"] }` |
 | `GET /api/parent/students` | `requireRole("parent")` | 401 | `[{ id, displayName }]` for linked, enabled learners only |
 | `GET /api/parent/students/:studentId` | `requireStudentRecord(id, "parent")` | 401 | 403 if not linked, 400 if the id is malformed, else `{ id, displayName, notConnected }` |
-| `GET /api/admin/enquiries` | `requireRole("admin")` | 401 | 503 `not_configured`: enquiries are not stored |
 | `GET /api/session` | none | `{ authenticated: false }` | `{ authenticated: true, role, displayName }`. Never ids or tokens |
 
 ## Preview mode
@@ -218,12 +217,15 @@ You type the password at a hidden prompt, twice. It must be 10 to 128 characters
 | `/account/password` | Change password for every role (current / new / confirm, policy hints) → `POST /api/auth/change-password` → role home or a safe `next` |
 | `/student` (+ `timetable`, `resources`, `progress`) | Own account details + **real tool data (M6)**: mock-test attempts, best scores, badges and links to result/certificate/report; study-planner streak, study days (last 30), XP, countdown; top Ask Aspire doubt topics (AI-tagged). Still "not connected": timetable, classroom results, attendance, study material |
 | `/parent` (+ `progress`, `updates`) | Only the learners linked to this account (read server-side; each re-checked with `canAccessStudentRecord`): mock-test summary, planner consistency (counts only — no XP, exam or exam date), doubt subjects/topics; `/parent/progress` **is** the report (D-033: nothing is sent by WhatsApp/SMS/email); `/parent/updates` lists recent activity. Attendance/classroom results/announcements still "not connected" |
-| `/admin` | Real account counts from the database |
+| `/admin` | Real account counts from the database (staff, admins, students, parents, disabled, waiting for a password change) and links to the console sections |
+| `/admin/website` | "What's on the website": how many programs, centres, results, rankers, testimonials, headline numbers, articles and FAQs the public site shows right now (read through `src/lib/data.ts`), how many are demo placeholders or approved, names shown without recorded consent, demo or production mode, and how to change content today |
+| `/admin/coming` | "What's coming": every planned console page and feature by phase (`src/components/portal/console-roadmap.ts`, from `docs/admin-console-plan.md`), so no sidebar item is an empty screen |
 | `/admin/users` | List with role / status / search filters; create (temporary password shown **once** in a dialog with copy button, then dropped); rename; disable (confirm) / enable; reset password (shown once); link / unlink parent ↔ student. No disable/reset on your own account |
 | `/admin/audit` | Latest 50 / 100 / 200 audit entries, names instead of ids, no secrets |
-| `/admin/enquiries`, `content`, `centres`, `results` | Honest "not connected" (enquiries API answers 503); the fictional demo table only in preview |
+| `/admin/enquiries` | Redirects to the Enquiries inbox (`/crm`), where every stored enquiry is listed |
+| `/admin/content`, `centres`, `results` | Redirect to `/admin/website` |
 
-Portal chrome (`PortalShell`): logo → localised home, role badge, language switcher (keeps the page), user name, "Change password", "Sign out" (`POST /api/auth/logout` → localised login). The preview banner shows only on the data-free preview shells (D-014). All strings come from the `auth` and `portal` message namespaces (Hindi is a machine draft — `docs/hindi-review-register.md`).
+Portal chrome (`PortalShell`): logo → localised home, role badge (a link to the area's home), "View website" (every screen width), language switcher (keeps the page), user name, "Change password", "Sign out" (`POST /api/auth/logout` → localised login). In the console areas (admin and staff) the bar also has "Find an enquiry" (a GET search of the inbox, `/crm?q=…`) and "+ Add enquiry" (`/crm?add=1`, which opens the add-enquiry form). The admin sidebar is grouped by the console sections of `docs/admin-console-plan.md` (Dashboard, Admission engine, Website & content, Users & access, Settings & audit); a section appears only once one of its pages works. The preview banner shows only on the data-free preview shells (D-014). All strings come from the `auth` and `portal` message namespaces (Hindi is a machine draft — `docs/hindi-review-register.md`).
 
 ## Verification
 

@@ -96,12 +96,15 @@ describe("tool CTAs → enquiry form with ?from= (D-039)", () => {
     expect(html).toContain(esc(t.counsellor.cta));
   });
 
-  it("mock-test results and Ask Aspire use the shared helpers (client-only views)", () => {
+  it("mock-test results and Rancho use the shared helpers (client-only views)", () => {
     const read = (file: string) => readFileSync(path.join(process.cwd(), "src/components", file), "utf8");
     expect(read("mocktest/ResultView.tsx")).toContain('toolEnquiryHref("mock-test", locale)');
-    const ask = read("ask/AskAspire.tsx");
-    expect(ask.match(/withEnquiryTool\(links\.enquiry, "ask"\)/g)).toHaveLength(2);
-    expect(ask).not.toMatch(/href=\{links\.enquiry\}/);
+    // Rancho's chat (the Ask page, /rancho and the floating panel all render RanchoChat) tags every
+    // enquiry link with from=ask through one helper call, and never links the bare enquiry URL.
+    const chat = read("rancho/RanchoChat.tsx");
+    expect(chat.match(/withEnquiryTool\(links\.enquiry, "ask"\)/g)).toHaveLength(1);
+    expect(chat).toMatch(/href=\{enquiryHref\}/);
+    for (const file of ["rancho/RanchoChat.tsx", "ask/AskAspire.tsx"]) expect(read(file)).not.toMatch(/href=\{links\.enquiry\}/);
   });
 
   it("CTA labels exist in both languages", () => {

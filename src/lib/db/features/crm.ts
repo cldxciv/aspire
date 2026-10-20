@@ -16,6 +16,8 @@
  *   object of structured facts.
  * - crm_tasks: follow-ups with due dates.
  * - crm_assignment_rules + crm_rr_cursors: auto-assignment (centre/program → pool, round-robin).
+ * - crm_gate_passes: lead gate passes (one per browser that shared details before a tool result);
+ *   SQL in src/lib/crm/repo/gate-passes.ts.
  */
 export const schema = `
 CREATE TABLE IF NOT EXISTS crm_staff (
@@ -114,4 +116,22 @@ CREATE TABLE IF NOT EXISTS crm_rr_cursors (
   last_user_id TEXT,
   updated_at INTEGER NOT NULL
 );
+
+-- Lead gate (docs/lead-gate-plan.md, added 2026-10-21): one row per browser that shared contact
+-- details before a free tool's result. pass_hash = SHA-256 of the random pass id inside the signed
+-- aspire_tool_pass cookie (the id itself is never stored). Deleted on "Not you?", sign-out, consent
+-- withdrawal and erase; at most 10 per lead; fixed expiry (no sliding).
+CREATE TABLE IF NOT EXISTS crm_gate_passes (
+  pass_hash TEXT PRIMARY KEY,
+  lead_id TEXT NOT NULL REFERENCES crm_leads (id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  consent_version TEXT NOT NULL,
+  submitted_by TEXT CHECK (submitted_by IS NULL OR submitted_by IN ('student', 'parent')),
+  record_use INTEGER NOT NULL DEFAULT 0 CHECK (record_use IN (0, 1))
+);
+CREATE INDEX IF NOT EXISTS crm_gate_passes_lead_idx ON crm_gate_passes (lead_id, created_at);
+CREATE INDEX IF NOT EXISTS crm_gate_passes_expires_idx ON crm_gate_passes (expires_at);
+-- tool_use retention sweep (type + age).
+CREATE INDEX IF NOT EXISTS crm_activities_type_idx ON crm_activities (type, at);
 `;

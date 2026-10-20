@@ -28,6 +28,8 @@ import type planner from "./en/planner";
 import type mcp from "./en/mcp";
 import type crm from "./en/crm";
 import type rancho from "./en/rancho";
+import type ranchoApp from "./en/ranchoApp";
+import type leadGate from "./en/leadGate";
 
 export type Catalog = {
   common: typeof common;
@@ -52,6 +54,8 @@ export type Catalog = {
   mcp: typeof mcp;
   crm: typeof crm;
   rancho: typeof rancho;
+  ranchoApp: typeof ranchoApp;
+  leadGate: typeof leadGate;
 };
 
 export type Namespace = keyof Catalog;

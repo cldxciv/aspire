@@ -6,6 +6,7 @@ import { toolEnquiryHref } from "@/components/forms/enquiry-context";
 import { Button, ButtonLink, Notice } from "@/components/ui";
 import type { Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
+import { localePath } from "@/i18n/paths";
 import { applySettings, dueItems, openBlocksToday, recordReview, toggleBlock, type ReviewKind } from "@/lib/planner/actions";
 import { diffDays, istDateKey, istMinutesOfDay, type DateKey } from "@/lib/planner/dates";
 import { generatePlan } from "@/lib/planner/plan";
@@ -13,7 +14,7 @@ import type { Grade } from "@/lib/planner/srs";
 import { planInputOf, type PlannerSettings } from "@/lib/planner/state";
 import type { StudyPlan } from "@/lib/planner/types";
 import { CalendarView } from "./CalendarView";
-import { useBrowserValue, useOnline, usePlannerSnapshot, useToday } from "./hooks";
+import { useOnline, usePlannerSnapshot, useToday } from "./hooks";
 import { LeaderboardView } from "./LeaderboardView";
 import {
   cardsForExam,
@@ -28,7 +29,7 @@ import {
 import { PlanForm } from "./PlanForm";
 import { plannerStore } from "./planner-store";
 import { ReviewView, type SessionMode } from "./ReviewView";
-import { SettingsView, type InstallState } from "./SettingsView";
+import { SettingsView } from "./SettingsView";
 import { TodayView } from "./TodayView";
 
 const TABS = [
@@ -43,12 +44,11 @@ type Tab = (typeof TABS)[number]["key"];
 const SW_URL = "/planner-sw.js";
 const NOTIFIED_KEY = "aspire.planner.notified.v1";
 
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-}
-
-/** Offline support: the planner's own service worker, scoped to this page only (production builds). */
+/**
+ * Offline support: the planner's own service worker, scoped to this page only (production builds).
+ * The planner no longer offers its own install prompt: the installable app is Rancho (/rancho), and
+ * Settings links there.
+ */
 function useServiceWorker(scope: string) {
   useEffect(() => {
     if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) return;
@@ -56,45 +56,6 @@ function useServiceWorker(scope: string) {
       // Offline support is optional; the planner works without it.
     });
   }, [scope]);
-}
-
-function useInstall(): InstallState {
-  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
-  const [installedNow, setInstalledNow] = useState(false);
-  const standalone = useBrowserValue(
-    () => window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true,
-    false,
-  );
-  const ios = useBrowserValue(
-    () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (/macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1),
-    false,
-  );
-  useEffect(() => {
-    const onPrompt = (event: Event) => {
-      event.preventDefault();
-      setDeferred(event as BeforeInstallPromptEvent);
-    };
-    const onInstalled = () => {
-      setInstalledNow(true);
-      setDeferred(null);
-    };
-    window.addEventListener("beforeinstallprompt", onPrompt);
-    window.addEventListener("appinstalled", onInstalled);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onPrompt);
-      window.removeEventListener("appinstalled", onInstalled);
-    };
-  }, []);
-  return {
-    canPrompt: deferred !== null,
-    installed: standalone || installedNow,
-    ios,
-    prompt: () => {
-      if (!deferred) return;
-      void deferred.prompt();
-      void deferred.userChoice.finally(() => setDeferred(null));
-    },
-  };
 }
 
 /**
@@ -166,7 +127,6 @@ export function PlannerApp({
   const snapshot = usePlannerSnapshot();
   const today = useToday();
   const online = useOnline();
-  const install = useInstall();
   const [tab, setTab] = useState<Tab>("today");
   const [reviewMode, setReviewMode] = useState<SessionMode | null>(null);
   const tabRefs = useRef<Partial<Record<Tab, HTMLButtonElement | null>>>({});
@@ -374,7 +334,7 @@ export function PlannerApp({
             state={state}
             plan={plan}
             snapshot={snapshot}
-            install={install}
+            ranchoAppHref={localePath("/rancho", locale)}
             onSettings={onSettings}
             onImport={() => plannerStore.importGuest()}
             onDeclineImport={() => plannerStore.declineImport()}

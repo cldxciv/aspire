@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { RanchoMediaPanel } from "@/components/ask/RanchoMediaPanel";
+import { RanchoAppCard } from "@/components/pwa/RanchoAppCard";
 import { Badge, ButtonLink, MediaSplit, Notice, PageHero, Section } from "@/components/ui";
 import { heroSlides } from "@/components/ui/hero-slides";
+import { Container, SECTION_PANEL } from "@/components/ui/Layout";
 import { stockImages } from "@/content/images";
 import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
@@ -50,7 +52,12 @@ const HERO_IMAGES = [
 ] as const;
 
 export default async function ToolsPage() {
-  const [locale, t, tc] = await Promise.all([getLocale(), getMessages("tools"), getMessages("common")]);
+  const [locale, t, tc, ranchoApp] = await Promise.all([
+    getLocale(),
+    getMessages("tools"),
+    getMessages("common"),
+    getMessages("ranchoApp"),
+  ]);
   const stockLabel = tc.labels.illustrativeStockPhoto;
 
   return (
@@ -63,6 +70,12 @@ export default async function ToolsPage() {
         homeHref={localePath("/", locale)}
         slides={heroSlides(HERO_IMAGES, stockLabel, locale)}
       />
+      {/* Rancho is the installable app that bundles these tools (components/pwa, /rancho). */}
+      <section aria-labelledby="rancho-app-card" className={`${SECTION_PANEL} bg-white`}>
+        <Container gutters="section" className="py-5 sm:py-6">
+          <RanchoAppCard messages={ranchoApp.toolsCard} href={localePath("/rancho", locale)} />
+        </Container>
+      </section>
       {TOOLS.map((tool, index) => {
         const copy = t.items[tool.key];
         const headingId = `tool-${tool.key}`;

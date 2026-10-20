@@ -5,19 +5,17 @@ import {
   CalendarCheck,
   CalendarDays,
   ChartColumn,
-  FileText,
   GraduationCap,
   HeartHandshake,
   History,
   Inbox,
   LayoutDashboard,
-  Mail,
-  MapPin,
+  MonitorCheck,
   Megaphone,
+  Route,
   ShieldCheck,
   SquareKanban,
   TrendingUp,
-  Trophy,
   UserCog,
   UsersRound,
   type LucideIcon,
@@ -28,7 +26,10 @@ import type { Role } from "@/lib/auth/roles";
 export type PortalNavKey = Exclude<keyof Messages<"portal">["nav"], "sectionsLabel">;
 /** Sidebar group headings (`portal.navGroups`). */
 export type PortalNavGroupKey = keyof Messages<"portal">["navGroups"];
-/** Staff (CRM) sidebar keys: labels come from the `crm` messages (`crm.nav`). */
+/**
+ * Staff (CRM) sidebar keys: labels come from the `crm` messages (`crm.nav`), except the plain
+ * console names in `portal.crmNav` ("Enquiries", "Today's calls"), which win.
+ */
 export type CrmNavKey = keyof Messages<"crm">["nav"];
 export type AnyPortalNavKey = PortalNavKey | CrmNavKey;
 
@@ -40,13 +41,13 @@ export type PortalArea = Role | "staff";
 
 /**
  * A sidebar item: `href` is LOCALE-FREE (localise with `localePath`), the label comes from
- * `portal.nav` (or `crm.nav` for the CRM items). `managersOnly` items are hidden from
+ * `portal.nav` (or `portal.crmNav` / `crm.nav` for the CRM items). `managersOnly` items are hidden from
  * counsellors (the page itself re-checks on the server). `exact` items match only their own
  * path (the area home always does), so `/crm` (Inbox) is not "current" on `/crm/today`.
  */
 export type PortalNavItem = { key: AnyPortalNavKey; href: string; icon: LucideIcon; managersOnly?: boolean; exact?: boolean };
 
-/** A headed block of sidebar items; `key: null` is the untitled first block (e.g. Overview). */
+/** A headed block of sidebar items; `key: null` would be an untitled block. */
 export type PortalNavGroup = { key: PortalNavGroupKey | null; items: PortalNavItem[] };
 
 export interface PortalAreaConfig {
@@ -70,7 +71,7 @@ export interface PortalAreaConfig {
 
 /**
  * The admissions CRM pages (`/crm/**`, D-038). Staff (counsellors / centre managers) get them as
- * their whole sidebar; admins get them as the "Leads & admissions" group of the admin console, so
+ * their whole sidebar; admins get them as the "Admission engine" group of the admin console, so
  * the CRM is never a dead end for an admin.
  */
 export const crmNavItems: PortalNavItem[] = [
@@ -81,27 +82,44 @@ export const crmNavItems: PortalNavItem[] = [
   { key: "staff", href: "/crm/staff", icon: UserCog, managersOnly: true },
 ];
 
-/** Admin console: Overview, then the CRM and the other admin sections in headed groups. */
+/**
+ * Admin console sections (docs/admin-console-plan.md §2.3, decision 2). Only pages that work are
+ * listed, so a section with no working page yet (Lead generation, Google & AI search) has no
+ * group: its planned pages are on "What's coming" (`console-roadmap.ts`).
+ */
 const adminGroups: PortalNavGroup[] = [
-  { key: null, items: [{ key: "overview", href: "/admin", icon: LayoutDashboard }] },
-  { key: "leads", items: [...crmNavItems, { key: "enquiries", href: "/admin/enquiries", icon: Mail }] },
   {
-    key: "website",
+    key: "dashboard",
     items: [
-      { key: "content", href: "/admin/content", icon: FileText },
-      { key: "centres", href: "/admin/centres", icon: MapPin },
-      { key: "results", href: "/admin/results", icon: Trophy },
+      { key: "home", href: "/admin", icon: LayoutDashboard },
+      { key: "coming", href: "/admin/coming", icon: Route },
     ],
   },
+  { key: "admission", items: crmNavItems },
+  { key: "website", items: [{ key: "website", href: "/admin/website", icon: MonitorCheck }] },
   {
     key: "access",
     items: [
       { key: "users", href: "/admin/users", icon: UsersRound },
-      { key: "audit", href: "/admin/audit", icon: History },
       { key: "mcp", href: "/admin/mcp", icon: Bot },
     ],
   },
+  { key: "settings", items: [{ key: "audit", href: "/admin/audit", icon: History }] },
 ];
+
+/**
+ * Console top bar (admin and staff areas). "Find an enquiry" is a GET search of the Enquiries
+ * inbox: `/crm?q=<text>` (the inbox's own `q` filter: name or the last digits of a phone).
+ */
+export const ENQUIRY_SEARCH_PATH = "/crm";
+export const ENQUIRY_SEARCH_PARAM = "q";
+/**
+ * "+ Add enquiry" opens the Enquiries inbox with `?add=1`. The add-enquiry form (CRM work,
+ * `AddLeadForm`) opens itself when it sees `add=1`; until then the link lands on the inbox.
+ * LOCALE-FREE: localise with `localePath`.
+ */
+export const ADD_ENQUIRY_PARAM = "add";
+export const ADD_ENQUIRY_HREF = `/crm?${ADD_ENQUIRY_PARAM}=1`;
 
 /**
  * Visual identity per portal area: same layout, different accent colour, icon
