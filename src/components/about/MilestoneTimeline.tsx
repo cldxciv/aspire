@@ -4,8 +4,10 @@ import type { ImageAsset, Milestone } from "@/lib/types";
 
 /**
  * "Our journey" block (mockup `.history`): navy intro panel + milestone timeline.
- * Imagery with figures must never sit beside a name: the optional `image` is a landscape
- * (no people) behind the intro panel, under a navy gradient that keeps the copy legible.
+ * Imagery with figures must never sit beside a name: the optional `image` is a stock photo
+ * without people (and no landscape, D-031) behind the intro panel, under a navy gradient that
+ * keeps the copy legible. No result cards here: milestones name campuses, and D-031 keeps results
+ * away from specific centres.
  * On `lg+` the panel stretches to the timeline's height; below that the photo is a strip
  * under the copy.
  */
@@ -26,7 +28,7 @@ export function MilestoneTimeline({
   description: string;
   /** DEMO badge label (localised); omitted for verified content. */
   demoLabel?: string;
-  /** Licensed landscape photo without people (pass it through `localizeImage`). Decorative. */
+  /** Licensed stock photo without people (pass it through `localizeImage`). Decorative. */
   image?: ImageAsset;
   /** Visible label on the photo ("Illustrative stock photo"). */
   imageLabel?: string;

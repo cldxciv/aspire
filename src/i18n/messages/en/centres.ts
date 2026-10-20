@@ -2,7 +2,8 @@
  * Namespace "centres" (owner: PAGES-A): /centres, the centre cards and directory, and the
  * home centres picker's image alt text. English is the source of truth for the key shape;
  * ../hi/centres.ts must have the same keys. Plain object, no `as const`. See src/i18n/README.md.
- * Landscapes are labelled as the REGION, never as a centre or campus (D-030).
+ * Card photos are stock education photos, never captioned as a centre or campus; no landscapes
+ * and no result cards on this page (D-031).
  */
 const centres = {
   meta: {
@@ -65,7 +66,6 @@ const centres = {
   },
   images: {
     buildingAlt: "Illustrative image of a hill-style building (not the actual centre)",
-    kulluAlt: "Illustrative image of a Himachal hill town (not the actual centre)",
   },
   districts: {
     title: "Which campus serves your district?",
@@ -78,20 +78,16 @@ const centres = {
     comingSoon: "Map coming after verification",
     body: "A map will be added once centre addresses are verified. Call and Directions buttons appear on a centre's card when confirmed details are available.",
   },
-  regions: {
-    title: "Himachal, region by region",
-    lead: "Landscapes of the regions where the listed centres are. These are stock photos of each region — not photos of the centres.",
-    shimla: "Shimla region",
-    dharamshala: "Dharamshala and the Dhauladhar range",
-    kullu: "Kullu valley",
-    hamirpur: "Hamirpur region",
+  /** Note under the directory while centre cards show stock photos (D-031). */
+  photos: {
+    note: "Photos on the centre cards are stock photos for illustration. They were not taken at Aspire's centres.",
   },
   help: {
     title: "Not sure which centre to choose?",
     body: "Tell us where you are and what you're preparing for, and the admissions team can help.",
     primary: "Book counselling",
     secondary: "Contact Aspire",
-    imageCaption: "Himalayan ridges — a stock photo of the region, not a centre.",
+    imageCaption: "Stock photo for illustration — not taken at an Aspire centre.",
   },
 };
 

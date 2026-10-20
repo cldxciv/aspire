@@ -86,7 +86,7 @@ export function parseQuery<S extends z.ZodType>(
   };
 }
 
-/** Personal fields that are only exposed with explicit `granted` consent. */
+/** Personal text fields that are only exposed with explicit `granted` consent. */
 const CONSENTED_FIELDS = ["studentDisplayName", "school", "quote"] as const;
 
 /** Public projection of a result record: an explicit whitelist, so new internal fields never leak. */
@@ -94,13 +94,13 @@ export type PublicResult = Pick<
   ResultRecord,
   "id" | "year" | "exam" | "examLabel" | "programSlug" | "rankOrOutcome" | "destination" | "centreSlug" | "featured" | "sourceReference" | "consentStatus" | "publishedAt" | "status"
 > &
-  Partial<Pick<ResultRecord, (typeof CONSENTED_FIELDS)[number]>>;
+  Partial<Pick<ResultRecord, (typeof CONSENTED_FIELDS)[number] | "photo">>;
 
 /**
  * Defence in depth on top of getResults(): personal details (name, school,
- * quote) are only exposed with explicit `granted` consent — never for
- * placeholder records with pending consent, even in preview — and internal
- * fields (verifiedBy, sourceRef…) are never exposed.
+ * quote, result-card photo) are only exposed with explicit `granted` consent —
+ * never for placeholder records with pending consent, even in preview — and
+ * internal fields (verifiedBy, sourceRef…) are never exposed.
  */
 export function toPublicResult(record: ResultRecord): PublicResult {
   const publicResult: PublicResult = {
@@ -121,6 +121,10 @@ export function toPublicResult(record: ResultRecord): PublicResult {
   if (record.consentStatus === "granted") {
     for (const field of CONSENTED_FIELDS) {
       if (record[field]) publicResult[field] = record[field];
+    }
+    if (record.photo) {
+      const { src, alt, width, height } = record.photo;
+      publicResult.photo = { src, alt, width, height };
     }
   }
   // Drop undefined keys so the JSON stays compact.

@@ -1,4 +1,5 @@
 import { ArrowRight } from "lucide-react";
+import type { ReactNode } from "react";
 import { ButtonLink } from "@/components/ui";
 import type { AspireAsset } from "@/content/aspire-assets";
 import type { ImageAsset } from "@/lib/types";
@@ -14,6 +15,11 @@ type CtaLink = { label: string; href: string };
  *
  * With `image` (D-030) it becomes a wide photo panel with the copy on a navy gradient
  * (see `PhotoPanel`); pass `imageLabel` ("Illustrative stock photo") with it.
+ *
+ * With `media` (D-031) it becomes a navy panel with the copy and buttons in one row and `media`
+ * as a full-width band below, e.g. an awaited standalone `ResultCardMosaic` (`variant="6x2"`) with
+ * its own stock `fallbackImage` + `fallbackImageLabel` for production. Only where the band sits
+ * beside no specific centre, campus or hostel.
  */
 export function CtaBand({
   id = "cta-heading",
@@ -23,6 +29,7 @@ export function CtaBand({
   secondary,
   art,
   image,
+  media,
   imageLabel,
   className,
 }: {
@@ -35,6 +42,8 @@ export function CtaBand({
   art?: AspireAsset;
   /** Optional licensed stock photo behind the copy (decorative; never a person beside a name). */
   image?: ImageAsset;
+  /** A full-width band under the copy (e.g. previous results); takes precedence over `image`. */
+  media?: ReactNode;
   imageLabel?: string;
   className?: string;
 }) {
@@ -50,6 +59,29 @@ export function CtaBand({
       )}
     </div>
   );
+
+  if (media) {
+    return (
+      <div
+        data-surface="dark"
+        className={cn("rounded-card bg-linear-to-br from-navy to-navy-2 p-5 text-white shadow-soft md:p-8", className)}
+      >
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <h2 id={id} className="text-2xl font-extrabold leading-snug tracking-tight text-white md:text-3xl">
+              {title}
+            </h2>
+            <p className="mt-2 text-[#dbe8f7]">{description}</p>
+          </div>
+          {buttons}
+        </div>
+        {/* Light surface for the cards' own focus rings and badges (D-024). */}
+        <div data-surface="light" className="mt-6">
+          {media}
+        </div>
+      </div>
+    );
+  }
 
   if (image) {
     return (

@@ -7,8 +7,7 @@ import { Button, EmptyState, Notice } from "@/components/ui";
 import { useLocale } from "@/i18n/client";
 import { format } from "@/i18n/format";
 import type { Messages } from "@/i18n/messages/types";
-import type { Centre, ExamTrack } from "@/lib/types";
-import type { RegionPhoto } from "./centre-images";
+import type { Centre, ExamTrack, ImageAsset } from "@/lib/types";
 import { CentreCard, type CentreCardMessages } from "./CentreCard";
 
 /** Copy the directory reads: `centres.directory` plus the card copy. */
@@ -35,7 +34,7 @@ export function CentreDirectory({
   centres,
   hostelSlugs = [],
   searchExtra = {},
-  regions = {},
+  photos = {},
   messages,
 }: {
   centres: Centre[];
@@ -46,8 +45,8 @@ export function CentreDirectory({
    * district, label and districts served, so Latin queries ("Mandi", "Shimla") still match.
    */
   searchExtra?: Record<string, string>;
-  /** Region landscape per centre slug (server-localised alt + region caption), shown in the card (D-030). */
-  regions?: Record<string, RegionPhoto>;
+  /** Stock education photo per centre slug (server-localised alt), shown in the card (D-030 / D-031). */
+  photos?: Record<string, ImageAsset>;
   messages: CentreDirectoryMessages;
 }) {
   const locale = useLocale();
@@ -150,7 +149,7 @@ export function CentreDirectory({
               <CentreCard
                 centre={centre}
                 hostelHref={hostelSlugs.includes(centre.slug) ? `/hostels#hostel-${centre.slug}` : undefined}
-                region={regions[centre.slug]}
+                photo={photos[centre.slug]}
                 photoSide={index % 2 === 0 ? "left" : "right"}
                 t={messages}
                 locale={locale}

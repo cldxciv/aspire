@@ -7,12 +7,14 @@ import { instituteProfile as importedProfile } from "@/content/institute";
 import { programs as importedPrograms } from "@/content/programs";
 import { results as importedResults } from "@/content/results";
 import { stats as importedStats } from "@/content/stats";
+import { resultMosaicMedia } from "@/components/results/ResultMosaicMedia";
+import { RESULT_CARD_PATH } from "@/content/results";
 import {
   getCentres,
-
   getFeaturedResults,
   getInstituteProfile,
   getPrograms,
+  getResultCards,
   getResults,
   getStats,
 } from "@/lib/data";
@@ -109,10 +111,11 @@ describe("home sections I with placeholder content (development / preview)", () 
       if (result.school) expect(html).not.toContain(esc(result.school));
     }
     expect(count(html, />Demo</g)).toBe(results.length);
-    // D-030: the only image is a decorative, labelled stock landscape — never a person beside names.
+    // Without result-card media (D-031) the only image is the decorative, labelled fallback photo:
+    // objects only — never a person beside names, never a landscape.
     const images = html.match(/<img[^>]*>/g) ?? [];
     expect(images).toHaveLength(1);
-    expect(images[0]).toContain("mountain-ridge-trail-snow-peaks");
+    expect(images[0]).toContain("hand-writing-notebook-solutions");
     expect(images[0]).toContain('alt=""');
     expect(html).toContain(">Illustrative stock photo<");
     for (const file of ["hero-students", "students-group-study", "student-studying", "student-boy", "student-girl"]) {
@@ -201,7 +204,7 @@ describe("home sections I with placeholder content (development / preview)", () 
     const images = html.match(/<img[^>]*>/g) ?? [];
     expect(images).toHaveLength(1);
     expect(images[0]).toContain('alt=""');
-    expect(images[0]).toContain("himalaya-blue-ridge");
+    expect(images[0]).toContain("teacher-chalkboard-from-behind");
     expectNoDesignFiller(html);
   });
 });
@@ -266,5 +269,43 @@ describe("home sections I without placeholder content (production)", () => {
       ...importedProfile.approach.map((point) => point.title),
     ].filter((text): text is string => Boolean(text) && text!.length > 1);
     for (const text of imported) expect(html, text).not.toContain(esc(text));
+  });
+});
+
+describe("home sections I with result-card media (D-031)", () => {
+  it("ResultsShowcase and WhyAspire show the mosaic instead of their photo, with no overlay or stock label", async () => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
+    const cards = await getResultCards({ limit: 16 });
+    expect(cards).toHaveLength(16);
+    const [resultsMedia, whyMedia] = await Promise.all([
+      resultMosaicMedia({ locale: "en", cards: cards.slice(0, 8) }),
+      resultMosaicMedia({ locale: "en", cards: cards.slice(8) }),
+    ]);
+    const results = await getFeaturedResults();
+    const showcase = render(ResultsShowcase, { results, locale: "en", media: resultsMedia });
+    const why = render(WhyAspire, { profile: await getInstituteProfile(), locale: "en", media: whyMedia });
+    for (const html of [showcase, why]) {
+      expect(html).toContain(`src="${RESULT_CARD_PATH}`);
+      expect(html).not.toContain("/images/stock/");
+      expect(html).not.toContain(">Illustrative stock photo<");
+      // Two breakpoint mosaics over the same cards; the "See all results" tile links to /results.
+      expect(count(html, /<ul aria-label="Result cards from Aspire&#x27;s previous batches"/g)).toBe(2);
+      expect(html).toContain('href="/results"');
+    }
+    expect(why).not.toContain("Rooted in");
+    // Disjoint cards: no card appears in both sections.
+    const files = (html: string) => new Set([...html.matchAll(/src="(\/api\/result-cards\/[^"]+)"/g)].map((m) => m[1]));
+    const overlap = [...files(showcase)].filter((file) => files(why).has(file));
+    expect(overlap).toEqual([]);
+  });
+
+  it("without cards (production) the helper returns null, so the fallback photo shows", async () => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "false");
+    expect(await getResultCards()).toEqual([]);
+    expect(await resultMosaicMedia({ locale: "en", cards: await getResultCards() })).toBeNull();
+    const html = render(WhyAspire, { profile: null, locale: "en", media: null });
+    expect(html).toContain("teacher-chalkboard-from-behind");
+    expect(html).toContain(">Illustrative stock photo<");
+    expect(html).not.toContain(RESULT_CARD_PATH);
   });
 });

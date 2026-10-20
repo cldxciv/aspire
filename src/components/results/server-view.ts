@@ -12,12 +12,13 @@ import type { CentreNames, RankerRow } from "./result-view";
 
 /**
  * Client-safe projection of a result for the archive: drops fields no client
- * component renders (internal `sourceRef`, `quote`, `verifiedBy`, `featured`)
+ * component renders (internal `sourceRef`, `quote`, `verifiedBy`, `featured`, and the
+ * result-card `photo` — personal data, rendered only via getResultCards(), D-031)
  * and, when the name may not be shown, the name and school (a quasi-identifier).
  */
 export function withPermittedName(result: ResultRecord): ResultRecord {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentionally not sent to the browser.
-  const { sourceRef, quote, verifiedBy, featured, ...visible } = result;
+  const { sourceRef, quote, verifiedBy, featured, photo, ...visible } = result;
   if (canShowStudentName(result)) return visible;
   return { ...visible, studentDisplayName: undefined, school: undefined };
 }

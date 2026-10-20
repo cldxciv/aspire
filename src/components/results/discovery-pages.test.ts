@@ -23,6 +23,9 @@ function count(html: string, needle: string): number {
   return html.split(needle).length - 1;
 }
 
+// Whole pages render here (both locales, several pages per test): allow for a loaded full run.
+vi.setConfig({ testTimeout: 30_000 });
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
@@ -34,7 +37,10 @@ describe("discovery pages with placeholder content (development / preview)", () 
     const programs = await getPrograms();
     expect(programs.length).toBeGreaterThan(0);
     for (const program of programs) expect(html).toContain(`/programs/${program.slug}`);
-    expect(count(html, ">Demo<")).toBe(programs.length);
+    // One DEMO badge per program card, plus one per placeholder result card in the mosaic (D-031).
+    const resultCards = new Set([...html.matchAll(/src="(\/api\/result-cards\/[^"]+)"/g)].map((m) => m[1])).size;
+    expect(resultCards).toBeGreaterThan(0);
+    expect(count(html, ">Demo<")).toBe(programs.length + count(html, 'src="/api/result-cards/'));
     expect(html).toContain("icon-iit-program.webp");
     expect(html).toContain("Batch size");
     expect(html).toContain("Daily teaching");
@@ -75,12 +81,14 @@ describe("discovery pages with placeholder content (development / preview)", () 
       if (centre.phone) expect(html).toContain(`href="tel:${centre.phone.replace(/[^\d+]/g, "")}"`);
     }
     // next/image renders encoded /_next/image URLs, so count <img> tags: campus illustrations plus
-    // region stock photos (D-030) — every one carries a visible label.
+    // stock education photos (D-030 / D-031) — every one carries a visible label.
     const images = count(html, "<img");
     expect(count(html, ">Illustrative image<")).toBeGreaterThan(0);
     expect(count(html, ">Illustrative image<") + count(html, ">Illustrative stock photo<")).toBe(images);
-    // Region landscapes are captioned as the region, never as a centre or campus.
-    expect(html).toContain("Shimla region");
+    // D-031: no region landscapes or captions, and never result cards beside a centre.
+    expect(html).not.toContain("Shimla region");
+    expect(html).not.toContain("/api/result-cards/");
+    expect(html).toContain("They were not taken at Aspire&#x27;s centres.");
     expect(html).not.toMatch(/>[^<]*(centre|campus) (photo|building)[^<]*</i);
     expect(html).toContain('href="/hostels#hostel-shimla"');
     // Faculty info removed (2026-10-20): no campus heads or faculty links.
@@ -97,8 +105,8 @@ describe("discovery pages with placeholder content (development / preview)", () 
     expect(images).toBeGreaterThan(4);
     expect(count(html, ">Illustrative stock photo<")).toBe(images);
     expect(html).toContain("Stock photo for illustration — not an Aspire hostel or campus.");
-    // Region landscapes are captioned with the region, never as a centre or campus.
-    expect(html).toContain("Shimla region");
+    // D-031: region landscapes and their captions are gone; never captioned as a centre or campus.
+    expect(html).not.toContain("Shimla region");
     expect(html).not.toMatch(/(?:centre|campus)<\/figcaption>/i);
   });
 });

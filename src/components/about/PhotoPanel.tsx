@@ -12,8 +12,8 @@ import { cn } from "@/lib/cn";
  * navy, so long (e.g. Hindi) copy is never clipped or placed over a busy photo.
  *
  * The photo is decorative here (`alt=""`): the copy carries the meaning. Licensed stock only, with
- * a visible `imageLabel`; never a person image beside a real name; landscapes are never described
- * as an Aspire centre, campus or hostel.
+ * a visible `imageLabel`; never a person image beside a real name; no landscapes (D-031: those are
+ * kept for the homepage hero only).
  */
 export function PhotoPanel({
   image,

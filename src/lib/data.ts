@@ -9,7 +9,8 @@ import { hi } from "@/content/hi";
 import { hostelInfo } from "@/content/hostels";
 import { instituteProfile } from "@/content/institute";
 import { programs } from "@/content/programs";
-import { rankers, results } from "@/content/results";
+import { duplicateCards } from "@/content/result-photos";
+import { RESULT_CARD_PATH, rankers, results } from "@/content/results";
 import { stats } from "@/content/stats";
 import { testimonials } from "@/content/testimonials";
 import { showPlaceholderContent } from "@/lib/content-mode";
@@ -242,6 +243,74 @@ export async function getRankers(
   return visibleWithConsent(rankers)
     .filter((r) => (!filter?.exam || r.exam === filter.exam) && (!filter?.year || r.year === filter.year))
     .map((r) => localized(locale, r, hi.ranker));
+}
+
+/**
+ * One result card (D-031) for ResultCardMosaic / ResultCardMarquee: the card image (a student's
+ * photo, college and name, from Aspire's demo site) plus the data shown or announced with it.
+ * Only produced for records whose name may be shown, so it is safe to render as is.
+ */
+export interface ResultCard {
+  /** Record id (e.g. "ranker-24") — a stable React key. */
+  id: string;
+  /** The card; `alt` is in the requested locale. Served by GET /api/result-cards/[file]. */
+  photo: ImageAsset;
+  name: string;
+  /** College / institute exactly as listed, e.g. "NIT Hamirpur", "MBBS · Tanda". */
+  institute?: string;
+  exam: ExamTrack;
+  year: number;
+  /** Exam and year as on the source's chip, e.g. "JEE 2026" (Latin script in every locale). */
+  label: string;
+  /** Placeholder record: render the DEMO badge (D-005). */
+  placeholder: boolean;
+}
+
+/**
+ * Result cards for image slots (D-031), most recent first: latest year, then the source order.
+ * Only visible ranker records with a photo whose name may be shown (same rule as getRankers()
+ * and canShowStudentName()), so the list is EMPTY in production while the imported records are
+ * placeholders with consent pending — render a fallback then. Repeated cards (the same student's
+ * card listed twice by the source) appear once. `limit` ≤ 0 or absent = all.
+ *
+ * Locale: pass it last like every accessor (`getResultCards({ exam: "NEET" }, locale)`) or as
+ * `filter.locale`; Hindi changes only the alt text.
+ */
+export async function getResultCards(
+  filter?: { exam?: ExamTrack; year?: number; limit?: number; locale?: ContentLocale },
+  locale: ContentLocale = filter?.locale ?? "en",
+): Promise<ResultCard[]> {
+  const limit = filter?.limit && filter.limit > 0 ? Math.floor(filter.limit) : undefined;
+  return visibleWithConsent(rankers)
+    .filter(
+      (r): r is RankerRecord & { photo: ImageAsset } =>
+        r.photo !== undefined &&
+        !duplicateCards[r.id] &&
+        (!filter?.exam || r.exam === filter.exam) &&
+        (!filter?.year || r.year === filter.year),
+    )
+    .sort((a, b) => b.year - a.year) // stable: source order within a year
+    .slice(0, limit)
+    .map((r) => ({
+      id: r.id,
+      photo: localizeImage(r.photo, locale),
+      name: r.studentDisplayName.trim(),
+      ...(r.institution?.trim() ? { institute: r.institution.trim() } : {}),
+      exam: r.exam,
+      year: r.year,
+      label: `${r.exam} ${r.year}`,
+      placeholder: isPlaceholder(r),
+    }));
+}
+
+/**
+ * Whether GET /api/result-cards/[file] may serve `file` (e.g. "ranker-24.webp") at request time: only
+ * when a visible record whose name may be shown carries that photo — the same rule as names.
+ * False for every file in production while the records are placeholders / consent pending.
+ */
+export function canServeResultCard(file: string): boolean {
+  const src = `${RESULT_CARD_PATH}${file}`;
+  return [...visibleWithConsent(rankers), ...visibleWithConsent(results)].some((r) => r.photo?.src === src);
 }
 
 /** One row of getRankerYearCounts(): counts only — never names. */

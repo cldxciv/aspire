@@ -31,15 +31,11 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * Landscape of the region each campus is in (D-030). Captioned with the district, never as
- * "the centre" or "our hostel": these are stock photos of the region only.
+ * Stock photos beside the campus hostel cards, in card order (D-030): generic study scenes, each
+ * captioned "not an Aspire hostel or campus". No landscapes, and never result cards beside a hostel
+ * or campus (D-031). None of them is used elsewhere on this page.
  */
-const REGION_PHOTOS: Record<string, StockImageKey> = {
-  shimla: "shimlaPanorama",
-  hamirpur: "hamirpurHills",
-  dharamshala: "dhauladharTriund",
-  kullu: "kulluValley",
-};
+const CAMPUS_PHOTOS: StockImageKey[] = ["tableDiscussion", "booksAndNotebook", "mathsNotebook", "libraryAisle"];
 
 export default async function HostelsPage() {
   const [locale, t, tc] = await Promise.all([getLocale(), getMessages("hostels"), getMessages("common")]);
@@ -83,15 +79,6 @@ export default async function HostelsPage() {
   const girlsCampuses = info.girlsResidency.centreSlugs.filter((slug) => centreBySlug.has(slug));
   const hasRooms = info.roomTypes.length > 0 || info.roomFeatures.length > 0;
   const hasDay = info.dailyRoutine.length > 0 || info.menuHighlights.length > 0;
-  /** The region landscape shown beside a campus card, captioned with the district only. */
-  const regionPhoto = (centreSlug: string) => {
-    const key = REGION_PHOTOS[centreSlug];
-    const centre = centreBySlug.get(centreSlug);
-    return key && centre
-      ? { image: photo(key), caption: format(t.campuses.regionCaption, { district: centre.district }) }
-      : null;
-  };
-  const hasRegionPhotos = campuses.some((campus) => regionPhoto(campus.centreSlug) !== null);
 
   // Alternate white / surface backgrounds over the sections actually rendered.
   const order = ["intro", campuses.length > 0 && "campuses", "care", hasRooms && "rooms", hasDay && "day", "cta"].filter(
@@ -147,8 +134,8 @@ export default async function HostelsPage() {
             description={t.campuses.description}
             action={demo}
           />
-          {/* Each campus beside a landscape of its region (D-030), alternating sides. The photo is
-              captioned with the district and the note below says it is not the hostel or campus. */}
+          {/* Each campus beside a generic stock photo (D-030), alternating sides, captioned as not an
+              Aspire hostel or campus. */}
           <ul className="space-y-10">
             {campuses.map((campus, index) => {
               const card = (
@@ -160,16 +147,16 @@ export default async function HostelsPage() {
                   demoLabel={demoLabel}
                 />
               );
-              const region = regionPhoto(campus.centreSlug);
+              const campusPhoto = CAMPUS_PHOTOS[index];
               return (
                 <li key={campus.centreSlug}>
-                  {region ? (
+                  {campusPhoto ? (
                     <FillMediaSplit
-                      image={region.image}
+                      image={photo(campusPhoto)}
                       imageSide={index % 2 === 0 ? "right" : "left"}
                       imageWidth="wide"
                       imageLabel={photoLabel}
-                      caption={region.caption}
+                      caption={t.stockCaption}
                     >
                       {card}
                     </FillMediaSplit>
@@ -180,7 +167,6 @@ export default async function HostelsPage() {
               );
             })}
           </ul>
-          {hasRegionPhotos && <p className="mt-6 text-xs text-muted">{t.campuses.regionNote}</p>}
         </Section>
       )}
 
@@ -260,7 +246,7 @@ export default async function HostelsPage() {
 
       {hasDay && (
         <Section tone={tone("day")} aria-labelledby="hostels-day-title">
-          <PhotoPanel image={photo("himalayaBlueRidge")} imageLabel={photoLabel} className="mb-10">
+          <PhotoPanel image={photo("pocketWatchWorksheet")} imageLabel={photoLabel} className="mb-10">
             <SectionHeading
               id="hostels-day-title"
               title={t.day.title}

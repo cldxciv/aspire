@@ -17,6 +17,9 @@ import { setTestLang, withTestLang } from "@/test/root-params-stub";
  * and none of the English UI strings of the page's own namespaces.
  */
 
+// Whole pages render here (both locales, several pages per test): allow for a loaded full run.
+vi.setConfig({ testTimeout: 30_000 });
+
 afterEach(() => {
   vi.unstubAllEnvs();
   setTestLang("en");
@@ -105,8 +108,10 @@ describe("PAGES-A pages in Hindi (preview content)", () => {
       expect(detail, english).not.toContain(english);
     }
     expect(nonHindiLinks(detail)).toEqual([]);
-    // No photo appears twice on a program page.
-    const sources = [...detail.matchAll(/<img[^>]*src="([^"]+)"/g)].map((m) => decodeURIComponent(m[1]).replace(/&amp;.*$/, ""));
+    // No photo appears twice on a program page (result cards render in a phone and a desktop mosaic).
+    const sources = [...detail.matchAll(/<img[^>]*src="([^"]+)"/g)]
+      .map((m) => decodeURIComponent(m[1]).replace(/&amp;.*$/, ""))
+      .filter((src) => !src.startsWith("/api/result-cards/"));
     expect(new Set(sources).size).toBe(sources.length);
   });
 
@@ -122,11 +127,11 @@ describe("PAGES-A pages in Hindi (preview content)", () => {
     expect(nonHindiLinks(html)).toEqual([]);
   });
 
-  it("centres: Hindi copy, regions captioned as regions, Hindi links", async () => {
+  it("centres: Hindi copy, the stock-photo note in Hindi, Hindi links", async () => {
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
     const html = await renderHi(() => CentresPage());
     expect(html).toContain(hi.centres.hero.title);
-    expect(html).toContain(hi.centres.regions.shimla);
+    expect(html).toContain(hi.centres.photos.note);
     for (const english of [en.centres.hero.title, en.centres.directory.title, en.centres.card.contact, "Illustrative image"]) {
       expect(html, english).not.toContain(english);
     }

@@ -1,5 +1,6 @@
-import type { ExamTrack, RankerRecord, ResultRecord } from "@/lib/types";
+import type { ExamTrack, ImageAsset, RankerRecord, ResultRecord } from "@/lib/types";
 import { demoRef, demoUrl } from "./demo-source";
+import { rankerCardSizes, resultCardRankers } from "./result-photos";
 
 // PLACEHOLDER results imported from Aspire's demo site (docs/demo-data-import.md).
 // This supersedes the "intentionally empty" rule of D-009 for development/preview
@@ -26,7 +27,8 @@ const selection = (input: SelectionInput): ResultRecord => ({
 
 const featuredRef = demoRef("/results", "/");
 
-export const results: ResultRecord[] = [
+// Exported as `results` at the end of the file, with result-card photos attached.
+const selections: ResultRecord[] = [
   selection({
     id: "res-2026-neet-pradyun-dharma",
     year: 2026,
@@ -942,15 +944,49 @@ const RANKER_ROWS: readonly RankerRow[] = [
 
 const rankersRef = demoRef("/results", "/rankers.json");
 
-export const rankers: RankerRecord[] = RANKER_ROWS.map(([id, name, institution, exam, year, note]) => ({
-  id: `ranker-${id}`,
-  studentDisplayName: name,
-  ...(institution ? { institution } : {}),
-  exam,
-  year,
-  ...(note ? { note } : {}),
-  sourceReference: RESULTS_URL,
-  consentStatus: "pending",
-  status: "placeholder",
-  sourceRef: rankersRef,
-}));
+// Result cards (D-031): the demo's ranker images, matched by id + name + college + exam/year
+// (scripts/import-result-cards.mjs → result-photos.ts). PERSONAL DATA with consent pending: the
+// files are in private/result-cards/ and only GET /api/result-cards/[file] serves them, under the
+// same rule as names. Render them through getResultCards() (src/lib/data.ts).
+
+/** URL path of a result-card file (served by src/app/api/result-cards/[file]/route.ts). */
+export const RESULT_CARD_PATH = "/api/result-cards/";
+
+/** English alt text: "<Name> — <Institute>, <Exam> <Year> result card" (no claims beyond the data). */
+export function resultCardAlt(card: { name: string; institution?: string; exam: ExamTrack; year: number }): string {
+  return `${card.name} — ${card.institution ? `${card.institution}, ` : ""}${card.exam} ${card.year} result card`;
+}
+
+function rankerPhoto(id: string, card: Parameters<typeof resultCardAlt>[0]): ImageAsset | undefined {
+  const size = rankerCardSizes[id];
+  return size ? { src: `${RESULT_CARD_PATH}${id}.webp`, alt: resultCardAlt(card), width: size[0], height: size[1] } : undefined;
+}
+
+export const rankers: RankerRecord[] = RANKER_ROWS.map(([id, name, institution, exam, year, note]): RankerRecord => {
+  const photo = rankerPhoto(`ranker-${id}`, { name, institution: institution || undefined, exam, year });
+  return {
+    id: `ranker-${id}`,
+    studentDisplayName: name,
+    ...(institution ? { institution } : {}),
+    exam,
+    year,
+    ...(note ? { note } : {}),
+    ...(photo ? { photo } : {}),
+    sourceReference: RESULTS_URL,
+    consentStatus: "pending",
+    status: "placeholder",
+    sourceRef: rankersRef,
+  };
+});
+
+const rankerById = new Map(rankers.map((r) => [r.id, r]));
+
+/**
+ * Selections-wall records. A record shares a ranker's card when the import matched the same
+ * student (name, exam, year and college); none of the 18 demo selections matched (2026-10-20).
+ */
+export const results: ResultRecord[] = selections.map((result) => {
+  const rankerId = resultCardRankers[result.id];
+  const photo = rankerId ? rankerById.get(rankerId)?.photo : undefined;
+  return photo ? { ...result, photo } : result;
+});

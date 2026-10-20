@@ -12,7 +12,11 @@ The server (Debian 13, shared with other sites) runs this app in Docker so it ca
 | `/opt/aspire-web/data/` | Auth database `aspire.sqlite` (owned by uid 1000) — **back this up** |
 | `/etc/nginx/sites-available/aspire.thechunkmedia.com` | Server block; `proxy_pass http://127.0.0.1:3011;` |
 
-`.env` keys: `NEXT_PUBLIC_SITE_URL=https://aspire.thechunkmedia.com`, `TRUSTED_PROXY_HOPS=1` (nginx appends to `X-Forwarded-For`), optional `PREVIEW_ACCESS_PASSWORD` (browser password prompt on every page; remove the line and restart to open the site), `RELEASE=<commit>`. Leave `SHOW_PLACEHOLDER_CONTENT` / `PORTAL_PREVIEW` unset for the production build (demo data hidden).
+`.env` keys: `NEXT_PUBLIC_SITE_URL=https://aspire.thechunkmedia.com`, `TRUSTED_PROXY_HOPS=1` (nginx appends to `X-Forwarded-For`), optional `PREVIEW_ACCESS_PASSWORD` (browser password prompt on every page; remove the line and restart to open the site), `RELEASE=<commit>`, `SHOW_PLACEHOLDER_CONTENT` (`true` = demo mode: DEMO data and result cards visible — used at build **and** run time, so rebuild after changing it; unset/`false` = production, demo data hidden).
+
+Result cards (D-031) live only on the server in `/opt/aspire-web/result-cards/` (mounted read-only). Re-create locally with `node scripts/import-result-cards.mjs`, then copy: `tar -C private/result-cards -cf - . | ssh root@69.62.76.109 "mkdir -p /opt/aspire-web/result-cards && tar -x -C /opt/aspire-web/result-cards"`.
+
+**Current mode (owner decision 2026-10-20):** demo mode, **no password** — 715 students' result cards and names are publicly reachable (noindex) before Aspire has confirmed consent (checklist RC-1). Switch back to production by setting `SHOW_PLACEHOLDER_CONTENT=false` and rebuilding.
 
 ## Release
 

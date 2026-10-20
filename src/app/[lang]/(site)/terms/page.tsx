@@ -38,7 +38,7 @@ export default async function TermsPage() {
         crumbs={[{ label: t.terms.hero.title }]}
         homeLabel={tc.labels.home}
         homeHref={localePath("/", locale)}
-        image={localizeImage(stockImages.hamirpurHills, locale)}
+        image={localizeImage(stockImages.signingForm, locale)}
         imageLabel={tc.labels.illustrativeStockPhoto}
       />
       <Section>
@@ -46,7 +46,7 @@ export default async function TermsPage() {
           sections={sections}
           messages={t}
           image={localizeImage(stockImages.notebookPlanning, locale)}
-          secondaryImage={localizeImage(stockImages.himalayaBlueRidge, locale)}
+          secondaryImage={localizeImage(stockImages.deskLampEvening, locale)}
           imageLabel={tc.labels.illustrativeStockPhoto}
         />
       </Section>

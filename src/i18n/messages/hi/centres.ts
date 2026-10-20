@@ -2,8 +2,8 @@ import type { Messages } from "../types";
 
 /**
  * Namespace "centres" — Hindi (owner: PAGES-A). MACHINE DRAFT (D-028): needs native review
- * before launch (docs/hindi-review-register.md, "PAGES-A"). Landscapes are labelled as the
- * region (क्षेत्र), never as a centre (केंद्र) or campus (परिसर).
+ * before launch (docs/hindi-review-register.md, "PAGES-A"). Card photos are stock photos, never
+ * captioned as a centre (केंद्र) or campus (परिसर); no landscapes or result cards here (D-031).
  */
 const centres: Messages<"centres"> = {
   meta: {
@@ -65,7 +65,6 @@ const centres: Messages<"centres"> = {
   },
   images: {
     buildingAlt: "पहाड़ी शैली के भवन का सांकेतिक चित्र (असली केंद्र नहीं)",
-    kulluAlt: "हिमाचल के एक पहाड़ी शहर का सांकेतिक चित्र (असली केंद्र नहीं)",
   },
   districts: {
     title: "आपके ज़िले के लिए कौन-सा परिसर है?",
@@ -78,20 +77,15 @@ const centres: Messages<"centres"> = {
     comingSoon: "सत्यापन के बाद नक्शा जोड़ा जाएगा",
     body: "केंद्रों के पते सत्यापित होने के बाद नक्शा जोड़ा जाएगा। पुष्ट विवरण उपलब्ध होने पर केंद्र के कार्ड पर ‘कॉल करें’ और ‘रास्ता देखें’ बटन दिखाई देते हैं।",
   },
-  regions: {
-    title: "हिमाचल, क्षेत्र-दर-क्षेत्र",
-    lead: "उन क्षेत्रों के दृश्य जहाँ सूची में दिए केंद्र हैं। ये हर क्षेत्र की स्टॉक फ़ोटो हैं — केंद्रों की तस्वीरें नहीं।",
-    shimla: "शिमला क्षेत्र",
-    dharamshala: "धर्मशाला और धौलाधार पर्वत श्रृंखला",
-    kullu: "कुल्लू घाटी",
-    hamirpur: "हमीरपुर क्षेत्र",
+  photos: {
+    note: "केंद्र कार्डों पर दी गई फ़ोटो केवल उदाहरण के लिए स्टॉक फ़ोटो हैं। ये Aspire के केंद्रों पर नहीं ली गई हैं।",
   },
   help: {
     title: "तय नहीं कर पा रहे कि कौन-सा केंद्र चुनें?",
     body: "हमें बताएँ कि आप कहाँ हैं और किसकी तैयारी कर रहे हैं — प्रवेश टीम आपकी मदद कर सकती है।",
     primary: "काउंसलिंग बुक करें",
     secondary: "Aspire से संपर्क करें",
-    imageCaption: "हिमालय की पर्वत श्रृंखलाएँ — क्षेत्र की स्टॉक फ़ोटो, कोई केंद्र नहीं।",
+    imageCaption: "उदाहरण के लिए स्टॉक फ़ोटो — Aspire के किसी केंद्र पर नहीं ली गई।",
   },
 };
 

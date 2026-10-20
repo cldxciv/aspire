@@ -10,9 +10,15 @@ import { cn } from "@/lib/cn";
  *
  * Image rules: licensed stock or approved assets only; never a person image beside a real
  * name; pass `imageLabel` ("Illustrative stock photo", "Illustration") for stock / AI imagery.
+ *
+ * `media` replaces the photo inside the same rounded aspect box (positioned, so a child with
+ * `absolute inset-0` fills it), e.g. `<ResultCardMosaic fill variant="3x3" fallbackImage={…} />`
+ * with `aspect="1/1"` (D-031). `image` and `imageLabel` are then not rendered — give the media
+ * its own fallback.
  */
 export function MediaSplit({
   image,
+  media,
   imageSide = "right",
   imageLabel,
   caption,
@@ -21,7 +27,9 @@ export function MediaSplit({
   className,
   children,
 }: {
-  image: ImageAsset;
+  image?: ImageAsset;
+  /** Rendered in the photo box instead of `image` (see above). */
+  media?: ReactNode;
   imageSide?: "left" | "right";
   imageLabel?: string;
   /** Optional caption below the photo. */
@@ -43,17 +51,23 @@ export function MediaSplit({
         )}
       >
         <div className={cn("relative overflow-hidden rounded-card bg-surface shadow-soft", aspectClass)}>
-          <Image
-            src={image.src}
-            alt={image.alt}
-            fill
-            sizes="(min-width: 1200px) 560px, (min-width: 1024px) 46vw, 100vw"
-            className="object-cover"
-          />
-          {imageLabel && (
-            <span className="absolute bottom-2 left-2 rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white">
-              {imageLabel}
-            </span>
+          {media ?? (
+            <>
+              {image && (
+                <Image
+                  src={image.src}
+                  alt={image.alt}
+                  fill
+                  sizes="(min-width: 1200px) 560px, (min-width: 1024px) 46vw, 100vw"
+                  className="object-cover"
+                />
+              )}
+              {imageLabel && (
+                <span className="absolute bottom-2 left-2 rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white">
+                  {imageLabel}
+                </span>
+              )}
+            </>
           )}
         </div>
         {caption && <figcaption className="mt-2 text-xs text-muted">{caption}</figcaption>}

@@ -11,6 +11,7 @@ import PrivacyPage from "@/app/[lang]/(site)/privacy/page";
 import ArticlePage from "@/app/[lang]/(site)/resources/[slug]/page";
 import ResourcesPage from "@/app/[lang]/(site)/resources/page";
 import TermsPage from "@/app/[lang]/(site)/terms/page";
+import { stockImages, type StockImageKey } from "@/content/images";
 import { LocaleProvider } from "@/i18n/client";
 import type { Locale } from "@/i18n/config";
 import { messagesFor } from "@/i18n/messages";
@@ -172,13 +173,15 @@ describe("PAGES-B Hindi specifics", () => {
     }
   });
 
-  it("contact desks show region photos captioned as the region, never as the campus", async () => {
+  it("contact desks show labelled study photos with the 'not Aspire's campuses' note, never a region caption", async () => {
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
     for (const lang of ["en", "hi"] as const) {
       const t = messagesFor(lang, "contact");
       const html = await render(lang, () => ContactPage());
-      expect(html).toContain(t.desks.regionNote.replace(/'/g, "&#x27;"));
-      expect(html).toContain(lang === "en" ? "Shimla region" : "शिमला क्षेत्र");
+      const desks = /<section[^>]*id="campus-desks"[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+      expect(desks, lang).toContain(t.desks.photoNote.replace(/'/g, "&#x27;"));
+      expect(count(desks, /<img[^>]*src="[^"]*%2Fimages%2Fstock%2F/g), lang).toBe(4);
+      expect(html).not.toContain(lang === "en" ? "Shimla region" : "शिमला क्षेत्र");
       expect(html).not.toMatch(/(?:centre|campus|परिसर|केंद्र)<\/figcaption>/i);
     }
   });
@@ -206,4 +209,87 @@ describe("PAGES-B Hindi specifics", () => {
     expect(en).toContain('href="/"');
     expect(en).not.toContain("x</");
   });
+});
+
+/**
+ * D-031 (owner request 2026-10-20: "previous results instead of nature images"): no landscape on
+ * any of these pages (only the homepage hero keeps one); result cards in general sections only —
+ * never on contact (campus desks), hostels or the legal pages; in production no result card at all
+ * and a labelled non-nature stock photo in every results slot.
+ */
+const LANDSCAPE_KEYS: StockImageKey[] = [
+  "himalayaHero",
+  "himalayaBlueRidge",
+  "mountainTrail",
+  "shimlaPanorama",
+  "dhauladharTriund",
+  "kulluValley",
+  "hamirpurHills",
+  "hillRoadBarot",
+];
+const LANDSCAPE_FILES = [
+  ...LANDSCAPE_KEYS.map((key) => stockImages[key].src.split("/").pop()!.replace(/\.\w+$/, "")),
+  "hero-mountains",
+  "himachal-landscape",
+  "bg-mountain-",
+];
+const RESULT_CARD_URL = "/api/result-cards/";
+/** These tests render all seven pages in both locales; allow for a loaded machine. */
+const RENDER_ALL_TIMEOUT = 30_000;
+const stockFile = (key: StockImageKey) => encodeURIComponent(stockImages[key].src);
+
+/** Pages with a results slot, and the fallback photo(s) each slot shows in production. */
+const RESULT_PAGES: Record<string, StockImageKey[]> = {
+  about: ["graduateSilhouette", "notebookPlanning"],
+  admissions: ["studentsTakingNotes"],
+  resources: ["graduateSilhouette"],
+};
+
+describe("D-031 previous results instead of nature images", () => {
+  it.each(["true", "false"])("no landscape photo on any PAGES-B page (SHOW_PLACEHOLDER_CONTENT=%s)", async (placeholders) => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", placeholders);
+    for (const { name, render: page } of PAGES) {
+      for (const lang of ["en", "hi"] as const) {
+        const html = await render(lang, page);
+        for (const file of LANDSCAPE_FILES) expect(html, `${name} ${lang}: ${file}`).not.toContain(file);
+      }
+    }
+  }, RENDER_ALL_TIMEOUT);
+
+  it("preview: result cards on About, Admissions and Resources only, each card once per page", async () => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
+    for (const { name, render: page } of PAGES) {
+      for (const lang of ["en", "hi"] as const) {
+        const html = await render(lang, page);
+        // Marquee duplicates for the seamless loop have an empty alt; count the labelled cards only.
+        const cards = [...html.matchAll(/<img[^>]*>/g)]
+          .map(([tag]) => ({ alt: /\salt="([^"]*)"/.exec(tag)?.[1], src: /\ssrc="\/api\/result-cards\/([^"]+)"/.exec(tag)?.[1] }))
+          .filter((img) => img.src && img.alt)
+          .map((img) => img.src);
+        if (!(name in RESULT_PAGES)) {
+          expect(html, `${name} ${lang}`).not.toContain(RESULT_CARD_URL);
+          continue;
+        }
+        expect(cards.length, `${name} ${lang}`).toBeGreaterThanOrEqual(11);
+        expect(new Set(cards).size, `${name} ${lang}: a card is repeated`).toBe(cards.length);
+        // Both tracks, DEMO-badged placeholders, the "See all results" link and no fallback photo.
+        expect(html).toContain(">JEE ");
+        expect(html).toContain(">NEET ");
+        expect(html).toContain(`>${messagesFor(lang, "common").labels.demo}<`);
+        expect(html).toContain(`href="${lang === "hi" ? "/hi" : ""}/results"`);
+        for (const key of RESULT_PAGES[name]) expect(html, `${name} ${lang}: ${key}`).not.toContain(stockFile(key));
+      }
+    }
+  }, RENDER_ALL_TIMEOUT);
+
+  it("production: no result card anywhere, a labelled stock photo in every results slot", async () => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "false");
+    for (const { name, render: page } of PAGES) {
+      for (const lang of ["en", "hi"] as const) {
+        const html = await render(lang, page);
+        expect(html, `${name} ${lang}`).not.toContain(RESULT_CARD_URL);
+        for (const key of RESULT_PAGES[name] ?? []) expect(html, `${name} ${lang}: ${key}`).toContain(stockFile(key));
+      }
+    }
+  }, RENDER_ALL_TIMEOUT);
 });

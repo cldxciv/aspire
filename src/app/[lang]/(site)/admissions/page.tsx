@@ -2,11 +2,14 @@ import { ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 import { FillMediaSplit } from "@/components/about/FillMediaSplit";
 import { PhotoPanel } from "@/components/about/PhotoPanel";
+import { mixedResultCards } from "@/components/about/result-cards";
+import { ResultsBand } from "@/components/about/ResultsBand";
 import { NextSteps } from "@/components/admissions/NextSteps";
 import { ScholarshipPanel } from "@/components/admissions/ScholarshipPanel";
 import { FaqList } from "@/components/faq/FaqList";
 import { EnquiryForm } from "@/components/forms/EnquiryForm";
 import { DownloadList } from "@/components/resources/DownloadList";
+import { ResultCardMosaic } from "@/components/results/ResultCardMosaic";
 import {
   ButtonLink,
   Card,
@@ -66,6 +69,17 @@ export default async function AdmissionsPage() {
   ]);
   const photoLabel = tc.labels.illustrativeStockPhoto;
 
+  // D-031: a band of previous results (alternating JEE / NEET, 6 × 2 cards; the heading links to
+  // /results). In production there are no visible cards and the band shows a labelled stock photo.
+  const resultsMedia = await ResultCardMosaic({
+    locale,
+    variant: "6x2",
+    cards: await mixedResultCards(locale, 12),
+    seeAllHref: null,
+    fallbackImage: localizeImage(stockImages.studentsTakingNotes, locale),
+    fallbackImageLabel: photoLabel,
+  });
+
   // Preferred-centre options from the visible campuses (slug values satisfy the enquiry contract, D-016).
   const centreOptions = centres.map((centre) => ({
     value: centre.slug,
@@ -81,6 +95,7 @@ export default async function AdmissionsPage() {
   const order = [
     "enquiry",
     "next",
+    "results",
     scholarships.length > 0 && "scholarships",
     downloads.length > 0 && "downloads",
     "faqs",
@@ -140,6 +155,18 @@ export default async function AdmissionsPage() {
             {t.next.exploreCentres} <ArrowRight aria-hidden="true" className="size-4" />
           </ButtonLink>
         </FillMediaSplit>
+      </Section>
+
+      {/* General section (not beside a centre): previous results, then scholarships. */}
+      <Section tone={tone("results")} aria-labelledby="admissions-results-heading">
+        <ResultsBand
+          headingId="admissions-results-heading"
+          eyebrow={t.results.eyebrow}
+          title={t.results.title}
+          description={t.results.description}
+          link={{ label: t.results.link, href: localePath("/results", locale) }}
+          media={resultsMedia}
+        />
       </Section>
 
       {scholarships.length > 0 && (

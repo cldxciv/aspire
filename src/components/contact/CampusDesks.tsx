@@ -18,8 +18,8 @@ export type CampusDesk = {
   email?: string;
   hours?: string;
   demo: boolean;
-  /** Stock landscape of the campus's district (D-030), captioned as the region — never as the campus. */
-  region?: { image: ImageAsset; caption: string };
+  /** Labelled stock photo of a generic study scene (D-030) — never captioned as the campus; no landscapes or result cards (D-031). */
+  photo?: ImageAsset;
 };
 
 // Compact link: the negative margin keeps rows tight while the padding keeps a ≥44px tap target.
@@ -39,8 +39,9 @@ function DeskRow({ icon: Icon, label, children }: { icon: LucideIcon; label: str
 
 /**
  * Per-campus admissions desks: address, phone (`tel:`), email (`mailto:`) and hours, each linking to its centre.
- * Desks with a `region` photo show it on top of the card with the visible `photoLabel`; then the grid
- * stays at two columns so the photos keep a useful size.
+ * Desks with a `photo` show it on top of the card with the visible `photoLabel` (the page adds a note
+ * that these are stock photos, not Aspire's campuses); then the grid stays at two columns so the
+ * photos keep a useful size.
  */
 export function CampusDesks({
   desks,
@@ -54,10 +55,10 @@ export function CampusDesks({
   labels: Messages<"contact">["desks"];
   /** DEMO badge label (localised), shown on desks marked `demo`. */
   demoLabel: string;
-  /** Visible label on region photos ("Illustrative stock photo"). */
+  /** Visible label on the desk photos ("Illustrative stock photo"). */
   photoLabel?: string;
 }) {
-  const withPhotos = desks.some((desk) => desk.region);
+  const withPhotos = desks.some((desk) => desk.photo);
   return (
     <ul className={cn("grid gap-4 sm:grid-cols-2", !withPhotos && "xl:grid-cols-4")}>
       {desks.map((desk) => {
@@ -66,24 +67,21 @@ export function CampusDesks({
         return (
           <li key={desk.slug}>
             <Card className="flex h-full flex-col">
-              {desk.region && (
-                <figure className="relative m-0 aspect-16/10 bg-surface">
+              {desk.photo && (
+                <div className="relative aspect-16/10 bg-surface">
                   <Image
-                    src={desk.region.image.src}
-                    alt={desk.region.image.alt}
+                    src={desk.photo.src}
+                    alt={desk.photo.alt}
                     fill
                     sizes="(min-width: 1200px) 580px, (min-width: 640px) 50vw, 100vw"
                     className="object-cover"
                   />
                   {photoLabel && (
-                    <span className="absolute top-2 left-2 rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white">
+                    <span className="absolute bottom-2 left-2 rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white">
                       {photoLabel}
                     </span>
                   )}
-                  <figcaption className="absolute inset-x-0 bottom-0 bg-linear-to-t from-navy/90 to-transparent px-3 pt-8 pb-2.5 text-sm font-semibold text-white">
-                    {desk.region.caption}
-                  </figcaption>
-                </figure>
+                </div>
               )}
               <div className="flex flex-1 flex-col p-5">
                 <h3 className="text-lg font-extrabold leading-snug text-navy">{desk.name}</h3>

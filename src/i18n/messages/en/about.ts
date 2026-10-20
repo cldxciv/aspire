@@ -67,6 +67,17 @@ const about = {
       library: "Reading and revision",
     },
   },
+  /**
+   * "Results from previous batches" (D-031): beside a result-card mosaic in preview and a stock photo
+   * in production, so the copy describes how results are published — never what a card shows.
+   */
+  results: {
+    eyebrow: "Previous results",
+    title: "Results from previous batches",
+    description:
+      "Aspire publishes results from its previous JEE and NEET batches on the results page, by exam and year, once they are verified. A student's name and result card appear only with the student's or guardian's consent.",
+    link: "View results",
+  },
   explore: {
     eyebrow: "Explore",
     title: "Hostels and campuses",

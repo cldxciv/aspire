@@ -56,8 +56,7 @@ const contact: Messages<"contact"> = {
     hours: "समय",
     campusDetails: "परिसर की जानकारी",
     campusDetailsFor: " ({name})",
-    regionCaption: "{district} क्षेत्र",
-    regionNote: "क्षेत्र की स्टॉक फ़ोटो — ये Aspire के परिसर या कार्यालय नहीं हैं।",
+    photoNote: "सांकेतिक स्टॉक फ़ोटो — ये Aspire के परिसर या कार्यालय नहीं हैं।",
   },
 };
 

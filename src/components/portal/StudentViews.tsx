@@ -48,7 +48,7 @@ export function StudentOverview({
       <AccountPanel
         id="student-account"
         title={t.account.title}
-        image={localizeImage(stockImages.himalayaBlueRidge, locale)}
+        image={localizeImage(stockImages.notebookPlanning, locale)}
         imageLabel={m.photoLabel}
         rows={
           account

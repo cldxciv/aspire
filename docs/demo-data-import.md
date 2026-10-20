@@ -8,7 +8,7 @@ On the owner's instruction, institute data from Aspire's demo site **aspire2.the
 - **Nothing is verified.** The demo contradicts itself in many places (27 conflicts logged). Where values disagree, the most specific page wins: the campuses and campus pages for addresses and campus details, the faculty profile pages for faculty, the results page for results, and the contact page for central contact details.
 - **People-centred records** (results, rankers, testimonials) have `consentStatus: "pending"`. In production they show only when `published` with `granted` consent. In preview, placeholders show even with pending consent (owner instruction). Gate names with `canShowStudentName()`.
 - **Wording is the demo's own.** Text is copied verbatim. The only edits are noted below ("Edits to source text").
-- **No media.** Faculty and student photos, videos and download files are not in this project. Centres have no `image`; page agents attach the illustrative centre images from `src/content/aspire-assets.ts`.
+- **No media.** Faculty and student photos, videos and download files are not in this project. Centres have no `image`; page agents attach the illustrative centre images from `src/content/aspire-assets.ts`. *Exception (2026-10-20):* the rankers' result-card images, imported as personal data under the name rule — see "Result cards (D-031)" below.
 - `siteConfig.contact` (`src/config/site.ts`) is **unchanged** (all `null`). Contact data lives in `src/content/contact.ts` and is read through `getContactDetails()`.
 
 ## What went where
@@ -77,7 +77,7 @@ Source: the home page's "Which Batch Is Right For My Child?" tabs and each `/cou
 
 - **Selections wall:** the 18 cards on `/results`. `rankOrOutcome` is the card's badge ("AIR 312", "675 / 720", "State Rank #2", "NEET Score 682"); cards without a badge use the card's own "Allotted: …" text. `destination` is the allotted seat, `examLabel` is "JEE Advanced" where stated, and `centreSlug` comes from the card's campus. `programSlug` is not set (unknown; the field is now optional). `sourceReference` is `https://aspire2.thechunkmedia.com/results`.
 - **Featured:** Aryan Sharma, Hitesh Thakur, Mitali Thakur and Sanidhya Dogra from the home page. `school` and `quote` are taken from there; rank and destination come from `/results`.
-- **Rankers:** fetched from the endpoint the results page uses (`/rankers.json?exam=all&offset=…&limit=48`, 15 pages, 715 items). Each row has a name, an `institution` exactly as listed (e.g. "MBBS · Tanda"; omitted when blank, 2 rows), an `exam` and `year` parsed from the label ("NEET 2025"), and a `note` from the item's detail where present (9 rows: "AIR 3238", "From SSB Batch", …). The demo's ranker images were not imported.
+- **Rankers:** fetched from the endpoint the results page uses (`/rankers.json?exam=all&offset=…&limit=48`, 15 pages, 715 items). Each row has a name, an `institution` exactly as listed (e.g. "MBBS · Tanda"; omitted when blank, 2 rows), an `exam` and `year` parsed from the label ("NEET 2025"), and a `note` from the item's detail where present (9 rows: "AIR 3238", "From SSB Batch", …). The demo's ranker images were not imported in this first pass; they were added on 2026-10-20 as result cards (D-031, below).
 - Roll numbers are **not** imported (personal identifiers; consent unknown).
 
 ### Faculty (`FacultyMember`)
@@ -123,7 +123,7 @@ The full list is in `docs/content-verification.md`. In summary:
 
 ## Data anomalies (beyond conflicts)
 
-- **7 exact duplicate pairs** in the rankers list (corrected 2026-10-20; previously only 358/359 were noted): Pratyush Thakur (IIT Bombay, JEE 2025), Aryan (MBBS · Chamba, NEET 2025), Mayank Thakur (AIIMS Jammu, NEET 2025, rows 358/359), Aditi (IGMC, NEET 2023), Muskan (Tanda, NEET 2022), Rohan (Nahan, NEET 2022), Gaurav (Nahan, NEET 2021). All rows are kept so the count matches the demo's 715 (708 unique); `getRankerYearCounts()` counts duplicates once (C31).
+- **7 exact duplicate pairs** in the rankers list (corrected 2026-10-20; previously only 358/359 were noted): Pratyush Thakur (IIT Bombay, JEE 2025), Aryan (MBBS · Chamba, NEET 2025), Mayank Thakur (AIIMS Jammu, NEET 2025, rows 358/359), Aditi (IGMC, NEET 2023), Muskan (Tanda, NEET 2022), Rohan (Nahan, NEET 2022), Gaurav (Nahan, NEET 2021). All rows are kept so the count matches the demo's 715 (708 unique); `getRankerYearCounts()` counts duplicates once (C31). **Correction from the result cards (2026-10-20):** only 3 pairs share the same card image — Pratyush Thakur (52/55), Mayank Thakur (358/359) and Rohan (555/556). The other 4 pairs have *different* card photos: Aryan (238/239) and Gaurav (583/587) visibly show two different people; Aditi (451/492) and Muskan (532/533) may be two students or one student carded twice — Aspire must confirm. So there are between 708 and 712 distinct entries, and `getRankerYearCounts()` may undercount by up to 4 (one NEET entry each in 2025, 2023, 2022 and 2021). Changing that count is a lead decision (D-025). Card lists hide only the 3 same-image repeats (`duplicateCards`).
 - Ranker 736 (Ravishta) is listed as NEET 2016 at NIT Hamirpur, an engineering institute.
 - Two rankers have no institution (68 Shaurya Sharma, 79 Suryansh Thakur, both JEE 2025).
 - The ranker names and result-card file names look like real students' results. Because consent is pending, they must not appear on any publicly reachable preview without Aspire's confirmation.
@@ -137,3 +137,41 @@ The full list is in `docs/content-verification.md`. In summary:
 1. Aspire confirms the value (and, for people, provides written consent) → update the register row to `verified`.
 2. Change the record's `status` to `published`; for results, rankers and testimonials also set `consentStatus: "granted"` (plus `verifiedBy` / `verifiedAt` for results).
 3. Keep or replace `sourceRef` with Aspire's own reference.
+
+## Result cards (D-031, 2026-10-20)
+
+The owner asked for Aspire's previous results instead of nature photos on image-rich pages. The demo's rankers list has a **result card** per entry: a ~400 px webp with the student (in an Aspire hoodie), a college badge (e.g. "NIT Hamirpur") and the student's name.
+
+**Source.** `GET https://aspire2.thechunkmedia.com/rankers.json?exam=all&offset=<n>&limit=48` (15 pages, 715 items: `id, img, w, h, alt, label, name, institute, detail`). Fetched by `scripts/import-result-cards.mjs` (pages sequentially, at most 4 image downloads at a time, 4 retries with backoff). The script is idempotent: it re-downloads only missing files unless `--force` is passed, and `--report <file.json>` writes a match report.
+
+**Counts.**
+
+| | |
+|---|---|
+| Demo items | 715 |
+| Matched to ranker records | **715** (by demo id → `ranker-<id>`, then name + college + exam/year must agree) |
+| Unmatched demo items / records without a card / field mismatches | 0 / 0 / 0 |
+| Files on disk | 715 webp, ≤ 400 px wide (re-encoded with sharp, quality 78), **8.92 MB** |
+| Same-image repeats hidden from card lists | 3 (`ranker-55` = 52, `ranker-359` = 358, `ranker-556` = 555; see the duplicates correction above) |
+| Selections-wall records (`results`, 18) with a card | **0** — none of the 18 students appears in the rankers list (no name + exam + year match) |
+
+The selections wall and the home-page stories on the demo use `/media/figma/…` pictures (`raw_2.jpg` …). They are **not imported**: they are design filler reused across different named students (e.g. one picture for "Ananya Sharma" and "Aarohi Thakur", one from the faculty folder for three students), so they do not show the named person.
+
+**Mapping.** `src/content/result-photos.ts` is generated (do not edit): `rankerCardSizes` (record id → `[width, height]`), `resultCardRankers` (selections-wall id → ranker whose card it shares; empty today) and `duplicateCards`. `src/content/results.ts` attaches `photo: ImageAsset` to each ranker (and to a result that shares a card):
+
+- `src`: `/api/result-cards/ranker-<id>.webp`.
+- English alt: `"<Name> — <Institute>, <Exam> <Year> result card"` (`resultCardAlt()`; without a college: `"<Name> — <Exam> <Year> result card"`). No "verified", "topper" or rank claims, unlike the demo's own alt text.
+- Hindi alt: `"<Name> — <Institute>, <Exam> <Year> का परिणाम कार्ड"` (`src/content/hi/results.ts` → `resultPhotoAltHi`, keyed by `src` and applied by `hi.image()` / `localizeImage()`; names, colleges and exam names stay in Latin script).
+
+**Visibility — the same rule as names (non-negotiable).** The cards are personal data of real students without recorded consent.
+
+- Files live in **`private/result-cards/`, not `public/`**: `public/` is served unconditionally (also in production), and `/images/` is outside the preview password gate (D-027). The only way to fetch a card is `GET /api/result-cards/[file]`, which answers only while a *visible* record whose name may be shown carries that card (`canServeResultCard()` → `visibleWithConsent()` / `canShowStudentName()`), otherwise the same JSON 404 as for an unknown file. Under `/api` it stays behind the preview gate.
+- Components render cards with `next/image` **`unoptimized`**, so the browser fetches them directly (with the preview credentials) and no optimised copy is cached under `/_next/image`, which the gate does not cover. The files are already small.
+- `getResultCards()` returns only visible, name-permitted records → **empty in production** while the records are `placeholder` / consent `pending`. `/api/results` (`toPublicResult`) includes `photo` only with `granted` consent; the archive's client projection (`withPermittedName`) always drops it; `toRankerRows` never had it.
+- Tests: `src/lib/result-cards.test.ts` (production: no cards, every file 404, no photo in `/api/results`; preview: cards, served webp, still no photo in the API; Hindi alt) and `src/components/results/result-card-components.test.ts`.
+
+**Rendering.** `getResultCards({ exam?, year?, limit? }, locale)` (most recent year first, then source order) feeds `ResultCardMosaic` and `ResultCardMarquee` (`src/components/results/`); both render their `fallback` / `fallbackImage` when there are no cards, so production keeps today's photos. Every placeholder card carries the DEMO badge. `MediaSplit` gained an optional `media` slot so a mosaic can fill its photo box.
+
+**Open questions for Aspire** (add to `docs/content-verification.md`): consent from each student (or guardian) for the card **and** the name; whether Aspire owns the card artwork and photos; whether the 4 same-name pairs above are 2 students or 1; confirmation that each card shows the named student (only names, colleges and years were cross-checked, not faces).
+
+**Promotion.** A card follows its record: set the ranker to `published` + `consentStatus: "granted"` and the card is shown and served. Before launch, decide whether `private/result-cards/` should ship in production images at all (it is never served without consent, but the files are in the build context) and whether the folder belongs in git.

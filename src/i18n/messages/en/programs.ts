@@ -97,6 +97,8 @@ const programs = {
     ctaBody: "Share a few details and Aspire's admissions team can guide you on batches, centres and next steps.",
     ctaPrimary: "Enquire now",
     ctaSecondary: "Contact Aspire",
+    /** Under the result-card mosaic beside the closing CTA (D-031): Aspire-wide cards, not this program's. */
+    resultsCaption: "{exams} results from Aspire's previous batches, across all programs",
   },
   schedule: {
     title: "Schedule & fees",

@@ -18,8 +18,9 @@ type ExploreLink = {
 
 /**
  * Links from About to the hostel and campus pages (faculty pages were removed 2026-10-20), each
- * with a labelled stock photo (D-030). The photos are generic (an evening study desk, a hill road):
- * decorative here and never presented as an Aspire hostel or campus.
+ * with a labelled stock photo (D-030). The photos are generic (an evening study desk, a study desk
+ * by a window; no landscapes, D-031): decorative here and never presented as an Aspire hostel or
+ * campus. No result cards beside these links (D-031: results never sit beside a hostel or campus).
  */
 export function ExploreLinks({
   messages,
@@ -41,7 +42,7 @@ export function ExploreLinks({
     {
       href: "/centres",
       ...messages.centres,
-      image: localizeImage(stockImages.hillRoadBarot, locale),
+      image: localizeImage(stockImages.studyThroughWindow, locale),
     },
   ];
 
@@ -50,7 +51,7 @@ export function ExploreLinks({
       {links.map((link) => (
         <li key={link.href}>
           <Card tint="blue" className="flex h-full flex-col">
-            <div className="relative aspect-16/10 bg-surface">
+            <div className="relative aspect-3/2 bg-surface">
               <Image
                 src={link.image.src}
                 alt=""

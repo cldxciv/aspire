@@ -11,6 +11,8 @@ import { ResultsShowcase } from "@/components/home/ResultsShowcase";
 import { StatsBand } from "@/components/home/StatsBand";
 import { pickHomeTestimonials, TestimonialsSection } from "@/components/home/TestimonialsSection";
 import { WhyAspire } from "@/components/home/WhyAspire";
+import { ResultCardMarquee } from "@/components/results/ResultCardMarquee";
+import { interleaveCards, resultMosaicMedia } from "@/components/results/ResultMosaicMedia";
 import type { SectionTone } from "@/components/ui";
 import { format } from "@/i18n/format";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
@@ -23,6 +25,7 @@ import {
   getInstituteProfile,
   getPrograms,
   getRankerYearCounts,
+  getResultCards,
   getResults,
   getStats,
   getTestimonials,
@@ -45,6 +48,9 @@ export async function generateMetadata(): Promise<Metadata> {
  * preview builds (DEMO-labelled) and each section falls back or disappears in production.
  * Localised (D-028): copy from the `home` / `forms` messages, records in the page's language;
  * caption and testimonial filters run on the English records (their patterns are English).
+ * D-031: the only landscape is the hero's. The results, "why" and closing sections show Aspire's
+ * previous result cards (three disjoint sets, newest JEE and NEET mixed); without visible cards
+ * (production today) each falls back to a labelled non-nature stock photo.
  */
 export default async function HomePage() {
   const [locale, t, tForms, common] = await Promise.all([
@@ -53,7 +59,7 @@ export default async function HomePage() {
     getMessages("forms"),
     getMessages("common"),
   ]);
-  const [stats, featured, programs, profile, centres, hostel, testimonials, yearCounts, articles, contact] =
+  const [stats, featured, programs, profile, centres, hostel, testimonials, yearCounts, articles, contact, jeeCards, neetCards] =
     await Promise.all([
       getStats(undefined, locale),
       getFeaturedResults(locale),
@@ -65,7 +71,16 @@ export default async function HomePage() {
       getRankerYearCounts({ from: 2020, to: 2024 }),
       getArticles(locale),
       getContactDetails(locale),
+      getResultCards({ exam: "JEE", limit: 16 }, locale),
+      getResultCards({ exam: "NEET", limit: 16 }, locale),
     ]);
+  // No card twice on the page: 8 beside the results intro, 8 in "why", the rest in the closing strip.
+  const cards = interleaveCards(jeeCards, neetCards);
+  const [resultsMedia, whyMedia, ctaStrip] = await Promise.all([
+    resultMosaicMedia({ locale, cards: cards.slice(0, 8) }),
+    resultMosaicMedia({ locale, cards: cards.slice(8, 16) }),
+    cards.length > 16 ? ResultCardMarquee({ locale, cards: cards.slice(16), seeAllHref: null }) : null,
+  ]);
   // English records for the English-language caption / claim filters (same as above for "en").
   const [centresEn, hostelEn, testimonialsEn] =
     locale === "en" ? [centres, hostel, testimonials] : await Promise.all([getCentres(), getHostelInfo(), getTestimonials()]);
@@ -82,9 +97,17 @@ export default async function HomePage() {
   // White / surface alternate over the sections that actually render. Stats (blue band), centres
   // (navy split) and the photo CTA bring their own backgrounds and sit outside the rhythm.
   const toned: { key: string; show: boolean; render: (tone: SectionTone) => ReactNode }[] = [
-    { key: "results", show: true, render: (tone) => <ResultsShowcase results={results} locale={locale} tone={tone} /> },
+    {
+      key: "results",
+      show: true,
+      render: (tone) => <ResultsShowcase results={results} locale={locale} tone={tone} media={resultsMedia} />,
+    },
     { key: "programs", show: true, render: (tone) => <ProgramPaths programs={programs} locale={locale} tone={tone} /> },
-    { key: "why", show: true, render: (tone) => <WhyAspire profile={profile} locale={locale} tone={tone} /> },
+    {
+      key: "why",
+      show: true,
+      render: (tone) => <WhyAspire profile={profile} locale={locale} tone={tone} media={whyMedia} />,
+    },
   ];
   const tonedAfterCentres: typeof toned = [
     {
@@ -145,10 +168,12 @@ export default async function HomePage() {
         phone={contact?.phone ?? null}
         hours={contact?.hours}
         demo={contact ? isPlaceholder(contact) : false}
+        strip={ctaStrip}
         labels={{
           callUs: t.cta.callUs,
           demo: common.labels.demo,
           slogan: [t.cta.sloganDream, t.cta.sloganPrepare, t.cta.sloganAchieve],
+          stockPhoto: common.labels.illustrativeStockPhoto,
         }}
       />
     </>

@@ -7,11 +7,13 @@ import { EXAM_META, programTracks, trackLabel } from "@/components/programs/exam
 import { ProgramGrid } from "@/components/programs/ProgramGrid";
 import { programCardMessages, trackPhotos } from "@/components/programs/program-view";
 import { ScheduleFees } from "@/components/programs/ScheduleFees";
+import { interleaveCards, resultMosaicMedia } from "@/components/results/ResultMosaicMedia";
 import { AspireImage, ButtonLink, DemoBadge, Notice, PageHero, Section, SectionHeading } from "@/components/ui";
 import { format } from "@/i18n/format";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
 import { localePath } from "@/i18n/paths";
-import { getProgram, getPrograms, getProgramSlugs, isPlaceholder } from "@/lib/data";
+import { getProgram, getPrograms, getProgramSlugs, getResultCards, isPlaceholder } from "@/lib/data";
+import type { ExamTrack } from "@/lib/types";
 
 /**
  * D-017: the slug check must finish before anything streams so unknown/unpublished
@@ -56,6 +58,16 @@ export default async function ProgramPage({ params }: PageProps<"/[lang]/program
   const photos = trackPhotos(program.exam, locale, program.image, otherPrograms.map((p) => p.image));
   const stockLabel = common.labels.illustrativeStockPhoto;
   const td = t.detail;
+  // D-031: the closing split shows previous result cards for the program's exam track (JEE or
+  // NEET; an integrated program's JEE and NEET tracks mixed). They are Aspire-wide results, not
+  // this program's, and the caption says so. Foundation (no result cards) keeps the CTA photo, as
+  // does production (no visible cards).
+  const resultExams: ExamTrack[] =
+    program.exam === "JEE" || program.exam === "NEET"
+      ? [program.exam]
+      : tracks.filter((track) => track === "JEE" || track === "NEET");
+  const examCards = await Promise.all(resultExams.map((exam) => getResultCards({ exam, limit: 8 }, locale)));
+  const ctaMedia = await resultMosaicMedia({ locale, cards: interleaveCards(...examCards) });
   // White / surface alternate over the sections actually rendered.
   const order = ["overview", "schedule", otherPrograms.length > 0 && "other", "cta"].filter(Boolean);
   const tone = (key: string) => (order.indexOf(key) % 2 === 0 ? "white" : "surface");
@@ -183,6 +195,12 @@ export default async function ProgramPage({ params }: PageProps<"/[lang]/program
         primary={{ label: td.ctaPrimary, href: localePath("/admissions#enquiry", locale) }}
         secondary={{ label: td.ctaSecondary, href: localePath("/contact", locale) }}
         image={photos.cta}
+        media={ctaMedia}
+        caption={
+          ctaMedia
+            ? format(td.resultsCaption, { exams: resultExams.map((exam) => trackLabel(exam, t.tracks)).join(" · ") })
+            : undefined
+        }
         imageLabel={stockLabel}
       />
     </>

@@ -50,7 +50,7 @@ export function ParentOverview({
       <AccountPanel
         id="parent-account"
         title={t.account.title}
-        image={localizeImage(stockImages.hamirpurHills, locale)}
+        image={localizeImage(stockImages.booksAndNotebook, locale)}
         imageLabel={m.photoLabel}
         rows={
           account

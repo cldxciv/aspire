@@ -56,9 +56,8 @@ const contact = {
     campusDetails: "Campus details",
     /** Screen-reader suffix after "Campus details". */
     campusDetailsFor: " for {name}",
-    /** Caption on each desk's region photo (a stock landscape of the district, never the campus). */
-    regionCaption: "{district} region",
-    regionNote: "Stock photos of the region — not Aspire's campuses or offices.",
+    /** Note under the desks: their photos are generic stock, never the campus or office. */
+    photoNote: "Illustrative stock photos — not Aspire's campuses or offices.",
   },
 };
 

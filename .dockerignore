@@ -12,3 +12,4 @@ coverage
 *.log
 tsconfig.tsbuildinfo
 next-env.d.ts
+private

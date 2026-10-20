@@ -1,4 +1,5 @@
 import { ArrowRight } from "lucide-react";
+import type { ReactNode } from "react";
 import { trackLabel } from "@/components/programs/exam-meta";
 import { ButtonLink, type SectionTone } from "@/components/ui";
 import { stockImages } from "@/content/images";
@@ -28,20 +29,25 @@ export function toResultCardViews(results: ResultRecord[], locale: Locale = "en"
 }
 
 /**
- * Home results (plan §4.3, D-030): a half-bleed split with a stock mountain-trail landscape on one
- * side (no people: it sits beside student names) and, on the other, the intro above a scroll-snap
- * rail of result cards. Cards use initials and a generic graduation mark, never photos or crests.
- * With nothing publishable (production today) only the intro renders, with one honest line and the
- * link to /results — no "awaiting" cards. Designed for light tones.
+ * Home results (plan §4.3, D-030 / D-031): a half-bleed split with a mosaic of Aspire's previous
+ * result cards on one side (`media`, from the page: resultMosaicMedia(); each card is the
+ * student's own card) and, on the other, the intro above a scroll-snap rail of result cards. Rail
+ * cards use initials and a generic graduation mark, never photos or crests. Without visible result
+ * cards (production today) the column shows a labelled stock photo of objects only (no people: it
+ * may sit beside student names, no landscape). With nothing publishable only the intro renders,
+ * with one honest line and the link to /results — no "awaiting" cards. Designed for light tones.
  */
 export function ResultsShowcase({
   results,
   locale,
   tone = "white",
+  media,
 }: {
   results: ResultRecord[];
   locale: Locale;
   tone?: SectionTone;
+  /** Result-card mosaic for the photo column (null / undefined → the fallback photo). */
+  media?: ReactNode;
 }) {
   const cards = toResultCardViews(results, locale);
   const hasCards = cards.length > 0;
@@ -53,7 +59,8 @@ export function ResultsShowcase({
       aria-labelledby="home-results-title"
       tone={tone === "surface" ? "surface" : "white"}
       imageSide="left"
-      image={localizeImage(stockImages.mountainTrail, locale)}
+      image={localizeImage(stockImages.notebookSolutions, locale)}
+      media={media}
       imageLabel={labels.illustrativeStockPhoto}
       decorative
     >

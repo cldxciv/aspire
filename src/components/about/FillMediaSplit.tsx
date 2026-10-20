@@ -14,8 +14,8 @@ import { cn } from "@/lib/cn";
  * text on small screens (e.g. so a form stays near the top).
  *
  * Same image rules as `MediaSplit`: licensed stock (pass it through `localizeImage()`), a visible
- * `imageLabel` ("Illustrative stock photo"), never a person image beside a real name, landscapes
- * captioned as the region only.
+ * `imageLabel` ("Illustrative stock photo"), never a person image beside a real name, no
+ * landscapes (D-031: homepage hero only).
  */
 export function FillMediaSplit({
   image,

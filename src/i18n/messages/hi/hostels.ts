@@ -36,8 +36,6 @@ const hostels: Messages<"hostels"> = {
   campuses: {
     title: "परिसर के अनुसार हॉस्टल",
     description: "हर परिसर में आवासीय भवन, देखरेख और वार्डन डेस्क।",
-    regionCaption: "{district} क्षेत्र",
-    regionNote: "क्षेत्र की स्टॉक फ़ोटो — ये Aspire के हॉस्टल या परिसर नहीं हैं।",
   },
   care: {
     title: "सुरक्षा, पढ़ाई और देखभाल",

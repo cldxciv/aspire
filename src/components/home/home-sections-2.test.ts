@@ -308,8 +308,9 @@ describe("homepage sections II with placeholder content (development / preview)"
     expect(html).toMatch(/>Demo</);
     const slogan = html.match(/<p aria-hidden="true"[^>]*>(.*?)<\/p>/)?.[1] ?? "";
     expect(textOf(slogan)).toMatch(/Dream\s+·\s+Prepare\s+·\s+Achieve/);
-    // Decorative strip: the hero's photo (same file and sizes → cached), alt="", lazy.
-    expect(html).toContain("himalaya-dhauladhar-ridge-hero.jpg");
+    // Decorative strip without result cards: a non-nature stock photo (D-031), alt="", lazy.
+    expect(html).toContain("graduate-silhouette-cap-sky.jpg");
+    expect(html).not.toContain("himalaya-");
     expect(html).toMatch(/<img alt=""[^>]*loading="lazy"/);
   });
 });
@@ -345,6 +346,34 @@ describe("homepage sections II without placeholder content (production)", () => 
     expect(textOf(html)).not.toMatch(/hostel/i);
     expect(html).not.toMatch(/>Demo/);
     expectNoImportedStrings(html);
+  });
+
+  it("CtaBand photo: a `strip` (e.g. the result-card marquee, D-031) replaces the photo strip", () => {
+    const html = render(
+      createElement(CtaBand, {
+        variant: "photo",
+        headingId: "home-cta-title",
+        title: "Ready to begin your journey?",
+        description: "Talk to our team about programs and admissions.",
+        strip: createElement("ul", { "aria-label": "strip" }, createElement("li", null, "card")),
+        labels: { callUs: "Call Us", demo: "Demo", slogan: ["Dream", "Prepare", "Achieve"], stockPhoto: "Illustrative stock photo" },
+      }),
+    );
+    expect(html).toContain('<ul aria-label="strip"><li>card</li></ul>');
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("Illustrative stock photo");
+    // Without a strip the photo carries the visible stock label.
+    const photo = render(
+      createElement(CtaBand, {
+        variant: "photo",
+        headingId: "home-cta-title",
+        title: "Ready to begin your journey?",
+        description: "Talk to our team about programs and admissions.",
+        labels: { callUs: "Call Us", demo: "Demo", slogan: ["Dream", "Prepare", "Achieve"], stockPhoto: "Illustrative stock photo" },
+      }),
+    );
+    expect(photo).toContain("graduate-silhouette-cap-sky.jpg");
+    expect(photo).toContain(">Illustrative stock photo<");
   });
 
   it("CtaBand photo without a phone shows only the enquiry button", async () => {

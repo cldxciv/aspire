@@ -8,11 +8,13 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { ButtonLink, DemoBadge, type SectionTone } from "@/components/ui";
 import { stockImages } from "@/content/images";
 import type { Locale } from "@/i18n/config";
 import { messagesFor } from "@/i18n/messages";
 import { localePath } from "@/i18n/paths";
+import { localizeImage } from "@/lib/data";
 import type { InstituteProfile } from "@/lib/types";
 import { BleedSplit } from "./BleedSplit";
 
@@ -39,21 +41,25 @@ function firstSentence(text: string): string {
 }
 
 /**
- * Why Aspire / story (plan §4.5, D-030): a half-bleed stock Himalayan photo (labelled) with a
- * decorative serif-italic line, the profile's mission and summary with an "Our story" link to
- * /about, and four gold-circle points from `profile.approach`. The profile is one
- * record, so the section carries one DEMO badge while it is a placeholder. With no
- * profile (production today) it shows generic copy and the About page's four neutral
- * approach points. Designed for light tones.
+ * Why Aspire / story (plan §4.5, D-030 / D-031): a half-bleed column of Aspire's previous result
+ * cards (`media`, from the page: resultMosaicMedia()) — or, without visible cards (production
+ * today), a labelled stock teaching photo with a decorative serif-italic line — beside the
+ * profile's mission and summary with an "Our story" link to /about, and four gold-circle points
+ * from `profile.approach`. The profile is one record, so the section carries one DEMO badge while
+ * it is a placeholder. With no profile (production today) it shows generic copy and the About
+ * page's four neutral approach points. Designed for light tones.
  */
 export function WhyAspire({
   profile,
   locale,
   tone = "white",
+  media,
 }: {
   profile: InstituteProfile | null;
   locale: Locale;
   tone?: SectionTone;
+  /** Result-card mosaic for the photo column (null / undefined → the fallback photo). */
+  media?: ReactNode;
 }) {
   const t = messagesFor(locale, "home").why;
   const common = messagesFor(locale, "common");
@@ -75,7 +81,8 @@ export function WhyAspire({
       aria-labelledby="home-approach-title"
       tone={tone === "surface" ? "surface" : "white"}
       imageSide="left"
-      image={stockImages.himalayaBlueRidge}
+      image={localizeImage(stockImages.teacherChalkboard, locale)}
+      media={media}
       imageLabel={common.labels.illustrativeStockPhoto}
       decorative
       overlay={

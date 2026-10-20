@@ -47,6 +47,9 @@ const MOCKUP_FILLER = [
 
 const PERSON_ASSET_FILES = ["hero-students", "students-group-study", "student-studying", "student-boy", "student-girl"];
 
+// Whole pages render here (both locales, several pages per test): allow for a loaded full run.
+vi.setConfig({ testTimeout: 30_000 });
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });

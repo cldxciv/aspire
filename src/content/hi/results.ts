@@ -1,4 +1,5 @@
-import type { RankerRecord, ResultRecord } from "@/lib/types";
+import type { ExamTrack, RankerRecord, ResultRecord } from "@/lib/types";
+import { rankers } from "../results";
 import type { TextOverlay } from "./overlay";
 
 // MACHINE DRAFT — Hindi overlay for src/content/results.ts.
@@ -32,3 +33,25 @@ export const rankersHi: Readonly<Record<string, RankerOverlay>> = {
   "ranker-356": { note: "श्रेणी रैंक 90" },
   "ranker-499": { note: "SSB बैच से" },
 };
+
+/**
+ * Hindi alt text for a result card (D-031): names, colleges and exam names stay in Latin script,
+ * e.g. "Arnav Thakur — NIT Kurukshetra, JEE 2026 का परिणाम कार्ड".
+ */
+export function resultCardAltHi(card: { name: string; institution?: string; exam: ExamTrack; year: number }): string {
+  return `${card.name} — ${card.institution ? `${card.institution}, ` : ""}${card.exam} ${card.year} का परिणाम कार्ड`;
+}
+
+/**
+ * Hindi alt text for result-card photos, keyed by `src` like `imageAltHi` (applied by
+ * `hi.image()` / `localizeImage()`). Built from the records that carry the photo, so it always
+ * matches the English alt (`resultCardAlt()` in ../results.ts). A selections-wall record that
+ * shares a ranker's card shares its alt (src/lib/result-cards.test.ts checks every photo has one).
+ */
+export const resultPhotoAltHi: Readonly<Record<string, string>> = Object.fromEntries(
+  rankers.flatMap((r) =>
+    r.photo
+      ? [[r.photo.src, resultCardAltHi({ name: r.studentDisplayName, institution: r.institution, exam: r.exam, year: r.year })]]
+      : [],
+  ),
+);

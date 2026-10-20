@@ -23,10 +23,16 @@ export type CtaBandProps = {
   media?: ReactNode;
   /**
    * "default" (unchanged): pale band, rendered inside the caller's <Section>.
-   * "photo": full-bleed mountain-photo strip over a navy band; renders its own <section> —
-   * place it directly in the page, not inside <Section>.
+   * "photo": a strip of Aspire's previous result cards (`strip`) or, without one, a full-bleed
+   * stock-photo strip, over a navy band; renders its own <section> — place it directly in the
+   * page, not inside <Section>.
    */
   variant?: "default" | "photo";
+  /**
+   * Photo variant only: shown above the copy instead of the photo strip when set, e.g. a
+   * ResultCardMarquee of previous results (D-031; null in production, where the photo shows).
+   */
+  strip?: ReactNode;
   /**
    * Photo variant only: the "Call Us" button and the number/hours render only when this is
    * set (pass getContactDetails()?.phone — null in production today).
@@ -36,8 +42,8 @@ export type CtaBandProps = {
   hours?: string;
   /** Photo variant only: the phone record is a placeholder — show a DEMO badge beside it. */
   demo?: boolean;
-  /** Photo variant only: localised fixed copy (defaults are English). */
-  labels?: { callUs: string; demo: string; slogan: [string, string, string] };
+  /** Photo variant only: localised fixed copy (defaults are English); `stockPhoto` labels the photo strip. */
+  labels?: { callUs: string; demo: string; slogan: [string, string, string]; stockPhoto?: string };
 };
 
 const DEFAULT_PHOTO_LABELS: NonNullable<CtaBandProps["labels"]> = {
@@ -96,12 +102,13 @@ export function CtaBand(props: CtaBandProps) {
 }
 
 /**
- * Homepage closing band (plan §4.12, design board 03): a decorative full-bleed strip of the
- * stock Himalaya photo fading into a solid navy band. The navy band holds the serif heading,
- * the gold primary button, and — only when `phone` is set — a "Call Us" outline button
- * (tel: link) beside the number and hours, plus the decorative script slogan.
+ * Homepage closing band (plan §4.12, design board 03; D-031): a strip of Aspire's previous result
+ * cards (`strip`, the home page passes a ResultCardMarquee) or — without visible cards (production
+ * today) — a decorative full-bleed stock photo (graduate silhouette, labelled; no landscape)
+ * fading into a solid navy band. The navy band holds the serif heading, the gold primary button,
+ * and — only when `phone` is set — a "Call Us" outline button (tel: link) beside the number and
+ * hours, plus the decorative script slogan.
  *
- * The photo is the hero's file at the same `sizes`, so browsers reuse the cached download.
  * All text sits on solid navy (white ≥ 12:1; light-blue copy and gold ≥ 8:1).
  */
 function PhotoCtaBand({
@@ -110,13 +117,15 @@ function PhotoCtaBand({
   description,
   primary = DEFAULT_PRIMARY,
   secondary,
+  strip,
   phone,
   hours,
   demo = false,
   labels = DEFAULT_PHOTO_LABELS,
 }: CtaBandProps) {
   const tel = phone?.tel.replace(/[^\d+]/g, "");
-  const photo = stockImages.himalayaHero;
+  const photo = stockImages.graduateSilhouette;
+  const hasStrip = strip !== undefined && strip !== null && strip !== false;
 
   return (
     <section
@@ -124,10 +133,19 @@ function PhotoCtaBand({
       data-surface="dark"
       className="relative isolate overflow-hidden bg-navy text-white"
     >
-      <div aria-hidden="true" className="relative h-36 sm:h-48 lg:h-72">
-        <Image src={photo.src} alt="" fill sizes="100vw" className="object-cover object-[50%_40%]" />
-        <div className="absolute inset-0 bg-linear-to-b from-navy/5 via-navy/25 to-navy" />
-      </div>
+      {hasStrip ? (
+        <Container className="pt-10 md:pt-14">{strip}</Container>
+      ) : (
+        <div aria-hidden="true" className="relative h-36 sm:h-48 lg:h-72">
+          <Image src={photo.src} alt="" fill sizes="100vw" className="object-cover object-[50%_30%]" />
+          <div className="absolute inset-0 bg-linear-to-b from-navy/5 via-navy/25 to-navy" />
+          {labels.stockPhoto && (
+            <span className="absolute right-2 top-2 rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white">
+              {labels.stockPhoto}
+            </span>
+          )}
+        </div>
+      )}
 
       <Container className="grid items-center gap-8 pb-12 pt-6 md:pb-14 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:gap-10">
         <div className="max-w-xl">

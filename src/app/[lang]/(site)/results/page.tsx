@@ -4,9 +4,12 @@ import { BleedSplit } from "@/components/home/BleedSplit";
 import { CtaBleedSplit } from "@/components/home/CtaSplit";
 import { archiveAwaiting, AwaitingRecordCard } from "@/components/results/AwaitingRecordCard";
 import { RankersTable } from "@/components/results/RankersTable";
+import { ResultCardMarquee } from "@/components/results/ResultCardMarquee";
+import { interleaveCards, resultMosaicMedia } from "@/components/results/ResultMosaicMedia";
 import { ResultStoryCard } from "@/components/results/ResultStoryCard";
 import { ResultsArchive } from "@/components/results/ResultsArchive";
 import { centreNameMap, distinctSources, toRankerRows, withPermittedName } from "@/components/results/server-view";
+import { StickyResultsLayout } from "@/components/results/StickyResultsLayout";
 import {
   AspireImage,
   DemoBadge,
@@ -25,6 +28,7 @@ import {
   getCentres,
   getFeaturedResults,
   getRankers,
+  getResultCards,
   getResults,
   getResultYears,
   isPlaceholder,
@@ -44,11 +48,14 @@ export async function generateMetadata(): Promise<Metadata> {
 const STANDARD_ICONS = { sourced: FileSearch, consent: UserCheck, verified: ShieldCheck, context: BadgeCheck } as const;
 
 /**
- * Results (D-030 image-rich). Stories, the archive and the rankers list carry student names, so
- * the photos beside them are landscapes and objects only (sticky photo columns: library aisle,
- * books, pocket watch, maths notebook, Himalayan ridges, stethoscope) — never a person. The hero
- * (mountain trail), the methodology split (graduate silhouette, no face, no names) and the closing
- * CTA (notebook) are half-bleed photos. Every photo is labelled; none repeats on the page.
+ * Results (D-030 image-rich, D-031 result cards). A moving strip of Aspire's previous result
+ * cards follows the hero; the rankers list sits beside exam-filtered mosaics (JEE, then NEET on
+ * tall screens). No card appears twice. Stories, the archive and the rankers list carry student
+ * names, so every stock photo here shows objects only — never a stock person, never a landscape:
+ * hero (graduate silhouette, no face), sticky columns (library aisle, books, pocket watch, maths
+ * notebook), methodology (a form being signed), CTA (notebook). Without visible result cards
+ * (production today) the strip is omitted and the rankers mosaics fall back to photos (physics
+ * whiteboard, stethoscope). Every photo is labelled; none repeats on the page.
  */
 export default async function ResultsPage() {
   const [locale, t, tPrograms, common] = await Promise.all([
@@ -57,12 +64,26 @@ export default async function ResultsPage() {
     getMessages("programs"),
     getMessages("common"),
   ]);
-  const [results, years, featured, rankers, centres] = await Promise.all([
+  const [results, years, featured, rankers, centres, cards] = await Promise.all([
     getResults(undefined, locale),
     getResultYears(),
     getFeaturedResults(locale),
     getRankers(undefined, locale),
     getCentres(undefined, locale),
+    getResultCards(undefined, locale),
+  ]);
+  // D-031 result cards (none in production): newest JEE / NEET beside the rankers list, the next
+  // ones in the strip under the hero. This page is /results, so no "See all results" tile or link.
+  const jeeCards = cards.filter((card) => card.exam === "JEE").slice(0, 9);
+  const neetCards = cards.filter((card) => card.exam === "NEET").slice(0, 8);
+  const shown = new Set([...jeeCards, ...neetCards].map((card) => card.id));
+  const stripCards = interleaveCards(
+    ...(["JEE", "NEET"] as const).map((exam) => cards.filter((card) => card.exam === exam && !shown.has(card.id)).slice(0, 8)),
+  );
+  const [jeeMedia, neetMedia, strip] = await Promise.all([
+    resultMosaicMedia({ locale, cards: jeeCards, base: "4x2", lg: "3x3", seeAllHref: null }),
+    resultMosaicMedia({ locale, cards: neetCards, base: "4x2", lg: "4x2", seeAllHref: null }),
+    stripCards.length > 0 ? ResultCardMarquee({ locale, cards: stripCards, seeAllHref: null }) : null,
   ]);
 
   const centreNames = centreNameMap(centres);
@@ -76,6 +97,7 @@ export default async function ResultsPage() {
 
   // Alternate white / surface backgrounds over the sections actually rendered.
   const order = [
+    strip && "cards",
     featured.length > 0 && "stories",
     "archive",
     rankerRows.length > 0 && "rankers",
@@ -103,9 +125,16 @@ export default async function ResultsPage() {
         crumbs={[{ label: t.crumb }]}
         homeLabel={common.labels.home}
         homeHref={localePath("/", locale)}
-        image={photo(stockImages.mountainTrail)}
+        image={photo(stockImages.graduateSilhouette)}
         imageLabel={stockLabel}
       />
+
+      {strip && (
+        <Section tone={tone("cards")} aria-labelledby="results-cards-title">
+          <SectionHeading id="results-cards-title" title={t.cards.title} description={t.cards.lead} />
+          {strip}
+        </Section>
+      )}
 
       {featured.length > 0 && (
         <Section tone={tone("stories")} aria-labelledby="results-stories-title">
@@ -179,10 +208,9 @@ export default async function ResultsPage() {
 
       {rankerRows.length > 0 && (
         <Section tone={tone("rankers")} aria-labelledby="results-rankers-title">
-          <StickyMediaLayout
-            image={photo(stockImages.himalayaBlueRidge)}
-            secondaryImage={photo(stockImages.stethoscopeTextbooks)}
-            imageLabel={stockLabel}
+          <StickyResultsLayout
+            primary={{ media: jeeMedia, image: photo(stockImages.physicsWhiteboard), imageLabel: stockLabel }}
+            secondary={{ media: neetMedia, image: photo(stockImages.stethoscopeTextbooks), imageLabel: stockLabel }}
             imageSide={side("rankers")}
           >
             <SectionHeading
@@ -211,14 +239,14 @@ export default async function ResultsPage() {
                 nameWithheld: t.card.nameWithheld,
               }}
             />
-          </StickyMediaLayout>
+          </StickyResultsLayout>
         </Section>
       )}
 
       <BleedSplit
         aria-labelledby="results-method-title"
         tone={tone("method")}
-        image={photo(stockImages.graduateSilhouette)}
+        image={photo(stockImages.signingForm)}
         imageSide={side("method")}
         imageLabel={stockLabel}
       >

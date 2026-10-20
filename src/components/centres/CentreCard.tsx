@@ -22,8 +22,8 @@ import { format } from "@/i18n/format";
 import type { Messages } from "@/i18n/messages/types";
 import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
-import type { Centre } from "@/lib/types";
-import { centreImage, type RegionPhoto } from "./centre-images";
+import type { Centre, ImageAsset } from "@/lib/types";
+import { centreImage } from "./centre-images";
 import { mailtoHref, safeDirectionsUrl, telHref } from "./contact-links";
 
 /** Copy a centre card reads (`centres.card` / `centres.images`, track labels, shared labels). */
@@ -33,7 +33,7 @@ export type CentreCardMessages = {
   tracks: TrackLabels;
   demo: string;
   illustrativeImage: string;
-  /** Visible label on the region stock photo. */
+  /** Visible label on the card's stock photo. */
   illustrativeStockPhoto: string;
   opensInNewTab: string;
 };
@@ -73,23 +73,23 @@ function NoteDetail({ icon: Icon, label, children }: { icon: LucideIcon; label: 
  * The building image is an illustration and is always captioned "Illustrative
  * image". Placeholder centres carry a DEMO badge and "Details pending verification".
  * The article's id is the centre slug so /centres#<slug> links scroll to it.
- * With a `region` photo (D-030) the card becomes a 50/50 split from `lg`: a stock landscape of the
- * centre's region (labelled, captioned with the region name — never the centre) beside the details,
- * with the small building illustration moved next to the heading.
+ * With a `photo` (D-030 / D-031) the card becomes a 50/50 split from `lg`: a stock education photo
+ * (labelled "Illustrative stock photo", no caption naming a place; never a landscape, never result
+ * cards) beside the details, with the small building illustration moved next to the heading.
  * Safe to render from both server and client components.
  */
 export function CentreCard({
   centre,
   hostelHref,
-  region,
+  photo,
   photoSide = "left",
   t: messages,
   locale,
 }: {
   centre: Centre;
-  /** Stock landscape of the centre's region (alt already in the page's language) and its caption. */
-  region?: RegionPhoto;
-  /** Side of the region photo from `lg` (alternate down the list). */
+  /** Stock education photo (alt already in the page's language); not taken at the centre. */
+  photo?: ImageAsset;
+  /** Side of the photo from `lg` (alternate down the list). */
   photoSide?: "left" | "right";
   /** Link to this campus's hostel details (locale-free path), when hostel information is published. */
   hostelHref?: string;
@@ -119,10 +119,10 @@ export function CentreCard({
       aria-labelledby={headingId}
       className={cn(
         "scroll-mt-28 overflow-hidden rounded-card border border-line bg-white shadow-soft",
-        region && "lg:grid lg:grid-cols-2",
+        photo && "lg:grid lg:grid-cols-2",
       )}
     >
-      {region && (
+      {photo && (
         <figure
           className={cn(
             "relative m-0 aspect-16/10 bg-blue-soft lg:aspect-auto lg:min-h-96",
@@ -130,21 +130,18 @@ export function CentreCard({
           )}
         >
           <Image
-            src={region.image.src}
-            alt={region.image.alt}
+            src={photo.src}
+            alt={photo.alt}
             fill
             sizes="(min-width: 1280px) 580px, (min-width: 1024px) 50vw, 100vw"
             className="object-cover"
           />
-          <span className="absolute left-3 top-3 rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white">
+          <span className="absolute bottom-3 left-3 rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white">
             {messages.illustrativeStockPhoto}
           </span>
-          <figcaption className="absolute inset-x-0 bottom-0 bg-linear-to-t from-navy/85 to-transparent px-4 pb-3 pt-10 text-sm font-semibold text-white">
-            {region.caption}
-          </figcaption>
         </figure>
       )}
-      <div className={cn("@container flex min-w-0 flex-col gap-5 p-5 md:p-6", region ? "" : "md:flex-row")}>
+      <div className={cn("@container flex min-w-0 flex-col gap-5 p-5 md:p-6", photo ? "" : "md:flex-row")}>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
@@ -161,7 +158,7 @@ export function CentreCard({
           </div>
           {centre.summary && <p className="mt-2 text-sm text-ink">{centre.summary}</p>}
 
-          <div className={cn("mt-4 grid gap-5", region ? "@lg:grid-cols-2" : "lg:grid-cols-2")}>
+          <div className={cn("mt-4 grid gap-5", photo ? "@lg:grid-cols-2" : "lg:grid-cols-2")}>
             <div>
               <h4 className={subheading}>{t.contact}</h4>
               {hasContact ? (
@@ -311,7 +308,7 @@ export function CentreCard({
         </div>
 
         {image && (
-          <figure className={cn("order-first shrink-0", region ? "w-32" : "w-44 md:w-48")}>
+          <figure className={cn("order-first shrink-0", photo ? "w-32" : "w-44 md:w-48")}>
             {/* Shown first, but after the heading in DOM order. w-48 = 192px: below every centre asset's maxWidth (≥194px). */}
             <div className="overflow-hidden rounded-control bg-blue-soft">
               <AspireImage asset={image.asset} alt={image.alt} />

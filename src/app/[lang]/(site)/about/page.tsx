@@ -19,6 +19,9 @@ import { FillMediaSplit } from "@/components/about/FillMediaSplit";
 import { PhotoMosaic } from "@/components/about/PhotoMosaic";
 import { MilestoneTimeline } from "@/components/about/MilestoneTimeline";
 import { PrinciplesList } from "@/components/about/PrinciplesList";
+import { mixedResultCards } from "@/components/about/result-cards";
+import { ResultsBand } from "@/components/about/ResultsBand";
+import { ResultCardMosaic } from "@/components/results/ResultCardMosaic";
 import {
   ButtonLink,
   Card,
@@ -51,6 +54,9 @@ export async function generateMetadata(): Promise<Metadata> {
 /** A page section that takes its background tone from its position, so white/surface always alternate. */
 type ToneSection = (tone: SectionTone) => ReactNode;
 
+/** Cards per 6×2 band: every cell is a card (the section heading links to /results). */
+const MOSAIC_CARDS = 12;
+
 /** What every section renderer needs: locale, both namespaces and the stock-photo label. */
 type Ctx = {
   locale: Locale;
@@ -65,9 +71,46 @@ export default async function AboutPage() {
   const profile = await getInstituteProfile(locale);
   const ctx: Ctx = { locale, t, tc, photoLabel: tc.labels.illustrativeStockPhoto };
 
+  // D-031: previous results (alternating JEE / NEET) instead of landscapes, in two general slots —
+  // never beside a specific centre or campus (so not in the journey timeline, which names campuses).
+  // Production has no visible cards: each mosaic then shows its labelled, non-nature stock photo.
+  const [sectionCards, ctaCards] = await Promise.all([
+    mixedResultCards(locale, MOSAIC_CARDS),
+    mixedResultCards(locale, MOSAIC_CARDS, MOSAIC_CARDS),
+  ]);
+  const [resultsMedia, ctaMedia] = await Promise.all([
+    ResultCardMosaic({
+      locale,
+      variant: "6x2",
+      cards: sectionCards,
+      seeAllHref: null,
+      fallbackImage: localizeImage(stockImages.graduateSilhouette, locale),
+      fallbackImageLabel: ctx.photoLabel,
+    }),
+    ResultCardMosaic({
+      locale,
+      variant: "6x2",
+      cards: ctaCards,
+      seeAllHref: null,
+      fallbackImage: localizeImage(stockImages.notebookPlanning, locale),
+      fallbackImageLabel: ctx.photoLabel,
+    }),
+  ]);
+  const results: ToneSection = (tone) => (
+    <Section key="results" tone={tone} aria-labelledby="about-results-heading">
+      <ResultsBand
+        headingId="about-results-heading"
+        eyebrow={t.results.eyebrow}
+        title={t.results.title}
+        description={t.results.description}
+        link={{ label: t.results.link, href: localePath("/results", locale) }}
+        media={resultsMedia}
+      />
+    </Section>
+  );
+
   const sections: ToneSection[] = [
-    ...(profile ? profileSections(profile, ctx) : pendingSections(ctx)),
-    (tone) => <SpacesSection key="spaces" tone={tone} ctx={ctx} />,
+    ...(profile ? profileSections(profile, ctx, results) : [...pendingSections(ctx), results]),
     (tone) => (
       <Section key="explore" tone={tone} aria-labelledby="explore-heading">
         <SectionHeading
@@ -79,6 +122,8 @@ export default async function AboutPage() {
         <ExploreLinks messages={t.explore} locale={locale} photoLabel={ctx.photoLabel} />
       </Section>
     ),
+    // Between the hostel / campus links and the results band in the CTA (D-031: no cards beside them).
+    (tone) => <SpacesSection key="spaces" tone={tone} ctx={ctx} />,
     (tone) => (
       <Section key="cta" tone={tone} aria-labelledby="about-cta-heading">
         <CtaBand
@@ -87,8 +132,7 @@ export default async function AboutPage() {
           description={t.cta.description}
           primary={{ label: t.cta.enquire, href: localePath("/admissions#enquiry", locale) }}
           secondary={{ label: t.cta.contact, href: localePath("/contact", locale) }}
-          image={localizeImage(stockImages.himalayaBlueRidge, locale)}
-          imageLabel={ctx.photoLabel}
+          media={ctaMedia}
         />
       </Section>
     ),
@@ -102,7 +146,7 @@ export default async function AboutPage() {
         crumbs={[{ label: t.hero.crumb }]}
         homeLabel={tc.labels.home}
         homeHref={localePath("/", locale)}
-        image={localizeImage(stockImages.shimlaPanorama, locale)}
+        image={localizeImage(stockImages.youngStudentWriting, locale)}
         imageLabel={ctx.photoLabel}
       />
       {sections.map((render, index) => render(index % 2 === 0 ? "white" : "surface"))}
@@ -116,7 +160,7 @@ export default async function AboutPage() {
  * production until Aspire verifies it, and the page falls back to pendingSections().
  * Faculty / founder names, credentials and the founder message are not shown (owner instruction 2026-10-20).
  */
-function profileSections(profile: InstituteProfile, { locale, t, tc, photoLabel }: Ctx): ToneSection[] {
+function profileSections(profile: InstituteProfile, { locale, t, tc, photoLabel }: Ctx, results: ToneSection): ToneSection[] {
   const demoLabel = isPlaceholder(profile) ? tc.labels.demoPending : undefined;
   const demo = demoLabel ? <DemoBadge label={demoLabel} /> : null;
   const facts = [
@@ -217,6 +261,9 @@ function profileSections(profile: InstituteProfile, { locale, t, tc, photoLabel 
         </Section>
       )),
 
+    // General results band before the journey (whose milestones name campuses: no cards there).
+    results,
+
     profile.milestones.length > 0 &&
       ((tone) => (
         <Section key="journey" tone={tone} aria-labelledby="journey-heading">
@@ -227,7 +274,7 @@ function profileSections(profile: InstituteProfile, { locale, t, tc, photoLabel 
             title={t.profile.journeyTitle}
             description={t.profile.journeyDescription}
             demoLabel={demoLabel}
-            image={localizeImage(stockImages.mountainTrail, locale)}
+            image={localizeImage(stockImages.pocketWatchWorksheet, locale)}
             imageLabel={photoLabel}
           />
         </Section>

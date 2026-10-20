@@ -16,7 +16,7 @@ const SPANS: Record<number, string[]> = {
  * on a navy gradient); `label` ("Illustrative stock photo") is shown on every photo.
  *
  * Image rules as for `PhotoStrip`: licensed stock (via `localizeImage()`), never a person image
- * beside a real name, landscapes captioned as the region only.
+ * beside a real name, no landscapes (D-031: homepage hero only).
  */
 export function PhotoMosaic({
   items,
@@ -30,7 +30,7 @@ export function PhotoMosaic({
   const shown = items.slice(0, 4);
   const spans = SPANS[shown.length] ?? [];
   return (
-    <ul className={cn("grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 lg:grid-rows-[15rem_15rem]", className)}>
+    <ul className={cn("grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4 lg:grid-rows-[16.5rem_16.5rem]", className)}>
       {shown.map(({ image, caption }, index) => {
         const large = index === 0 || (shown.length === 2 && index === 1);
         return (

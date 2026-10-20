@@ -10,6 +10,9 @@ COPY . .
 # Baked into static pages, canonical URLs and the sitemap at build time.
 ARG NEXT_PUBLIC_SITE_URL
 ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
+# Demo mode (placeholder/DEMO data visible) must match at build and run time: static pages bake it in.
+ARG SHOW_PLACEHOLDER_CONTENT=false
+ENV SHOW_PLACEHOLDER_CONTENT=${SHOW_PLACEHOLDER_CONTENT}
 RUN npm run build && npm prune --omit=dev && rm -rf .next/cache
 
 FROM node:24-bookworm-slim

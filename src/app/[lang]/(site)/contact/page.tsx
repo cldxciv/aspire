@@ -11,22 +11,17 @@ import { EnquiryForm } from "@/components/forms/EnquiryForm";
 import { ButtonLink, Card, DemoBadge, Notice, PageHero, Section, SectionHeading } from "@/components/ui";
 import { siteConfig } from "@/config/site";
 import { stockImages, type StockImageKey } from "@/content/images";
-import { format } from "@/i18n/format";
 import type { Messages } from "@/i18n/messages/types";
 import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
 import { getCentres, getContactDetails, getInstituteProfile, isPlaceholder, localizeImage } from "@/lib/data";
 
 /**
- * Landscape of the district each campus desk is in (D-030), captioned as the region only —
- * never as the campus or office (same mapping as the hostels page).
+ * Stock photos for the campus desks, in desk order (D-030). Generic study scenes, labelled as stock
+ * and never captioned as a campus or office; no landscapes and no result cards beside a campus (D-031).
+ * None of them is used elsewhere on this page.
  */
-const REGION_PHOTOS: Record<string, StockImageKey> = {
-  shimla: "shimlaPanorama",
-  hamirpur: "hamirpurHills",
-  dharamshala: "dhauladharTriund",
-  kullu: "kulluValley",
-};
+const DESK_PHOTOS: StockImageKey[] = ["classroomDesks", "seminarFromBehind", "libraryReading", "booksAndNotebook"];
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getMessages("contact");
@@ -54,9 +49,9 @@ export default async function ContactPage() {
 
   const centreBySlug = new Map(centres.map((centre) => [centre.slug, centre]));
   const headOffice = details?.headOfficeCentreSlug ? centreBySlug.get(details.headOfficeCentreSlug) : undefined;
-  const desks: CampusDesk[] = (details?.campusContacts ?? []).map((contact) => {
+  const desks: CampusDesk[] = (details?.campusContacts ?? []).map((contact, index) => {
     const centre = centreBySlug.get(contact.centreSlug);
-    const regionKey = REGION_PHOTOS[contact.centreSlug];
+    const photoKey = DESK_PHOTOS[index];
     return {
       slug: contact.centreSlug,
       name: contact.name,
@@ -65,13 +60,7 @@ export default async function ContactPage() {
       email: contact.email,
       hours: contact.hours,
       demo: (details !== null && isPlaceholder(details)) || (centre !== undefined && isPlaceholder(centre)),
-      region:
-        regionKey && centre
-          ? {
-              image: localizeImage(stockImages[regionKey], locale),
-              caption: format(t.desks.regionCaption, { district: centre.district }),
-            }
-          : undefined,
+      photo: photoKey ? localizeImage(stockImages[photoKey], locale) : undefined,
     };
   });
 
@@ -83,7 +72,7 @@ export default async function ContactPage() {
         crumbs={[{ label: t.hero.crumb }]}
         homeLabel={tc.labels.home}
         homeHref={localePath("/", locale)}
-        image={localizeImage(stockImages.hillRoadBarot, locale)}
+        image={localizeImage(stockImages.studentsTakingNotes, locale)}
         imageLabel={photoLabel}
       />
 
@@ -170,7 +159,7 @@ export default async function ContactPage() {
             demoLabel={tc.labels.demoPending}
             photoLabel={photoLabel}
           />
-          {desks.some((desk) => desk.region) && <p className="mt-4 text-xs text-muted">{t.desks.regionNote}</p>}
+          {desks.some((desk) => desk.photo) && <p className="mt-4 text-xs text-muted">{t.desks.photoNote}</p>}
         </Section>
       )}
     </>

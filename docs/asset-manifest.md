@@ -198,3 +198,15 @@ Supplied by the owner on 2026-10-19 with `public/assets/aspire/README.txt`: "ind
 | Shows | Three AI-generated students in navy "ASPIRE"-printed hoodies against Himalayan mountains — **not real Aspire students** |
 | Use | Homepage hero only, beside the headline on desktop / after the form on mobile, ≤ 460 px wide, visible "Illustration" label, `alt=""` |
 | Status | temporary — replace with a consented Aspire photo shoot before launch (see UX brief: landscape ≥ 2560×1440, group in the 38–68% horizontal band) |
+
+## Result cards (`private/result-cards/`, added 2026-10-20, D-031)
+
+| Item | Value |
+|---|---|
+| Origin | **Aspire's own result cards** from the owner's demo site (`aspire2.thechunkmedia.com/rankers.json` → `/media/rankers/*.webp`), imported by `scripts/import-result-cards.mjs`. Ownership of the artwork and photos to be confirmed by Aspire |
+| Shows | A real student in an Aspire hoodie, a college badge (e.g. "NIT Hamirpur", "MBBS · Tanda") and the student's name — **personal data** |
+| Files | 715 × `ranker-<demo id>.webp`, re-encoded with sharp to ≤ 400 px wide, webp quality 78; 8.92 MB in total. **Not in `public/`** (public files are served unconditionally and `/images/` skips the preview gate, D-027) |
+| Registry | `src/content/result-photos.ts` (generated sizes + mapping) → `photo` on `RankerRecord` in `src/content/results.ts`; alt text "&lt;Name&gt; — &lt;Institute&gt;, &lt;Exam&gt; &lt;Year&gt; result card" (Hindi: "… का परिणाम कार्ड") |
+| Served by | `GET /api/result-cards/[file]` only — same rule as student names (`canShowStudentName()`): preview / development with placeholder content, or `granted` consent. 404 in production while consent is pending. Rendered `unoptimized` (no `/_next/image` copies) |
+| Used by | `ResultCardMosaic`, `ResultCardMarquee` (`src/components/results/`), via `getResultCards()`; always with the DEMO badge while placeholder |
+| Status | **preview-only until Aspire confirms written consent** (student or guardian) for each card and name, and ownership of the images. Decide before launch whether the folder ships in production images and belongs in git |

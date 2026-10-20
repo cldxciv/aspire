@@ -24,6 +24,7 @@ Drafted 2026-10-20 by the CONTENT-HI agent. Reviewer: a native Hindi speaker fam
 | `src/content/hi/institute.ts` | Institute profile (tagline, summary, founding story, mission, founder message, approach, pedagogy, milestones), 20 downloads, download category labels | Machine draft — needs native Hindi review before launch |
 | `src/content/hi/contact.ts` | Helpdesk label, hours, languages; head-office address and campus desk names/hours come from the centre overlays | Machine draft — needs native Hindi review before launch |
 | `src/content/hi/images.ts` | Hindi alt text for the 12 stock photos (keyed by `src`) | Machine draft — needs native Hindi review before launch |
+| `src/content/hi/results.ts` → `resultCardAltHi` / `resultPhotoAltHi` | Alt text of the 715 result cards (D-031), one pattern: "&lt;Name&gt; — &lt;Institute&gt;, &lt;Exam&gt; &lt;Year&gt; का परिणाम कार्ड". Names, colleges and exam names stay in Latin script | Machine draft — needs native Hindi review before launch |
 | `src/content/hi/overlay.ts`, `index.ts` | Types and merge helpers (code, no copy) | — |
 
 ## Deliberately left in English
@@ -179,3 +180,7 @@ Login IDs, display names of accounts (as entered by staff), "Aspire", exam/progr
 - `programs`: "Draft" is **ड्राफ़्ट** (was "प्रारंभिक", which reads as "preliminary"); the guide line no longer claims Aspire "confirmed" details.
 - `legal` (privacy): new "पोर्टल खाते" section and session-cookie paragraph, translated from the English draft — **needs legal as well as native review**.
 - `auth` / `portal`: process statements rewritten as neutral, instructional copy ("अस्थायी पासवर्ड" instead of "one-time"); see `docs/m4-integrity-review.md` M-5.
+
+## RESULTS-DATA — result cards (2026-10-20, D-031)
+
+**Machine draft — needs native Hindi review before launch.** New keys in `src/i18n/messages/hi/results.ts` → `cards` (used by `ResultCardMosaic` / `ResultCardMarquee`): `title` "पिछले परिणाम", `lead` / `listLabel` "Aspire के पिछले बैचों के परिणाम कार्ड", `seeAll` "सभी परिणाम देखें", `pause` "रोकें", `pauseLabel` "चलते हुए परिणाम कार्ड रोकें", `scrollLabel` "… (बगल में स्क्रॉल होते हैं)". Wording is neutral on purpose (no "टॉपर", "सर्वश्रेष्ठ" or guarantees). `pauseLabel` must keep containing `pause` (accessible name contains the visible label). Alt-text pattern: see the Files table.

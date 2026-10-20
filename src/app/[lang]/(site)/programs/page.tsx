@@ -5,11 +5,12 @@ import { CtaBleedSplit } from "@/components/home/CtaSplit";
 import { ProgramDirectory } from "@/components/programs/ProgramDirectory";
 import { programCardMessages } from "@/components/programs/program-view";
 import { TrackTiles } from "@/components/programs/TrackTiles";
+import { interleaveCards, resultMosaicMedia } from "@/components/results/ResultMosaicMedia";
 import { ButtonLink, EmptyState, Notice, PageHero, PhotoBand, Section, SectionHeading } from "@/components/ui";
 import { stockImages } from "@/content/images";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
 import { localePath } from "@/i18n/paths";
-import { getPrograms, isPlaceholder, localizeImage } from "@/lib/data";
+import { getPrograms, getResultCards, isPlaceholder, localizeImage } from "@/lib/data";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getMessages("programs");
@@ -20,9 +21,20 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+/**
+ * Programs (D-030 image-rich, D-031): hero, directory, a tracks band with one photo per track, the
+ * page-guide split beside a mosaic of Aspire's previous JEE and NEET result cards (a general
+ * section: the cards are not tied to any one program; fallback photo without visible cards), and
+ * the closing CTA. No landscapes; no photo repeats on the page.
+ */
 export default async function ProgramsPage() {
   const [locale, t, common] = await Promise.all([getLocale(), getMessages("programs"), getMessages("common")]);
-  const programs = await getPrograms(undefined, locale);
+  const [programs, jeeCards, neetCards] = await Promise.all([
+    getPrograms(undefined, locale),
+    getResultCards({ exam: "JEE", limit: 4 }, locale),
+    getResultCards({ exam: "NEET", limit: 4 }, locale),
+  ]);
+  const resultsMedia = await resultMosaicMedia({ locale, cards: interleaveCards(jeeCards, neetCards) });
   const hasPlaceholders = programs.some(isPlaceholder);
   const stockLabel = common.labels.illustrativeStockPhoto;
   const photo = (image: (typeof stockImages)[keyof typeof stockImages]) => localizeImage(image, locale);
@@ -88,6 +100,7 @@ export default async function ProgramsPage() {
       <BleedSplit
         aria-labelledby="programs-guide-title"
         image={photo(stockImages.pocketWatchWorksheet)}
+        media={resultsMedia}
         imageSide="left"
         imageLabel={stockLabel}
       >

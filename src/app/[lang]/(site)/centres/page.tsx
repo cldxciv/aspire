@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
 import { CentreDirectory } from "@/components/centres/CentreDirectory";
-import { REGION_PHOTOS, type RegionPhoto } from "@/components/centres/centre-images";
+import { CENTRE_PHOTOS } from "@/components/centres/centre-images";
 import { DistrictsServed } from "@/components/centres/DistrictsServed";
 import { MapPanel } from "@/components/centres/MapPanel";
 import { BleedSplit } from "@/components/home/BleedSplit";
 import { CtaBleedSplit } from "@/components/home/CtaSplit";
-import { ButtonLink, DemoBadge, EmptyState, PageHero, PhotoBand, Section, SectionHeading } from "@/components/ui";
+import { ButtonLink, DemoBadge, EmptyState, PageHero, Section, SectionHeading } from "@/components/ui";
 import { stockImages } from "@/content/images";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
 import { localePath } from "@/i18n/paths";
 import { getCentres, getHostelInfo, isPlaceholder, localizeImage } from "@/lib/data";
+import type { ImageAsset } from "@/lib/types";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getMessages("centres");
@@ -21,11 +22,12 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * Centres (D-030 image-rich): each centre card carries a stock landscape of its REGION (captioned
- * with the region, never the centre or a campus); a wide Himalayan band introduces those photos;
- * the districts and closing sections are half-bleed photo splits. Every photo is labelled and none
- * repeats on the page. With no visible centres (production today) only the hero, the empty state,
- * the districts note and the CTA render.
+ * Centres (D-030 image-rich, D-031): every image is a labelled, non-nature stock education photo —
+ * hero (seminar), one per centre card (classroom, notes, library, discussion; a note under the
+ * directory says they are not taken at the centres), districts (planning notebook) and the
+ * closing split (counselling conversation). No landscapes, and never result cards: the data does
+ * not say where a student studied. No photo repeats on the page. With no visible centres
+ * (production today) only the hero, the empty state, the districts note and the CTA render.
  */
 export default async function CentresPage() {
   const [locale, t, tPrograms, common] = await Promise.all([
@@ -52,15 +54,15 @@ export default async function CentresPage() {
     }
   }
 
-  // Region photos only for visible centres, so no region implies a centre that is not published.
-  const regions: Record<string, RegionPhoto> = {};
+  // Card photos (alt in the page's language) for the visible centres.
+  const photos: Record<string, ImageAsset> = {};
   for (const centre of centres) {
-    const region = REGION_PHOTOS[centre.slug];
-    if (region) regions[centre.slug] = { image: localizeImage(region.image, locale), caption: t.regions[region.key] };
+    const photo = CENTRE_PHOTOS[centre.slug];
+    if (photo) photos[centre.slug] = localizeImage(photo, locale);
   }
-  const hasRegions = Object.keys(regions).length > 0;
+  const hasPhotos = Object.keys(photos).length > 0;
   // White / surface alternate over the sections actually rendered.
-  const order = ["directory", hasRegions && "regions", "districts", "cta"].filter(Boolean);
+  const order = ["directory", "districts", "cta"];
   const tone = (key: string) => (order.indexOf(key) % 2 === 0 ? "white" : "surface");
 
   return (
@@ -71,7 +73,7 @@ export default async function CentresPage() {
         crumbs={[{ label: t.crumb }]}
         homeLabel={common.labels.home}
         homeHref={localePath("/", locale)}
-        image={localizeImage(stockImages.hillRoadBarot, locale)}
+        image={localizeImage(stockImages.seminarFromBehind, locale)}
         imageLabel={stockLabel}
       />
 
@@ -86,7 +88,7 @@ export default async function CentresPage() {
             centres={centres}
             hostelSlugs={hostelSlugs}
             searchExtra={searchExtra}
-            regions={regions}
+            photos={photos}
             messages={{
               directory: t.directory,
               card: t.card,
@@ -105,27 +107,13 @@ export default async function CentresPage() {
             action={<ButtonLink href={localePath("/contact", locale)}>{t.directory.emptyCta}</ButtonLink>}
           />
         )}
+        {hasPhotos && <p className="mt-5 text-xs text-muted">{t.photos.note}</p>}
       </Section>
-
-      {hasRegions && (
-        <Section tone={tone("regions")} aria-labelledby="centre-regions-title">
-          {/* The Dhauladhar range: a Himachal landscape, labelled as stock, never as a centre. */}
-          <PhotoBand image={localizeImage(stockImages.himalayaHero, locale)} imageLabel={stockLabel} aspect="3/1">
-            <h2
-              id="centre-regions-title"
-              className="font-serif text-[clamp(1.6rem,3vw,2.25rem)] font-semibold leading-tight text-white [&:lang(hi)]:leading-snug"
-            >
-              {t.regions.title}
-            </h2>
-          </PhotoBand>
-          <p className="mt-4 max-w-3xl text-muted">{t.regions.lead}</p>
-        </Section>
-      )}
 
       <BleedSplit
         aria-labelledby="centre-districts-title"
         tone={tone("districts")}
-        image={localizeImage(stockImages.mountainTrail, locale)}
+        image={localizeImage(stockImages.notebookPlanning, locale)}
         imageSide="right"
         imageLabel={stockLabel}
       >
@@ -148,7 +136,7 @@ export default async function CentresPage() {
         description={t.help.body}
         primary={{ label: t.help.primary, href: localePath("/admissions#enquiry", locale) }}
         secondary={{ label: t.help.secondary, href: localePath("/contact", locale) }}
-        image={localizeImage(stockImages.himalayaBlueRidge, locale)}
+        image={localizeImage(stockImages.mentoringConversation, locale)}
         imageLabel={stockLabel}
         imageSide="left"
         caption={t.help.imageCaption}

@@ -18,7 +18,7 @@ const results = {
   notices: {
     demoTitle: "Demo data — pending verification",
     demoBody:
-      "The names, ranks and colleges on this page were imported from Aspire's demo site for review. They are marked DEMO, have not been verified against Aspire's official records, and publication consent has not been confirmed. They are hidden on the live site until both are in place.",
+      "The names, ranks and colleges on this page were imported from Aspire's demo site for review. They are marked DEMO, have not been verified against Aspire's official records, and publication consent has not been confirmed. They will be published on Aspire's final website only once both are in place.",
     verifiedTitle: "Only verified records are published",
     verifiedBody:
       "This archive contains no unverified student names, ranks, selection counts or testimonials. Entries are added from Aspire's official records, with documented consent.",
@@ -121,6 +121,18 @@ const results = {
     noMatchBody: "Check the spelling, or try another exam or year.",
     clearFilters: "Clear filters",
     source: "Source:",
+  },
+  /** Result-card images (ResultCardMosaic / ResultCardMarquee, D-031). Neutral wording: no "toppers", "best" or guarantees. */
+  cards: {
+    title: "Previous results",
+    lead: "Result cards from Aspire's previous batches.",
+    listLabel: "Result cards from Aspire's previous batches",
+    seeAll: "See all results",
+    /** Visible text of the marquee's pause toggle (a checkbox; checked = paused). */
+    pause: "Pause",
+    /** Accessible name of that toggle; must contain `pause`. */
+    pauseLabel: "Pause the moving result cards",
+    scrollLabel: "Result cards from Aspire's previous batches (scrolls sideways)",
   },
   method: {
     eyebrow: "Methodology",

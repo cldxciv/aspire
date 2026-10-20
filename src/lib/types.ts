@@ -124,6 +124,11 @@ export interface ResultRecord {
   quote?: string;
   /** Shown in the home-page success-story feature. */
   featured?: boolean;
+  /**
+   * Result-card image of this student (photo, college and name; D-031). PERSONAL DATA: same rule
+   * as the name (canShowStudentName()); public APIs expose it only with `granted` consent.
+   */
+  photo?: ImageAsset;
   sourceReference: string;
   consentStatus: ConsentStatus;
   publishedAt?: string;
@@ -144,6 +149,11 @@ export interface RankerRecord {
   year: number;
   /** Extra detail shown by the source, e.g. "AIR 3238", "From SSB Batch". */
   note?: string;
+  /**
+   * Result-card image (photo, college and name; src/content/result-photos.ts, D-031). PERSONAL
+   * DATA: same rule as the name (canShowStudentName()) — read it through getResultCards().
+   */
+  photo?: ImageAsset;
   sourceReference: string;
   consentStatus: ConsentStatus;
   status: ContentStatus;

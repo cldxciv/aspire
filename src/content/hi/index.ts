@@ -22,7 +22,7 @@ import { imageAltHi } from "./images";
 import { downloadCategoriesHi, downloadsHi, instituteProfileHi } from "./institute";
 import { mergeKeyedList, mergeOverlay } from "./overlay";
 import { programsHi } from "./programs";
-import { rankersHi, resultsHi } from "./results";
+import { rankersHi, resultPhotoAltHi, resultsHi } from "./results";
 import { statsHi } from "./stats";
 import { testimonialsHi } from "./testimonials";
 
@@ -34,12 +34,17 @@ import { testimonialsHi } from "./testimonials";
  */
 
 function image<T extends ImageAsset>(img: T): T {
-  const alt = imageAltHi[img.src];
+  const alt = imageAltHi[img.src] ?? resultPhotoAltHi[img.src];
   return alt ? { ...img, alt } : img;
 }
 
 function withImage<T extends { image?: ImageAsset }>(record: T): T {
   return record.image ? { ...record, image: image(record.image) } : record;
+}
+
+/** Result-card photo (D-031) with its Hindi alt; names and colleges stay in Latin script. */
+function withPhoto<T extends { photo?: ImageAsset }>(record: T): T {
+  return record.photo ? { ...record, photo: image(record.photo) } : record;
 }
 
 function download(item: DownloadItem): DownloadItem {
@@ -50,8 +55,8 @@ export const hi = {
   image,
   program: (p: Program): Program => withImage(mergeOverlay(p, programsHi[p.id])),
   centre: (c: Centre): Centre => withImage(mergeOverlay(c, centresHi[c.id])),
-  result: (r: ResultRecord): ResultRecord => mergeOverlay(r, resultsHi[r.id]),
-  ranker: (r: RankerRecord): RankerRecord => mergeOverlay(r, rankersHi[r.id]),
+  result: (r: ResultRecord): ResultRecord => withPhoto(mergeOverlay(r, resultsHi[r.id])),
+  ranker: (r: RankerRecord): RankerRecord => withPhoto(mergeOverlay(r, rankersHi[r.id])),
   testimonial: (t: Testimonial): Testimonial => mergeOverlay(t, testimonialsHi[t.id]),
   stat: (s: Stat): Stat => mergeOverlay(s, statsHi[s.id]),
   faq: (f: Faq): Faq => mergeOverlay(f, faqsHi[f.id]),
@@ -94,6 +99,7 @@ export const hiOverlays = {
   downloads: downloadsHi,
   downloadCategories: downloadCategoriesHi,
   imageAlt: imageAltHi,
+  resultPhotoAlt: resultPhotoAltHi,
   hostelInfo: hostelInfoHi,
   instituteProfile: instituteProfileHi,
   contactDetails: contactDetailsHi,

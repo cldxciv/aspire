@@ -78,6 +78,16 @@ const resources = {
       "Study guidance and exam updates will appear here once Aspire's academic team has approved them.",
     emptyAction: "Ask a question",
   },
+  /**
+   * Band of result cards from previous batches (D-031) in preview, a stock photo in production: the
+   * copy says how results are published, never what a card shows.
+   */
+  results: {
+    eyebrow: "Previous results",
+    title: "Results from previous batches",
+    description:
+      "Results from Aspire's previous JEE and NEET batches are published on the results page once verified — a student's name and result card only with the student's or guardian's consent.",
+  },
   cta: {
     title: "Not sure where to start?",
     description: "Talk to the academic team about the right program and preparation plan.",

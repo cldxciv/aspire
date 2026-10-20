@@ -34,6 +34,17 @@ const admissions = {
       "Scholarship eligibility, fee schedules, document requirements and admission decisions are confirmed by Aspire directly. They are not published on this website yet.",
     exploreCentres: "Explore centres",
   },
+  /**
+   * "Results from previous batches" (D-031) beside a result-card mosaic (preview) or a stock photo
+   * (production): the copy says how results are published, never what a card shows.
+   */
+  results: {
+    eyebrow: "Previous results",
+    title: "Results from previous batches",
+    description:
+      "See results from Aspire's previous JEE and NEET batches by exam and year. Results are published once verified, and a student's name and result card only with the student's or guardian's consent.",
+    link: "View results",
+  },
   scholarships: {
     title: "Scholarships",
     notice:

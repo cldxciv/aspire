@@ -1,4 +1,5 @@
 import { ArrowRight } from "lucide-react";
+import type { ReactNode } from "react";
 import { ButtonLink, MediaSplit } from "@/components/ui";
 import type { ImageAsset } from "@/lib/types";
 import { BleedSplit } from "./BleedSplit";
@@ -7,7 +8,7 @@ type CtaAction = { label: string; href: string };
 
 /**
  * Closing call to action as a 50/50 photo split (D-030): heading, one line and up to two
- * buttons beside a licensed stock photo. Used by the programs, results and centres pages.
+ * buttons beside a licensed stock photo (never a landscape, D-031).
  * Render inside a `<Section aria-labelledby={headingId}>`. Hrefs must already be localised.
  */
 export function CtaSplit({
@@ -30,7 +31,7 @@ export function CtaSplit({
   /** Visible label on the photo, e.g. common.labels.illustrativeStockPhoto. */
   imageLabel?: string;
   imageSide?: "left" | "right";
-  /** Optional caption under the photo (e.g. "a stock photo of the region, not a centre"). */
+  /** Optional caption under the photo (e.g. "Stock photo for illustration — not taken at an Aspire centre"). */
   caption?: string;
 }) {
   return (
@@ -58,7 +59,8 @@ export function CtaSplit({
 /**
  * The same closing call to action as a half-bleed photo section (`BleedSplit`, D-030): the
  * gradient copy box in one half of the container, the photo filling the other half of the
- * viewport. Renders its own `<section aria-labelledby={headingId}>`: place it directly in the page.
+ * viewport. `media` (D-031, e.g. resultMosaicMedia()) replaces the photo when set; `image` is then
+ * the fallback. Renders its own `<section aria-labelledby={headingId}>`: place it directly in the page.
  */
 export function CtaBleedSplit({
   headingId,
@@ -67,18 +69,23 @@ export function CtaBleedSplit({
   primary,
   secondary,
   image,
+  media,
   imageLabel,
   imageSide = "right",
   caption,
   tone = "white",
-}: Omit<Parameters<typeof CtaSplit>[0], "imageSide"> & {
+}: Omit<Parameters<typeof CtaSplit>[0], "imageSide" | "caption"> & {
   imageSide?: "left" | "right";
   tone?: "white" | "surface";
+  /** Replaces the photo when set (see BleedSplit). */
+  media?: ReactNode;
+  caption?: ReactNode;
 }) {
   return (
     <BleedSplit
       aria-labelledby={headingId}
       image={image}
+      media={media}
       imageLabel={imageLabel}
       imageSide={imageSide}
       caption={caption}

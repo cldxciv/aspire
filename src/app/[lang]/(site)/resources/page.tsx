@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import { CtaBand } from "@/components/about/CtaBand";
 import { FillMediaSplit } from "@/components/about/FillMediaSplit";
 import { PhotoPanel } from "@/components/about/PhotoPanel";
+import { mixedResultCards } from "@/components/about/result-cards";
 import { ArticleCard } from "@/components/resources/ArticleCard";
 import { DownloadList } from "@/components/resources/DownloadList";
 import { ResourceCategories } from "@/components/resources/ResourceCategories";
+import { ResultCardMarquee } from "@/components/results/ResultCardMarquee";
 import { ButtonLink, EmptyState, PageHero, Section, SectionHeading } from "@/components/ui";
 import { stockImages } from "@/content/images";
 import { localePath } from "@/i18n/paths";
@@ -31,6 +33,15 @@ export default async function ResourcesPage() {
   const downloads = profile?.downloads ?? [];
   const hasDownloads = downloads.length > 0;
   const photoLabel = tc.labels.illustrativeStockPhoto;
+
+  // D-031: one band of previous results (alternating JEE / NEET). In production there are no visible
+  // cards and the band shows a labelled, non-nature stock photo instead.
+  const resultsBand = await ResultCardMarquee({
+    locale,
+    cards: await mixedResultCards(locale, 16),
+    fallbackImage: localizeImage(stockImages.graduateSilhouette, locale),
+    fallbackImageLabel: photoLabel,
+  });
 
   return (
     <>
@@ -136,7 +147,17 @@ export default async function ResourcesPage() {
         )}
       </Section>
 
-      <Section tone={hasDownloads ? "surface" : "white"} aria-labelledby="resources-cta-heading">
+      <Section tone={hasDownloads ? "surface" : "white"} aria-labelledby="resources-results-heading">
+        <SectionHeading
+          id="resources-results-heading"
+          eyebrow={t.results.eyebrow}
+          title={t.results.title}
+          description={t.results.description}
+        />
+        {resultsBand}
+      </Section>
+
+      <Section tone={hasDownloads ? "white" : "surface"} aria-labelledby="resources-cta-heading">
         <CtaBand
           id="resources-cta-heading"
           title={t.cta.title}

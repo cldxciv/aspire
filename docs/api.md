@@ -27,6 +27,7 @@ Every response is JSON in the shared envelope, with a matching HTTP status:
 | GET | `/api/centres` | List centres (`?q=&exam=`) |
 | GET | `/api/centres/[slug]` | One centre |
 | GET | `/api/results` | List published results (`?year=&exam=`) |
+| GET | `/api/result-cards/[file]` | One result-card image (webp), same visibility rule as student names (D-031) |
 | GET | `/api/health` | Liveness + non-secret config state |
 
 ---
@@ -255,6 +256,15 @@ Placeholder centres currently list no programs, so any `exam` filter returns `[]
 - `200` `ApiList<PublicResult>`; `400` on invalid parameters.
 
 Only records `getResults()` publishes are returned: published, and consent not pending. On top of that, `studentDisplayName` is included **only** when `consentStatus === "granted"`, and the internal `verifiedBy` field is never exposed. Results content is intentionally empty for now (D-009), so the response is `{ ok: true, data: [] }`.
+
+`photo` (a result-card image) is part of the same consent whitelist as the name: it appears only with `granted` consent, never for placeholder records with pending consent, even in preview.
+
+## GET /api/result-cards/[file]
+
+- `file`: `ranker-<id>.webp` (anything else is a `404`).
+- `200` `image/webp`, `Cache-Control: private, max-age=3600`, `X-Robots-Tag: noindex, nofollow, noimageindex`; otherwise the JSON `404` envelope (`not_found`).
+
+Serves the result cards in `private/result-cards/` (D-031: a student's photo, college and name — personal data). A file is served only while a visible record whose name may be shown carries it (`canServeResultCard()` → `canShowStudentName()`): in development / preview with placeholder content, or with `granted` consent. **In production every card is a `404`** while the imported records are placeholders with pending consent; an unknown and a hidden file look the same. Request time only (`connection()`). Behind the preview password gate like every `/api` route (D-027). Components load it with `next/image` `unoptimized`, so no optimised copy is cached under `/_next/image`.
 
 ## GET /api/health
 

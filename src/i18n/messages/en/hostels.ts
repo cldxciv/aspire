@@ -36,8 +36,6 @@ const hostels = {
   campuses: {
     title: "Hostels by campus",
     description: "Residential blocks, supervision and the warden desk at each campus.",
-    regionCaption: "{district} region",
-    regionNote: "Stock photos of the region — not Aspire's hostels or campuses.",
   },
   care: {
     title: "Safety, study and care",

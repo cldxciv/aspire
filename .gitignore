@@ -48,3 +48,7 @@ next-env.d.ts
 
 # Claude Code personal settings (keep shared agents/CLAUDE.md in git)
 .claude/settings.local.json
+
+# Result cards = real students' photos (personal data, consent pending, D-031). Local/preview only:
+# never committed, never in the production image. Re-create with scripts/import-result-cards.mjs.
+/private/

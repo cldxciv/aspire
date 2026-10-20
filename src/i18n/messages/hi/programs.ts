@@ -94,6 +94,7 @@ const programs: Messages<"programs"> = {
     ctaBody: "कुछ विवरण साझा करें, और Aspire की प्रवेश टीम बैच, केंद्र और आगे के कदमों के बारे में आपका मार्गदर्शन कर सकती है।",
     ctaPrimary: "पूछताछ करें",
     ctaSecondary: "Aspire से संपर्क करें",
+    resultsCaption: "Aspire के पिछले बैचों के {exams} परिणाम, सभी प्रोग्रामों से",
   },
   schedule: {
     title: "समय-सारणी और फ़ीस",
