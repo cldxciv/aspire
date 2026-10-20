@@ -46,6 +46,16 @@ Plan: `docs/m4-plan.md` (D-028 i18n, D-029 auth, D-030 imagery) · briefs: `docs
 | Image share at 1440 (preview content) | 45–50 % static on Home, Programs, Program detail, Centres, About, Hostels, Admissions, Contact, Resources; long-form pages 41–55 % of the viewport while reading (Results, Articles, Privacy, Terms) |
 | QA auth (≈450 live assertions) | 0 Critical/High; M1 (forged `X-Forwarded-For` bypassed the per-IP limit) **fixed** (`TRUSTED_PROXY_HOPS`, rightmost trusted hop); L1–L5 documented as owner/deployment decisions |
 
+### Deployment — aspire.thechunkmedia.com (2026-10-20, owner request)
+| Item | State |
+|---|---|
+| Release | `9c8a5f9` (M3 + M4 + Docker deployment), production build (demo data hidden), browser password prompt on (`PREVIEW_ACCESS_PASSWORD` in `/opt/aspire-web/.env`) |
+| Server | VPS 69.62.76.109 (shared: thechunkmedia.com, aspire2, others untouched). Docker compose project `/opt/aspire-web`, container `aspire-web-app-1` on `127.0.0.1:3011`, Node 24, auth DB `/opt/aspire-web/data/aspire.sqlite` |
+| nginx | `/etc/nginx/sites-available/aspire.thechunkmedia.com` → `proxy_pass http://127.0.0.1:3011` (+ `proxy_hide_header X-Frame-Options`); backup in `/opt/aspire-web/nginx-backup/` |
+| Previous site | `/opt/aspire-demo` stack (port 3010 + Postgres) **stopped, not removed** — rollback in `deploy/README.md` |
+| First admin | `aspire.admin`, temporary password in root-only `/opt/aspire-web/first-admin.txt`; must change at first sign-in |
+| Live checks | 401 without password; 22 routes over HTTPS as expected (en + hi, redirects, 404, sitemap, robots, health); admin sign-in: Secure/HttpOnly/SameSite cookie, wrong tab 401, temporary-password gate 403, change-password page en + hi, logout revokes, cross-origin 403; thechunkmedia.com and aspire2 still 200 |
+
 ### Milestone 4 conditions
 - **Hindi is a machine draft** — native review before launch (checklist HI-1/HI-2); the privacy additions also need legal review (LG-1).
 - **Auth store is a single SQLite file** (`AUTH_DB_PATH`, default `.data/aspire.sqlite`) — one server instance, persistent disk, backups; create the first admin with `npm run auth:create-admin`; never run `auth:seed` on a server.
