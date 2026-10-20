@@ -94,6 +94,7 @@ UI copy for About, Hostels, Admissions, Contact, Resources (+ articles), Privacy
 | `src/i18n/messages/hi/resources.ts` | Resources page, category cards, download-card labels, article page, Hindi month names |
 | `src/i18n/messages/hi/legal.ts` | Privacy notice and terms of use. **Both are English drafts pending legal review; the Hindi needs legal review too** |
 | `src/i18n/messages/hi/common.ts` → `errorPage` | Error page copy |
+| `src/i18n/messages/hi/common.ts` → `carousel` | Image-carousel controls: फ़ोटो गैलरी, पिछली/अगली फ़ोटो, स्लाइड शो रोकें/चलाएँ, "स्लाइड {n} पर जाएँ", "{total} में से {n}"; screen-reader role names `roleCarousel` "कैरोसेल" and `roleSlide` "स्लाइड" (aria-roledescription, read aloud) (added 2026-10-20) |
 
 Needs a decision or a check:
 1. **Legal wording.** "मसौदा" (draft), "पुष्टि होनी है" (to be confirmed), "क़ानूनी सलाहकार" (legal counsel), "दायित्व" (liability), "लागू क़ानून" (governing law), "बौद्धिक संपदा" (intellectual property), "लागू होने की तिथि" (effective date), "सेवा प्रदाता" (service providers). These need a legal reviewer, and the Hindi text must not be published as binding until the English is approved.
@@ -184,3 +185,11 @@ Login IDs, display names of accounts (as entered by staff), "Aspire", exam/progr
 ## RESULTS-DATA — result cards (2026-10-20, D-031)
 
 **Machine draft — needs native Hindi review before launch.** New keys in `src/i18n/messages/hi/results.ts` → `cards` (used by `ResultCardMosaic` / `ResultCardMarquee`): `title` "पिछले परिणाम", `lead` / `listLabel` "Aspire के पिछले बैचों के परिणाम कार्ड", `seeAll` "सभी परिणाम देखें", `pause` "रोकें", `pauseLabel` "चलते हुए परिणाम कार्ड रोकें", `scrollLabel` "… (बगल में स्क्रॉल होते हैं)". Wording is neutral on purpose (no "टॉपर", "सर्वश्रेष्ठ" or guarantees). `pauseLabel` must keep containing `pause` (accessible name contains the visible label). Alt-text pattern: see the Files table.
+
+## M6 — student tools (2026-10-20, machine drafts — native review needed)
+- Messages: `hi/tools.ts`, `hi/predictor.ts`, `hi/mocktest.ts`, `hi/ask.ts`, `hi/planner.ts`, `hi/common.ts` (nav: विद्यार्थी टूल्स, रैंक और कॉलेज प्रेडिक्टर, मॉक टेस्ट, Ask Aspire (शंका समाधान), स्टडी प्लानर), `hi/legal.ts` → `privacy.tools` (**legal review too**).
+- Content: Hindi question stems, options and solutions in `src/content/mocktest/*` (85 questions + topic names) — **needs a subject teacher's review, not only language review**; Hindi topic names and formula flashcards in `src/content/planner/*`.
+- Ask Aspire answers in Hindi are generated live by the AI model — not reviewable in advance; the page carries an "AI can make mistakes" note.
+- The predictor share card is English-only (no Devanagari font bundled for image rendering).
+- Portal tool panels: `hi/portal.ts` → `tools.*`, `blocks.toolDataBadge` and the updated student/parent copy (PORTAL-INTEGRATION, M6). Doubt-topic labels are AI-generated English (`lang="en"`).
+- MCP admin page: `hi/mcp.ts` and `hi/portal.ts` → `nav.mcp` ("AI एजेंट एक्सेस") — machine draft.

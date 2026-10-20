@@ -6,9 +6,13 @@ import hiCommon from "@/i18n/messages/hi/common";
 import { localeFromPathname } from "@/i18n/paths";
 import type { ImageAsset } from "@/lib/types";
 import { cn } from "@/lib/cn";
-import { Container } from "./Layout";
+import type { CarouselSlide } from "./carousel-utils";
+import { ImageCarousel, type CarouselLabels } from "./ImageCarousel";
+import { Container, HERO_PANEL } from "./Layout";
 
 export type Crumb = { label: string; href?: string };
+
+const HERO_SIZES = "(min-width: 1200px) 560px, (min-width: 1024px) 46vw, 100vw";
 
 /**
  * Interior-page hero with breadcrumbs (Home is prepended automatically). Renders the page's only <h1>.
@@ -17,8 +21,14 @@ export type Crumb = { label: string; href?: string };
  * right (stacked under the copy on smaller screens). `imageLabel` adds a visible caption pill
  * (e.g. "Illustrative stock photo") — use it for stock or AI imagery.
  *
+ * With `slides` (2+), the right-hand media is an `ImageCarousel` in the same 16/10 rounded box,
+ * slide 1 preloaded at high fetch priority (`imagePriority`). Each slide carries its own visible
+ * `label`. One slide renders as a static photo. `slides` wins over `image` when both are given.
+ * Build slides with `heroSlides(images, label, locale)` from `@/components/ui/hero-slides`.
+ *
  * Localisation: pass `homeLabel` / `homeHref` from the page's messages (defaults are English).
- * The breadcrumb landmark label follows the locale of `homeHref` unless `breadcrumbLabel` is given.
+ * The breadcrumb landmark label and the carousel strings follow the locale of `homeHref` unless
+ * `breadcrumbLabel` / `carouselLabels` are given.
  */
 export function PageHero({
   title,
@@ -27,6 +37,8 @@ export function PageHero({
   children,
   image,
   imageLabel,
+  slides,
+  carouselLabels,
   imagePriority = true,
   homeLabel = "Home",
   homeHref = "/",
@@ -41,7 +53,11 @@ export function PageHero({
   image?: ImageAsset;
   /** Visible label on the photo, e.g. "Illustrative stock photo". */
   imageLabel?: string;
-  /** Preload the hero photo (it is above the fold). */
+  /** Hero carousel (2+ slides; licensed stock or approved assets, each with its own visible label). */
+  slides?: CarouselSlide[];
+  /** Carousel strings; defaults to `common.carousel` in the locale of `homeHref`. */
+  carouselLabels?: CarouselLabels;
+  /** Preload the hero photo / first slide (it is above the fold). */
   imagePriority?: boolean;
   homeLabel?: string;
   homeHref?: string;
@@ -49,11 +65,13 @@ export function PageHero({
   breadcrumbLabel?: string;
 }) {
   const trail: Crumb[] = [{ label: homeLabel, href: homeHref }, ...crumbs];
-  const navLabel =
-    breadcrumbLabel ?? (localeFromPathname(homeHref) === "hi" ? hiCommon : enCommon).labels.breadcrumb;
+  const common = localeFromPathname(homeHref) === "hi" ? hiCommon : enCommon;
+  const navLabel = breadcrumbLabel ?? common.labels.breadcrumb;
+  const hasSlides = (slides?.length ?? 0) > 0;
+  const hasMedia = hasSlides || Boolean(image);
 
   const copy = (
-    <div className={cn(image && "lg:py-4")}>
+    <div className={cn(hasMedia && "lg:py-4")}>
       <nav aria-label={navLabel} className="mb-3 text-xs text-[#b9d3f3]">
         <ol className="flex flex-wrap items-center gap-1.5">
           {trail.map((crumb, i) => {
@@ -74,16 +92,29 @@ export function PageHero({
         </ol>
       </nav>
       <h1 className="font-serif text-[clamp(2rem,4.5vw,2.75rem)] font-semibold leading-tight tracking-tight">{title}</h1>
-      {lead && <div className="mt-2.5 max-w-3xl text-[#dbe8f7]">{lead}</div>}
-      {children && <div className="mt-5 flex flex-wrap gap-3">{children}</div>}
+      {lead && <div className="mt-4 max-w-3xl text-[#dbe8f7]">{lead}</div>}
+      {children && <div className="mt-7 flex flex-wrap gap-3">{children}</div>}
     </div>
   );
 
   return (
-    <div data-surface="dark" className="bg-linear-to-r from-navy to-navy-2 py-9 text-white md:py-12">
-      <Container>
-        {image ? (
-          <div className="grid items-center gap-7 lg:grid-cols-2 lg:gap-12">
+    <div data-surface="dark" className={cn(HERO_PANEL, "bg-linear-to-r from-navy to-navy-2 py-12 text-white md:py-16 lg:py-20")}>
+      <Container gutters="section">
+        {hasSlides ? (
+          <div className="grid items-center gap-8 md:gap-10 lg:grid-cols-2 lg:gap-14">
+            {copy}
+            <ImageCarousel
+              slides={slides ?? []}
+              labels={carouselLabels ?? common.carousel}
+              aspect="16/10"
+              priority={imagePriority}
+              tone="dark"
+              sizes={HERO_SIZES}
+              className="rounded-card shadow-card ring-1 ring-white/15"
+            />
+          </div>
+        ) : image ? (
+          <div className="grid items-center gap-8 md:gap-10 lg:grid-cols-2 lg:gap-14">
             {copy}
             <figure className="relative">
               <div className="relative aspect-16/10 overflow-hidden rounded-card shadow-card ring-1 ring-white/15">
@@ -92,7 +123,8 @@ export function PageHero({
                   alt={image.alt}
                   fill
                   preload={imagePriority}
-                  sizes="(min-width: 1200px) 560px, (min-width: 1024px) 46vw, 100vw"
+                  fetchPriority={imagePriority ? "high" : undefined}
+                  sizes={HERO_SIZES}
                   className="object-cover"
                 />
               </div>

@@ -38,9 +38,9 @@ export function StickyResultsLayout({
   children: ReactNode;
 }) {
   return (
-    <div className={cn("grid gap-8 lg:grid-cols-2 lg:gap-12", className)}>
+    <div className={cn("grid gap-10 lg:grid-cols-2 lg:gap-16", className)}>
       <div className={cn("relative min-w-0", imageSide === "left" ? "lg:order-1" : "lg:order-2")}>
-        <div className="flex flex-col gap-4 lg:sticky lg:top-24">
+        <div className="flex flex-col gap-5 lg:sticky lg:top-24 lg:gap-6">
           <Box
             box={primary}
             className={cn(primary.media ? "aspect-2/1" : "aspect-16/10", "lg:aspect-auto lg:h-[min(60vh,560px)]")}

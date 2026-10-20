@@ -16,6 +16,8 @@ const hostels = {
     emptyLead: "Residential options for students joining Aspire from outside their home town.",
     byCampus: "Hostels by campus",
     ask: "Ask about accommodation",
+    /** Short caption on every hero carousel slide (stock photos, D-030). */
+    photoCaption: "Not an Aspire hostel",
   },
   empty: {
     heading: "Hostel information",

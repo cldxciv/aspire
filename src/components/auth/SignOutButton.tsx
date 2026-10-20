@@ -5,11 +5,13 @@ import { useState } from "react";
 import type { Messages } from "@/i18n/messages/types";
 import { callApi } from "@/lib/auth/client-api";
 import { cn } from "@/lib/cn";
+import { clearToolStorage } from "@/lib/mocktest/shared-device";
 
 /**
  * Signs out with `POST /api/auth/logout` (same-origin, idempotent), then does a full page
  * load of `redirectTo` (a localised path, e.g. `/hi/login`) so no signed-in UI stays in the
- * client router cache.
+ * client router cache. Once signed out it also clears the student tools' data from this browser
+ * (mock tests, study planner — QA-SEC-M6 L9) so a shared device does not keep the student's work.
  */
 export function SignOutButton({
   messages,
@@ -35,6 +37,7 @@ export function SignOutButton({
     setFailed(false);
     const result = await callApi<{ signedOut: boolean }>("/api/auth/logout", { method: "POST" });
     if (result.ok || result.error === "unauthenticated") {
+      clearToolStorage();
       window.location.assign(redirectTo);
       return;
     }

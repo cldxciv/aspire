@@ -16,6 +16,7 @@ import { Art } from "@/components/about/Art";
 import { CtaBand } from "@/components/about/CtaBand";
 import { ExploreLinks } from "@/components/about/ExploreLinks";
 import { FillMediaSplit } from "@/components/about/FillMediaSplit";
+import { ABOUT_HERO_IMAGES } from "@/components/about/hero-images";
 import { PhotoMosaic } from "@/components/about/PhotoMosaic";
 import { MilestoneTimeline } from "@/components/about/MilestoneTimeline";
 import { PrinciplesList } from "@/components/about/PrinciplesList";
@@ -33,6 +34,7 @@ import {
   type CardTint,
   type SectionTone,
 } from "@/components/ui";
+import { heroSlides } from "@/components/ui/hero-slides";
 import { aspireAssets } from "@/content/aspire-assets";
 import { stockImages } from "@/content/images";
 import type { Locale } from "@/i18n/config";
@@ -146,8 +148,12 @@ export default async function AboutPage() {
         crumbs={[{ label: t.hero.crumb }]}
         homeLabel={tc.labels.home}
         homeHref={localePath("/", locale)}
-        image={localizeImage(stockImages.youngStudentWriting, locale)}
-        imageLabel={ctx.photoLabel}
+        // Stock only (no landscapes or result cards), so preview and production share the first fold.
+        slides={heroSlides(
+          ABOUT_HERO_IMAGES.map((key) => stockImages[key]),
+          ctx.photoLabel,
+          locale,
+        )}
       />
       {sections.map((render, index) => render(index % 2 === 0 ? "white" : "surface"))}
     </>

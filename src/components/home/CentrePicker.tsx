@@ -94,7 +94,7 @@ export function CentrePicker({
   const pinned = centres.filter((c) => c.pin);
 
   return (
-    <div className="grid gap-5 sm:grid-cols-2 sm:items-start">
+    <div className="grid gap-8 sm:grid-cols-2 sm:items-start sm:gap-6 md:gap-8">
       <div>
         <div className="relative aspect-4/3 w-full">
           {map}
@@ -140,7 +140,7 @@ export function CentrePicker({
           </p>
         </div>
 
-        <ul aria-label={t.listLabel} className="mt-3 flex flex-wrap gap-2">
+        <ul aria-label={t.listLabel} className="mt-5 flex flex-wrap gap-2.5">
           {centres.map((centre) => {
             const isSelected = centre.slug === selected.slug;
             return (
@@ -166,17 +166,17 @@ export function CentrePicker({
         </ul>
       </div>
 
-      <div id={cardId} className="rounded-card border border-line bg-white p-4 shadow-card sm:p-5">
+      <div id={cardId} className="rounded-card border border-line bg-white p-5 shadow-card sm:p-6">
         {selected.media}
-        <div className={cn("flex flex-wrap items-center gap-2", selected.media ? "mt-4" : undefined)}>
+        <div className={cn("flex flex-wrap items-center gap-2", selected.media ? "mt-5" : undefined)}>
           <h3 className="font-serif text-xl font-semibold leading-snug text-navy">{selected.name}</h3>
           {selected.demo && <DemoBadge label={t.demo} />}
         </div>
         {selected.label && (
-          <p className="mt-1 text-xs font-extrabold uppercase tracking-[0.12em] text-blue">{selected.label}</p>
+          <p className="mt-1.5 text-xs font-extrabold uppercase tracking-[0.12em] text-blue">{selected.label}</p>
         )}
         {selected.address && (
-          <p className="mt-3 flex gap-2 text-sm text-muted">
+          <p className="mt-4 flex gap-2 text-sm leading-relaxed text-muted">
             <MapPin aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-blue" />
             <span>{selected.address}</span>
           </p>

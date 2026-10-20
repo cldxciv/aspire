@@ -63,7 +63,7 @@ export function ResultsArchive({
 
   return (
     <div>
-      <fieldset className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+      <fieldset className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
         <legend className="sr-only">{t.filterLegend}</legend>
         <div className="sm:w-56">
           <label htmlFor={examId} className="mb-1 block text-xs font-bold text-[#354b66]">
@@ -115,12 +115,12 @@ export function ResultsArchive({
       </fieldset>
 
       {!hasRecords ? (
-        <p id={helpId} className="mt-3 text-sm text-muted">
+        <p id={helpId} className="mt-4 text-sm text-muted">
           {t.disabledHelp}
         </p>
       ) : (
         <>
-          <p role="status" className="mb-5 mt-3 text-sm text-muted">
+          <p role="status" className="mb-6 mt-4 text-sm text-muted">
             {filtered.length === 1
               ? format(t.showingOne, { noun })
               : format(t.showingMany, { count: filtered.length, nouns })}
@@ -128,7 +128,7 @@ export function ResultsArchive({
             {year && ` ${format(t.inYear, { year })}`}
           </p>
           {filtered.length > 0 ? (
-            <ul id={listId} className={cn("grid gap-4", listClassName)}>
+            <ul id={listId} className={cn("grid gap-5 md:gap-6", listClassName)}>
               {filtered.map((result) => (
                 <li key={result.id} className="min-w-0">
                   <ResultCard

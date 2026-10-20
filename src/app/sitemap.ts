@@ -17,6 +17,12 @@ const staticRoutes = [
   "/contact",
   "/privacy",
   "/terms",
+  "/tools",
+  "/tools/predictor",
+  "/tools/mock-tests",
+  "/tools/mock-tests/leaderboard",
+  "/tools/ask",
+  "/tools/planner",
 ];
 
 /** Absolute URL for a public href (`/` → the bare origin, matching the previous sitemap). */

@@ -42,7 +42,7 @@ export function ProgramPathRow({
   const placeholder = program.status === "placeholder";
 
   return (
-    <Card tint={tint} interactive className={cn("relative flex items-center gap-4 p-3.5 sm:p-4", rowFocus)}>
+    <Card tint={tint} interactive className={cn("relative flex items-center gap-4 p-4 sm:gap-5 sm:px-5 sm:py-4.5", rowFocus)}>
       <span aria-hidden="true" className={cn("grid size-12 shrink-0 place-items-center rounded-control", ICON_TILE[tint])}>
         <Icon className="size-6" strokeWidth={1.7} />
       </span>
@@ -56,7 +56,7 @@ export function ProgramPathRow({
           </Link>
         </h3>
         {(classLevel || placeholder) && (
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
             {classLevel && <span>{classLevel}</span>}
             {placeholder && <DemoBadge label={demoLabel} />}
           </p>

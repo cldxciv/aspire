@@ -28,9 +28,15 @@ import { portalApiError } from "@/lib/auth/responses";
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Preview access gate (D-027): only when PREVIEW_ACCESS_PASSWORD is configured.
+  // Preview access gate (D-027): only when PREVIEW_ACCESS_PASSWORD is configured. The MCP endpoint is
+  // exempt: agents authenticate with their own bearer token in the same Authorization header
+  // (src/lib/mcp/auth.ts), which the Basic-auth gate would otherwise reject.
   const previewPassword = previewAccessPassword();
-  if (previewPassword && !isPreviewAuthorized(request.headers.get("authorization"), previewPassword)) {
+  if (
+    previewPassword &&
+    pathname !== "/api/mcp" &&
+    !isPreviewAuthorized(request.headers.get("authorization"), previewPassword)
+  ) {
     return previewChallenge();
   }
 

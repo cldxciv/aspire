@@ -17,7 +17,7 @@ export function MapPanel({
   compact?: boolean;
 }) {
   return (
-    <div className="rounded-card border border-line bg-linear-to-br from-[#e9f3ff] to-[#f9fcff] p-5 md:p-6">
+    <div className="rounded-card border border-line bg-linear-to-br from-[#e9f3ff] to-[#f9fcff] p-6 md:p-7">
       <h2 id={headingId} className="text-lg font-bold text-navy">
         {t.title}
       </h2>
@@ -25,7 +25,7 @@ export function MapPanel({
         role="img"
         aria-label={t.placeholderLabel}
         className={cn(
-          "relative mt-3 grid place-items-center overflow-hidden rounded-control border border-dashed border-[#cbd8e7] bg-white/70",
+          "relative mt-4 grid place-items-center overflow-hidden rounded-control border border-dashed border-[#cbd8e7] bg-white/70",
           compact ? "aspect-[5/2]" : "aspect-4/3",
         )}
       >
@@ -44,7 +44,7 @@ export function MapPanel({
           <span className="text-xs font-semibold text-muted">{t.comingSoon}</span>
         </div>
       </div>
-      <p className="mt-3 text-sm text-muted">{t.body}</p>
+      <p className="mt-4 text-sm leading-relaxed text-muted">{t.body}</p>
     </div>
   );
 }

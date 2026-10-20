@@ -45,7 +45,7 @@ const controlClass =
 function ResultCard({ card, t }: { card: ResultCardView; t: ResultRailMessages }) {
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-card border border-line bg-white shadow-soft">
-      <div data-surface="dark" className="bg-linear-to-br from-navy to-navy-2 p-4 text-white">
+      <div data-surface="dark" className="bg-linear-to-br from-navy to-navy-2 p-5 text-white">
         <div className="flex items-start justify-between gap-3">
           <p className="min-w-0 text-sm font-extrabold uppercase tracking-wide text-gold">{card.exam}</p>
           {/* Decorative: never a photo beside a name (D-019). */}
@@ -64,12 +64,12 @@ function ResultCard({ card, t }: { card: ResultCardView; t: ResultRailMessages }
           {card.year}
         </p>
       </div>
-      <div className="flex flex-1 items-start justify-between gap-3 p-4">
+      <div className="flex flex-1 items-start justify-between gap-3 p-5">
         <div className="min-w-0">
           <p className={cn("break-words", card.name ? "font-bold text-ink" : "font-semibold text-muted italic")}>
             {card.name ?? t.nameWithheld}
           </p>
-          {card.destination && <p className="mt-0.5 break-words text-sm text-muted">{card.destination}</p>}
+          {card.destination && <p className="mt-1 break-words text-sm text-muted">{card.destination}</p>}
           {card.placeholder && <DemoBadge label={t.demo} className="mt-2" />}
         </div>
         {/* Generic mark instead of any institution's crest. */}
@@ -154,20 +154,20 @@ export function ResultRail({
         aria-label={label}
         tabIndex={0}
         onScroll={update}
-        className="relative -mx-1 flex snap-x snap-mandatory scroll-px-1 gap-4 overflow-x-auto overscroll-x-contain px-1 pt-1 pb-3 [scrollbar-width:thin]"
+        className="relative -mx-1 flex snap-x snap-mandatory scroll-px-1 gap-5 overflow-x-auto overscroll-x-contain px-1 pt-1 pb-3 [scrollbar-width:thin]"
       >
         {cards.map((card, i) => (
           <li
             // The list is static for the page's lifetime; ids are not sent to the client (they embed names).
             key={i}
-            className="w-[78%] shrink-0 snap-start @sm:w-[calc((100%-1rem)/2)] @3xl:w-[calc((100%-2rem)/3)] @5xl:w-[calc((100%-3rem)/4)]"
+            className="w-[78%] shrink-0 snap-start @sm:w-[calc((100%-1.25rem)/2)] @3xl:w-[calc((100%-2.5rem)/3)] @5xl:w-[calc((100%-3.75rem)/4)]"
           >
             <ResultCard card={card} t={t} />
           </li>
         ))}
       </ul>
       {cards.length > 1 && (
-        <div className="mt-3 flex items-center justify-end gap-3">
+        <div className="mt-4 flex items-center justify-end gap-3">
           <p aria-live="polite" className="text-sm font-semibold text-muted">
             <span className="sr-only">{t.positionPrefix} </span>
             {format(t.position, { current: index + 1, total: cards.length })}

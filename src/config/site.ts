@@ -56,6 +56,11 @@ export const mainNav: NavItem[] = [
     href: "/resources",
     children: [
       { labelKey: "allResources", href: "/resources" },
+      { labelKey: "studentTools", href: "/tools", descriptionKey: "studentTools" },
+      { labelKey: "predictor", href: "/tools/predictor" },
+      { labelKey: "mockTests", href: "/tools/mock-tests" },
+      { labelKey: "askAspire", href: "/tools/ask" },
+      { labelKey: "planner", href: "/tools/planner" },
       { labelKey: "articles", href: "/resources#articles" },
       { labelKey: "downloads", href: "/resources#downloads" },
       { labelKey: "admissionsFaqs", href: "/admissions#faqs" },

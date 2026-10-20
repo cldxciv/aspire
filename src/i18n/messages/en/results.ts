@@ -18,7 +18,7 @@ const results = {
   notices: {
     demoTitle: "Demo data — pending verification",
     demoBody:
-      "The names, ranks and colleges on this page were imported from Aspire's demo site for review. They are marked DEMO, have not been verified against Aspire's official records, and publication consent has not been confirmed. They will be published on Aspire's final website only once both are in place.",
+      "Entries marked DEMO were imported from Aspire's demo site for review. Their names, ranks and colleges have not been verified against Aspire's official records, and publication consent has not been confirmed. Demo entries are shown only while demo content is switched on for review; otherwise this page lists only verified records published with consent.",
     verifiedTitle: "Only verified records are published",
     verifiedBody:
       "This archive contains no unverified student names, ranks, selection counts or testimonials. Entries are added from Aspire's official records, with documented consent.",

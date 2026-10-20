@@ -52,12 +52,12 @@ export function ResultCard({
   const c = t.card;
 
   return (
-    <Card className="flex h-full flex-col p-5">
+    <Card className="flex h-full flex-col p-5 sm:p-6">
       <div className="flex flex-wrap items-center gap-2">
         <Badge>{examYearLabel(result, t.tracks)}</Badge>
         {result.status === "placeholder" && <DemoBadge label={t.demo} />}
       </div>
-      <div className="mt-3 flex items-start gap-3">
+      <div className="mt-4 flex items-start gap-3">
         <InitialsAvatar name={name} size="sm" />
         <div className="min-w-0">
           <h3 className="text-base font-bold leading-snug text-navy">{result.rankOrOutcome}</h3>
@@ -65,7 +65,7 @@ export function ResultCard({
         </div>
       </div>
       {(destination || result.school || (result.centreSlug && centreName)) && (
-        <dl className="mt-3 space-y-1.5 text-sm text-ink">
+        <dl className="mt-4 space-y-2 text-sm text-ink">
           {destination && (
             <div className="flex gap-2">
               <dt className="mt-0.5 shrink-0 text-blue">
@@ -102,7 +102,7 @@ export function ResultCard({
           )}
         </dl>
       )}
-      <dl className="mt-auto space-y-1 pt-4 text-xs text-muted">
+      <dl className="mt-auto space-y-1 pt-5 text-xs text-muted">
         <div className="flex gap-1">
           <dt className="flex shrink-0 items-start gap-1.5 font-bold text-[#354b66]">
             <FileCheck aria-hidden="true" className="mt-px size-3.5 shrink-0" />

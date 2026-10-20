@@ -5,6 +5,7 @@ import { AuthSplit } from "@/components/auth/AuthSplit";
 import { LoginForm, type LoginFormMessages } from "@/components/auth/LoginForm";
 import { SignedInPanel } from "@/components/auth/SignedInPanel";
 import { ButtonLink, MediaSplit, Notice, Section } from "@/components/ui";
+import { heroSlides } from "@/components/ui/hero-slides";
 import { stockImages } from "@/content/images";
 import type { Locale } from "@/i18n/config";
 import type { Messages } from "@/i18n/messages/types";
@@ -35,10 +36,22 @@ export async function generateMetadata(): Promise<Metadata> {
 type SearchParams = PageProps<"/[lang]/login">["searchParams"];
 
 /**
+ * Sign-in carousel: desk, library and textbook stock with no people in it, because the card beside
+ * it can show the signed-in visitor's real name (D-019). None is reused by the help split below.
+ */
+const HERO_IMAGES = [
+  stockImages.deskLampEvening,
+  stockImages.libraryAisle,
+  stockImages.stethoscopeTextbooks,
+  stockImages.pocketWatchWorksheet,
+] as const;
+
+/**
  * /login and /hi/login (D-029): Student / Parent / Admin sign-in. Signed-in visitors see who
  * they are, a link to their portal and a sign-out button instead of a password form.
  * `?role=` only pre-selects a tab and `?next=` is sanitised to a portal path — neither grants
- * anything. Image-rich 50/50 layout (D-030): no person photo beside the signed-in name.
+ * anything. Image-rich 50/50 layout (D-030) with a photo carousel: no person photo beside the
+ * signed-in name.
  */
 export default async function LoginPage({ searchParams }: PageProps<"/[lang]/login">) {
   const [locale, t, common] = await Promise.all([getLocale(), getMessages("auth"), getMessages("common")]);
@@ -51,8 +64,8 @@ export default async function LoginPage({ searchParams }: PageProps<"/[lang]/log
         eyebrow={l.eyebrow}
         title={l.title}
         lead={l.lead}
-        image={localizeImage(stockImages.deskLampEvening, locale)}
-        imageLabel={common.labels.illustrativeStockPhoto}
+        slides={heroSlides(HERO_IMAGES, common.labels.illustrativeStockPhoto, locale)}
+        carouselLabels={common.carousel}
         aside={
           <>
             <h2 className="flex items-center gap-2 font-bold">

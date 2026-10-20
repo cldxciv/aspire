@@ -140,7 +140,7 @@ export default async function ResultsPage() {
         <Section tone={tone("stories")} aria-labelledby="results-stories-title">
           {notice}
           <StickyMediaLayout
-            className="mt-10"
+            className="mt-12 md:mt-14"
             image={photo(stockImages.libraryAisle)}
             secondaryImage={photo(stockImages.booksAndNotebook)}
             imageLabel={stockLabel}
@@ -158,7 +158,7 @@ export default async function ResultsPage() {
                 </span>
               }
             />
-            <ul className="grid gap-4">
+            <ul className="grid gap-6">
               {featured.map((result) => (
                 <li key={result.id}>
                   <ResultStoryCard
@@ -175,7 +175,7 @@ export default async function ResultsPage() {
       )}
 
       <Section tone={tone("archive")} aria-labelledby="results-archive-title">
-        {featured.length === 0 && <div className="mb-8">{notice}</div>}
+        {featured.length === 0 && <div className="mb-10 md:mb-12">{notice}</div>}
         <StickyMediaLayout
           image={photo(stockImages.pocketWatchWorksheet)}
           secondaryImage={photo(stockImages.mathsNotebook)}
@@ -195,7 +195,7 @@ export default async function ResultsPage() {
             listClassName="sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2"
           />
           {archive.length === 0 && (
-            <ul className="mt-6 grid gap-4 sm:grid-cols-2">
+            <ul className="mt-8 grid gap-5 sm:grid-cols-2 md:gap-6">
               {archiveAwaiting(t.awaiting).map((category) => (
                 <li key={category.tag}>
                   <AwaitingRecordCard category={category} />
@@ -256,22 +256,22 @@ export default async function ResultsPage() {
           title={t.method.title}
           description={t.method.lead}
         />
-        <ul className="grid gap-4 sm:grid-cols-2">
+        <ul className="grid gap-5 sm:grid-cols-2 md:gap-6">
           {(Object.keys(STANDARD_ICONS) as (keyof typeof STANDARD_ICONS)[]).map((key) => {
             const Icon = STANDARD_ICONS[key];
             const standard = t.method.standards[key];
             return (
-              <li key={key} className="rounded-card border border-line bg-white p-5 shadow-soft">
+              <li key={key} className="rounded-card border border-line bg-white p-6 shadow-soft">
                 <span className="grid size-10 place-items-center rounded-xl bg-blue-soft text-blue">
                   <Icon aria-hidden="true" className="size-5" />
                 </span>
-                <h3 className="mt-3 font-bold text-navy">{standard.title}</h3>
-                <p className="mt-1 text-sm text-muted">{standard.text}</p>
+                <h3 className="mt-4 font-bold text-navy">{standard.title}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-muted">{standard.text}</p>
               </li>
             );
           })}
         </ul>
-        <p className="mt-6 text-sm text-muted">{t.method.disclaimer}</p>
+        <p className="mt-8 max-w-prose text-sm leading-relaxed text-muted">{t.method.disclaimer}</p>
       </BleedSplit>
 
       <CtaBleedSplit

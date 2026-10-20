@@ -76,7 +76,7 @@ export function StickyMediaLayout({
     </span>
   );
   return (
-    <div className={cn("grid gap-8 lg:grid-cols-2 lg:gap-12", className)}>
+    <div className={cn("grid gap-10 lg:grid-cols-2 lg:gap-16", className)}>
       <div aria-hidden="true" className={cn("relative", imageSide === "left" ? "lg:order-1" : "lg:order-2")}>
         <div className="flex flex-col gap-4 lg:sticky lg:top-24">
           <div className="relative aspect-16/10 overflow-hidden rounded-card bg-surface shadow-soft lg:aspect-auto lg:h-[min(60vh,560px)]">

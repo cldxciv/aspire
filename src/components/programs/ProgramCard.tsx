@@ -59,7 +59,7 @@ export function ProgramCard({
   const facts = showFacts ? cardFacts(program, t.card.facts, t.units) : [];
 
   return (
-    <Card tint={tint} interactive className={cn("group relative flex h-full flex-col", cardFocus)}>
+    <Card tint={tint} interactive className={cn("@container group relative flex h-full flex-col", cardFocus)}>
       {image && (
         <div className="relative aspect-video overflow-hidden bg-blue-soft">
           <Image
@@ -76,8 +76,9 @@ export function ProgramCard({
           )}
         </div>
       )}
-      <div className="flex flex-1 flex-col p-5">
-        <div className="mb-3 flex items-start justify-between gap-2">
+      {/* Roomier padding once the card is at least 18rem wide (narrow 4-up cards keep the compact size). */}
+      <div className="flex flex-1 flex-col p-5 @min-[18rem]:p-6">
+        <div className="mb-4 flex items-start justify-between gap-2">
           <span
             className={cn(
               "block w-16 shrink-0 overflow-hidden rounded-xl bg-blue-soft",
@@ -97,23 +98,23 @@ export function ProgramCard({
           </Link>
         </h3>
         {tracks.length > 0 && (
-          <p className="mt-1 text-xs font-bold text-blue">
+          <p className="mt-1.5 text-xs font-bold text-blue">
             <span className="sr-only">{t.card.preparesFor} </span>
             {tracks.map((track) => trackLabel(track, t.tracks)).join(" · ")}
           </p>
         )}
-        <p className="mt-1.5 flex-1 text-sm text-muted">{program.shortDescription}</p>
+        <p className="mt-2.5 flex-1 text-sm leading-relaxed text-muted">{program.shortDescription}</p>
         {facts.length > 0 && (
-          <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
+          <dl className="mt-5 grid grid-cols-2 gap-2 text-xs @min-[18rem]:gap-2.5">
             {facts.map((fact) => (
-              <div key={fact.label} className="rounded-lg bg-white/80 px-2.5 py-2 ring-1 ring-line">
+              <div key={fact.label} className="rounded-lg bg-white/80 px-2.5 py-2 ring-1 ring-line @min-[18rem]:px-3 @min-[18rem]:py-2.5">
                 <dt className="font-semibold text-muted">{fact.label}</dt>
                 <dd className="mt-0.5 font-bold text-navy">{fact.value}</dd>
               </div>
             ))}
           </dl>
         )}
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
           <span aria-hidden="true" className="inline-flex items-center gap-1 text-sm font-extrabold text-blue">
             {t.card.learnMore} <ArrowRight className="size-4" />
           </span>

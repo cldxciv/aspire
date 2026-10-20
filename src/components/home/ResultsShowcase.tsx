@@ -72,13 +72,13 @@ export function ResultsShowcase({
         >
           {t.title}
         </h2>
-        <p className="mt-3 text-muted">{hasCards ? t.leadWithCards : t.leadEmpty}</p>
-        <ButtonLink href={localePath("/results", locale)} variant="dark" className="mt-6">
+        <p className="mt-4 max-w-prose leading-relaxed text-muted">{hasCards ? t.leadWithCards : t.leadEmpty}</p>
+        <ButtonLink href={localePath("/results", locale)} variant="dark" className="mt-7">
           {t.cta} <ArrowRight aria-hidden="true" className="size-4" />
         </ButtonLink>
       </div>
       {hasCards && (
-        <div className="mt-8">
+        <div className="mt-10 md:mt-12">
           <ResultRail
             cards={cards}
             label={t.railLabel}

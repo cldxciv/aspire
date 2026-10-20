@@ -109,7 +109,7 @@ export default async function ProgramPage({ params }: PageProps<"/[lang]/program
         imageFirstOnMobile={false}
         imageLabel={photos.aside.src.startsWith("/images/stock/") ? stockLabel : undefined}
       >
-        <div className="space-y-9">
+        <div className="space-y-10 md:space-y-12">
           {placeholder && (
             <Notice variant="warning" title={td.draftTitle}>
               {td.draftBody}
@@ -125,17 +125,17 @@ export default async function ProgramPage({ params }: PageProps<"/[lang]/program
                 {td.overview}
               </h2>
             </div>
-            <p className="mt-3 text-ink">{program.description}</p>
+            <p className="mt-4 max-w-prose leading-relaxed text-ink">{program.description}</p>
           </div>
           <div>
             <h2 id="program-audience" className={subheading}>
               {td.audience}
             </h2>
-            <p className="mt-3 text-ink">{program.targetAudience}</p>
+            <p className="mt-4 max-w-prose leading-relaxed text-ink">{program.targetAudience}</p>
             {audienceFacts.length > 0 && (
-              <dl className="mt-4 grid gap-3 sm:grid-cols-3">
+              <dl className="mt-6 grid gap-4 sm:grid-cols-3">
                 {audienceFacts.map((fact) => (
-                  <div key={fact.label} className="rounded-control border border-line bg-surface p-3.5">
+                  <div key={fact.label} className="rounded-control border border-line bg-surface p-4">
                     <dt className="text-xs font-bold text-muted">{fact.label}</dt>
                     <dd className="mt-1 text-sm font-bold text-navy">{fact.value}</dd>
                   </div>
@@ -154,18 +154,18 @@ export default async function ProgramPage({ params }: PageProps<"/[lang]/program
         imageLabel={stockLabel}
       >
         {program.highlights.length > 0 && (
-          <div className="mb-9">
+          <div className="mb-10 md:mb-12">
             <h2 id="program-highlights" className={subheading}>
               {td.highlights}
             </h2>
-            <p className="mt-2 text-muted">{td.highlightsLead}</p>
-            <ul className="mt-5 grid gap-3">
+            <p className="mt-3 max-w-prose leading-relaxed text-muted">{td.highlightsLead}</p>
+            <ul className="mt-6 grid gap-3.5">
               {program.highlights.map((highlight) => (
                 <li
                   key={highlight}
-                  className="flex items-start gap-2.5 rounded-control border border-line bg-white p-3.5 text-sm text-ink"
+                  className="flex items-start gap-3 rounded-control border border-line bg-white px-4 py-3.5 text-sm leading-relaxed text-ink"
                 >
-                  <CircleCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-success" />
+                  <CircleCheck aria-hidden="true" className="mt-1 size-4 shrink-0 text-success" />
                   {highlight}
                 </li>
               ))}

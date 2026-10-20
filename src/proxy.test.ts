@@ -170,6 +170,18 @@ describe("preview gate (D-027)", () => {
     expect(proxy(withAuth("/", auth("wrong"))).status).toBe(401);
   });
 
+  it("never gates /api/mcp (agents send their own bearer token; the route authenticates it)", () => {
+    vi.stubEnv("PREVIEW_ACCESS_PASSWORD", "test-secret");
+    for (const authorization of [undefined, "Bearer asp_mcp_example"]) {
+      const response = proxy(withAuth("/api/mcp", authorization));
+      expect(response.status).not.toBe(401);
+      expect(response.headers.get("www-authenticate")).toBeNull();
+    }
+    // Only the exact endpoint is exempt.
+    expect(proxy(withAuth("/api/mcp-tokens")).status).toBe(401);
+    expect(proxy(withAuth("/api/admin/mcp-tokens")).status).toBe(401);
+  });
+
   it("lets the right password through, then applies the normal locale and portal rules", () => {
     vi.stubEnv("PREVIEW_ACCESS_PASSWORD", "test-secret");
     previewOn();

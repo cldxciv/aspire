@@ -4,6 +4,7 @@ import { FillMediaSplit } from "@/components/about/FillMediaSplit";
 import { PhotoPanel } from "@/components/about/PhotoPanel";
 import { mixedResultCards } from "@/components/about/result-cards";
 import { ResultsBand } from "@/components/about/ResultsBand";
+import { ADMISSIONS_HERO_IMAGES } from "@/components/admissions/hero-images";
 import { NextSteps } from "@/components/admissions/NextSteps";
 import { ScholarshipPanel } from "@/components/admissions/ScholarshipPanel";
 import { FaqList } from "@/components/faq/FaqList";
@@ -21,6 +22,7 @@ import {
   SectionHeading,
   type SectionTone,
 } from "@/components/ui";
+import { heroSlides } from "@/components/ui/hero-slides";
 import { stockImages } from "@/content/images";
 import { format } from "@/i18n/format";
 import { localePath } from "@/i18n/paths";
@@ -110,8 +112,12 @@ export default async function AdmissionsPage() {
         crumbs={[{ label: t.hero.crumb }]}
         homeLabel={tc.labels.home}
         homeHref={localePath("/", locale)}
-        image={localizeImage(stockImages.signingForm, locale)}
-        imageLabel={photoLabel}
+        // Stock only (no landscapes or result cards), so preview and production share the first fold.
+        slides={heroSlides(
+          ADMISSIONS_HERO_IMAGES.map((key) => stockImages[key]),
+          photoLabel,
+          locale,
+        )}
       />
 
       {/* D-030: the form beside a tall photo (after the form on small screens, so the form stays near the top). */}

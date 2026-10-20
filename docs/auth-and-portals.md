@@ -6,7 +6,7 @@ Owner: AUTH workstream (was PORTAL). Decisions: D-011 (deny by default, proxy is
 
 - **Sign-in works at the API level** for all three roles: `POST /api/auth/login` checks a login id + password against a local SQLite user store and sets an `HttpOnly` session cookie. `getSession()` validates that cookie against the database on every request.
 - **The UI is built (AUTH-2), in English and Hindi (`/hi/...`).** See "Pages" below: `/login` with Student / Parent / Admin tabs, `/forgot-password` (contact the office — no email service, no fake reset), `/account/password` (change password; also where `mustChangePassword` accounts are sent), the student / parent / admin portals, and admin user management (`/admin/users`) + audit log (`/admin/audit`).
-- **Portal data stays honest.** No LMS or student-information system is connected. Portal APIs return the signed-in user's own account details and `notConnected: ["timetable","results","attendance"]`. Nothing invents grades, attendance or enquiries. `/api/admin/enquiries` stays `503 not_configured` because enquiries are never stored.
+- **Portal data stays honest.** No LMS or student-information system is connected. Since M6 the portals show real data from the site's own tools (mock tests, study planner, Ask Aspire topics) via `src/components/portal/learner-tools.ts`; timetable, classroom results and attendance remain `notConnected`. Nothing invents grades, attendance or enquiries. `/api/admin/enquiries` stays `503 not_configured` because enquiries are never stored.
 - **Accounts:** the first admin is created with `npm run auth:create-admin`. Admins then create student, parent and admin accounts via `/api/admin/users`. In development, `npm run auth:seed` creates four demo accounts.
 
 ## Architecture
@@ -94,7 +94,7 @@ type Session = {
 |---|---|
 | student | `id === session.userId` |
 | parent | `id` is in `session.linkedStudentIds`, which comes from `parent_links`. Only enabled student accounts count. Missing or empty means none |
-| admin | **Denied** for learner records until a staff permission model exists (for example, centre-scoped). Admins manage *accounts* through `/api/admin/users`, not learner data |
+| admin | **Denied** for learner records in the portal until a staff permission model exists (for example, centre-scoped). Admins manage *accounts* through `/api/admin/users`, not learner data. **Exception (owner request, M6 — D-036):** an admin-issued MCP token can call `get_student_progress`, which returns counts and labels only (mock-test totals, planner consistency, doubt-topic labels — no answers, question text or photos); every call is audited (`mcp.call` + token id) |
 
 ## APIs
 
@@ -216,8 +216,8 @@ You type the password at a hidden prompt, twice. It must be 10 to 128 characters
 | `/login` | 50/50 layout (form + labelled stock photo). Student / Parent / Admin tabs (ARIA tabs: arrows, Home/End); `?role=` and `?next=` pre-select. Login ID + password (autocomplete attrs, show/hide). Focused error summary; generic failure + "check the tab" hint; separate copy for 429 (minutes from `Retry-After`), network, cross-origin and server errors. Password field cleared after each attempt. Signed-in visitors see "signed in as X / go to your portal / sign out" |
 | `/forgot-password` | Contact the office or your centre (link to the localised contact page). No reset form |
 | `/account/password` | Change password for every role (current / new / confirm, policy hints) → `POST /api/auth/change-password` → role home or a safe `next` |
-| `/student` (+ `timetable`, `resources`, `progress`) | Own account details (name, login ID, role, linked-parent count) + honest "not connected" cards |
-| `/parent` (+ `progress`, `updates`) | Only the learners linked to this account (read server-side from the session user id), each with "not connected" states; empty state when none |
+| `/student` (+ `timetable`, `resources`, `progress`) | Own account details + **real tool data (M6)**: mock-test attempts, best scores, badges and links to result/certificate/report; study-planner streak, study days (last 30), XP, countdown; top Ask Aspire doubt topics (AI-tagged). Still "not connected": timetable, classroom results, attendance, study material |
+| `/parent` (+ `progress`, `updates`) | Only the learners linked to this account (read server-side; each re-checked with `canAccessStudentRecord`): mock-test summary, planner consistency (counts only — no XP, exam or exam date), doubt subjects/topics; `/parent/progress` **is** the report (D-033: nothing is sent by WhatsApp/SMS/email); `/parent/updates` lists recent activity. Attendance/classroom results/announcements still "not connected" |
 | `/admin` | Real account counts from the database |
 | `/admin/users` | List with role / status / search filters; create (temporary password shown **once** in a dialog with copy button, then dropped); rename; disable (confirm) / enable; reset password (shown once); link / unlink parent ↔ student. No disable/reset on your own account |
 | `/admin/audit` | Latest 50 / 100 / 200 audit entries, names instead of ids, no secrets |

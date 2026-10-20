@@ -34,7 +34,7 @@ export function ResourcesTeaser({
 
   return (
     <Section tone={tone} aria-labelledby="home-resources-title">
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,2.4fr)] lg:gap-10">
+      <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,2.4fr)] lg:gap-12 xl:gap-16">
         <div>
           <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-blue">{t.eyebrow}</p>
           <h2
@@ -43,19 +43,19 @@ export function ResourcesTeaser({
           >
             {t.title}
           </h2>
-          <p className="mt-3 text-muted">{t.lead}</p>
-          <ButtonLink href={localePath("/resources", locale)} variant="dark" className="mt-5">
+          <p className="mt-4 max-w-prose leading-relaxed text-muted">{t.lead}</p>
+          <ButtonLink href={localePath("/resources", locale)} variant="dark" className="mt-7">
             {t.cta} <ArrowRight aria-hidden="true" className="size-4" />
           </ButtonLink>
           {/* Labelled stock photo from `lg` (D-030). */}
-          <figure className="relative m-0 mt-6 hidden aspect-4/3 overflow-hidden rounded-card bg-surface shadow-soft lg:block">
+          <figure className="relative m-0 mt-8 hidden aspect-4/3 overflow-hidden rounded-card bg-surface shadow-soft lg:block">
             <Image src={photo.src} alt={photo.alt} fill sizes="340px" className="object-cover" />
             <span className="absolute bottom-2 left-2 rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white">
               {imageLabel}
             </span>
           </figure>
         </div>
-        <ul className="grid gap-4 sm:grid-cols-2">
+        <ul className="grid gap-5 sm:grid-cols-2 md:gap-6">
           {shown.map((article) => (
             <li key={article.id}>
               <ArticleCard

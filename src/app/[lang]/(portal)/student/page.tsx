@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { loadLearnerTools } from "@/components/portal/learner-tools";
 import { PortalGate } from "@/components/portal/PortalGate";
 import { StudentOverview, type StudentViewMessages } from "@/components/portal/StudentViews";
 import { getLocale, getMessages } from "@/i18n/server";
@@ -9,7 +10,11 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t.student.metaTitle, description: t.student.metaDescription };
 }
 
-/** Student dashboard: own account details + honest "not connected" areas (D-029); data-free preview when signed out (D-014). */
+/**
+ * Student dashboard: own account details, the student's OWN practice-tool activity (mock tests,
+ * study planner, Ask Aspire topics; record-checked for the session's own id) and honest "not
+ * connected" areas (D-029); data-free preview when signed out (D-014).
+ */
 export default async function StudentOverviewPage() {
   const [locale, t, auth, common] = await Promise.all([
     getLocale(),
@@ -34,6 +39,7 @@ export default async function StudentOverviewPage() {
                 }
               : null
           }
+          tools={access.kind === "session" ? loadLearnerTools(access.session, access.session.userId, locale) : null}
         />
       )}
     </PortalGate>

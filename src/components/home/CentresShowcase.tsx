@@ -1,5 +1,6 @@
 import { ArrowRight } from "lucide-react";
-import { AspireImage, ButtonLink, Container, DemoBadge } from "@/components/ui";
+import { AspireImage, ButtonLink, Container, DemoBadge, SECTION_PANEL } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { centreImage } from "@/components/centres/centre-images";
 import { telHref } from "@/components/centres/contact-links";
 import type { AspireAsset } from "@/content/aspire-assets";
@@ -77,12 +78,13 @@ export function CentresShowcase({ centres, locale }: { centres: Centre[]; locale
   const count = centres.length;
 
   return (
-    <section aria-labelledby="home-centres-title" className="overflow-hidden bg-surface">
-      <Container className="grid lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        {/* Navy panel: bleeds to the viewport edge (clipped by the section's overflow-hidden). */}
+    <section aria-labelledby="home-centres-title" className={cn(SECTION_PANEL, "bg-surface")}>
+      <Container gutters="section" className={cn("grid lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]")}>
+        {/* Navy panel: bleeds to the section panel's edge (clipped by SECTION_PANEL's overflow-clip); below `lg` the
+            negative insets match SECTION_GUTTERS so it spans the full width. */}
         <div
           data-surface="dark"
-          className="relative isolate py-12 text-white before:absolute before:inset-y-0 before:-left-4 before:-right-4 before:-z-10 before:bg-linear-to-br before:from-navy before:to-navy-2 sm:before:-left-5 sm:before:-right-5 lg:py-16 lg:pr-8 xl:pr-12 lg:before:left-[-100vw] lg:before:right-0"
+          className="relative isolate py-14 text-white before:absolute before:inset-y-0 before:-left-5 before:-right-5 before:-z-10 before:bg-linear-to-br before:from-navy before:to-navy-2 sm:py-16 sm:before:-left-6 sm:before:-right-6 md:py-20 md:before:-left-8 md:before:-right-8 lg:py-24 lg:pr-10 xl:pr-14 lg:before:left-[-100vw] lg:before:right-0"
         >
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-gold">{t.eyebrow}</p>
@@ -94,14 +96,14 @@ export function CentresShowcase({ centres, locale }: { centres: Centre[]; locale
           >
             {format(count === 1 ? t.titleOne : t.titleMany, { count })}
           </h2>
-          <p className="mt-4 max-w-md text-[#d3e1f3]">{t.lead}</p>
-          <ButtonLink href={localePath("/centres", locale)} className="mt-6">
+          <p className="mt-4 max-w-md leading-relaxed text-[#d3e1f3]">{t.lead}</p>
+          <ButtonLink href={localePath("/centres", locale)} className="mt-7">
             {t.cta} <ArrowRight aria-hidden="true" className="size-4" />
           </ButtonLink>
-          {hasPlaceholders && <p className="mt-5 max-w-md text-sm text-[#d3e1f3]">{t.demoNote}</p>}
+          {hasPlaceholders && <p className="mt-6 max-w-md text-sm text-[#d3e1f3]">{t.demoNote}</p>}
         </div>
 
-        <div data-surface="light" className="py-10 lg:py-16 lg:pl-8 xl:pl-10">
+        <div data-surface="light" className="py-12 md:py-16 lg:py-24 lg:pl-10 xl:pl-12">
           <CentrePicker
             centres={items}
             initialSlug={initialSlug}

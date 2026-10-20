@@ -19,6 +19,8 @@ import {
   getStats,
 } from "@/lib/data";
 import type { ResultRecord } from "@/lib/types";
+import { stockImages } from "@/content/images";
+import { HOME_PROGRAMS_SLIDES } from "./home-carousels";
 import { ProgramPaths } from "./ProgramPaths";
 import { ResultsShowcase, toResultCardViews } from "./ResultsShowcase";
 import { StatsBand } from "./StatsBand";
@@ -175,11 +177,18 @@ describe("home sections I with placeholder content (development / preview)", () 
     expect(count(html, />Demo</g)).toBe(programs.filter((p) => p.status === "placeholder").length);
     expect(count(html, /<h3[^>]*class="[^"]*font-serif/g)).toBe(programs.length);
 
+    // A carousel of labelled stock study scenes (home-carousels.ts), lazy (below the fold), with alt text.
+    expect(count(html, /aria-roledescription="carousel"/g)).toBe(1);
+    expect(html).toContain('aria-label="Our programs: Photo gallery"');
     const images = html.match(/<img[^>]*>/g) ?? [];
-    expect(images).toHaveLength(1);
-    expect(images[0]).toContain('alt=""');
-    expect(images[0]).toContain('loading="lazy"');
-    expect(images[0]).toContain("students-taking-notes");
+    expect(images).toHaveLength(HOME_PROGRAMS_SLIDES.length);
+    HOME_PROGRAMS_SLIDES.forEach((key, i) => {
+      expect(images[i]).toContain(encodeURIComponent(stockImages[key].src));
+      expect(images[i]).toContain(`alt="${esc(stockImages[key].alt)}"`);
+      expect(images[i]).toContain('loading="lazy"');
+      expect(images[i]).not.toMatch(/fetchPriority="high"/i);
+    });
+    expect(count(html, />Illustrative stock photo</g)).toBe(HOME_PROGRAMS_SLIDES.length);
     expect(html).not.toContain("Program details are being finalised");
     expectNoDesignFiller(html);
   });

@@ -58,7 +58,7 @@ export default async function ProgramsPage() {
           title={tl.directoryTitle}
           description={programs.length > 0 ? tl.directoryLead : undefined}
         />
-        {hasPlaceholders && <Notice className="mb-6">{tl.demoNotice}</Notice>}
+        {hasPlaceholders && <Notice className="mb-8">{tl.demoNotice}</Notice>}
         {programs.length > 0 ? (
           <ProgramDirectory programs={programs} messages={programCardMessages(locale)} />
         ) : (
@@ -68,7 +68,7 @@ export default async function ProgramsPage() {
             action={<ButtonLink href={localePath("/admissions#enquiry", locale)}>{tl.emptyCta}</ButtonLink>}
           />
         )}
-        <Notice variant="warning" className="mt-8">
+        <Notice variant="warning" className="mt-10 md:mt-12">
           {tl.availabilityNotice}
         </Notice>
       </Section>
@@ -85,7 +85,7 @@ export default async function ProgramsPage() {
           </h2>
           <p className="mt-2 text-[#dbe8f7]">{tl.tracksLead}</p>
         </PhotoBand>
-        <div className="mt-6">
+        <div className="mt-8 md:mt-10">
           <TrackTiles
             label={stockLabel}
             items={[
@@ -110,8 +110,8 @@ export default async function ProgramsPage() {
         >
           {tl.pageGuideTitle}
         </h2>
-        <p className="mt-3 text-muted">{tl.pageGuideLead}</p>
-        <ul className="mt-5 space-y-3">
+        <p className="mt-4 max-w-prose leading-relaxed text-muted">{tl.pageGuideLead}</p>
+        <ul className="mt-7 space-y-4">
           {Object.values(tl.pageGuidePoints).map((point) => (
             <li key={point} className="flex items-start gap-2.5 text-ink">
               <CircleCheck aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-success" />

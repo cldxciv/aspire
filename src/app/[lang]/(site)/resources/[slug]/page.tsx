@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { richText } from "@/components/legal/rich-text";
 import { ArticleCard } from "@/components/resources/ArticleCard";
 import { formatIsoDate } from "@/components/resources/format";
+import { articlePagePhotos } from "@/components/resources/hero-slides";
 import {
   Badge,
   ButtonLink,
@@ -15,12 +16,11 @@ import {
   SectionHeading,
   StickyMediaLayout,
 } from "@/components/ui";
-import { stockImages } from "@/content/images";
 import { format } from "@/i18n/format";
 import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
 import { cn } from "@/lib/cn";
-import { getArticle, getArticles, getArticleSlugs, localizeImage } from "@/lib/data";
+import { getArticle, getArticles, getArticleSlugs } from "@/lib/data";
 import type { Article } from "@/lib/types";
 
 /** D-017: wait for the complete static render so notFound() yields a real 404 on the first request (see programs/[slug]). */
@@ -66,8 +66,9 @@ export default async function ArticlePage({ params }: PageProps<"/[lang]/resourc
 
   const related = relatedArticles(article, await getArticles(locale));
   const photoLabel = tc.labels.illustrativeStockPhoto;
-  // The cover (a licensed stock photo, alt already localised by getArticle) leads the page; neutral fallback otherwise.
-  const heroImage = article.coverImage ?? localizeImage(stockImages.booksAndNotebook, locale);
+  // Hero carousel: the article's cover (a licensed stock photo, alt already localised by getArticle;
+  // a neutral fallback otherwise) first, then category photos; the sticky column gets two others.
+  const photos = articlePagePhotos({ article, related, label: photoLabel, locale });
   const resourcesHref = localePath("/resources", locale);
 
   return (
@@ -78,15 +79,15 @@ export default async function ArticlePage({ params }: PageProps<"/[lang]/resourc
         crumbs={[{ label: t.hero.crumb, href: resourcesHref }, { label: article.title }]}
         homeLabel={tc.labels.home}
         homeHref={localePath("/", locale)}
-        image={heroImage}
-        imageLabel={photoLabel}
+        slides={photos.slides}
+        carouselLabels={tc.carousel}
       />
 
-      {/* D-030: the article beside a sticky column of stock photos (left out below `sm`; the hero has one). */}
+      {/* D-030: the article beside a sticky column of stock photos (left out below `sm`; the hero has photos). */}
       <Section>
         <StickyMediaLayout
-          image={localizeImage(stockImages.studyThroughWindow, locale)}
-          secondaryImage={localizeImage(stockImages.libraryReading, locale)}
+          image={photos.sticky[0]}
+          secondaryImage={photos.sticky[1]}
           imageLabel={photoLabel}
           className="max-sm:[&>aside]:hidden"
         >

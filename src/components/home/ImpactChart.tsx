@@ -148,16 +148,16 @@ function RankerStatCard({
   return (
     <div
       data-surface="dark"
-      className="flex flex-col rounded-card bg-linear-to-br from-navy to-navy-2 p-6 text-white shadow-card"
+      className="flex flex-col rounded-card bg-linear-to-br from-navy to-navy-2 p-6 text-white shadow-card md:p-7"
     >
       <div className="flex items-start justify-between gap-3">
         <AspireImage asset={aspireAssets.trophySuccess} className="w-16 shrink-0" />
         {stat.status === "placeholder" && <DemoBadge label={demoLabel} />}
       </div>
       <p className="mt-5 font-serif text-5xl font-semibold leading-none text-gold">{stat.value}</p>
-      <p className="mt-2 text-lg font-semibold">{stat.label}</p>
-      {stat.context && <p className="mt-1 text-sm text-[#d3e1f3]">{stat.context}</p>}
-      <p className="mt-auto pt-5 text-xs text-[#d3e1f3]">{format(t.coverage, { span: yearSpan })}</p>
+      <p className="mt-3 text-lg font-semibold">{stat.label}</p>
+      {stat.context && <p className="mt-1.5 text-sm text-[#d3e1f3]">{stat.context}</p>}
+      <p className="mt-auto pt-6 text-xs text-[#d3e1f3]">{format(t.coverage, { span: yearSpan })}</p>
     </div>
   );
 }
@@ -202,16 +202,16 @@ export function ImpactChart({
       >
         {t.title}
       </h2>
-      <p id="home-impact-subtitle" className="mt-2 text-muted">
+      <p id="home-impact-subtitle" className="mt-3 max-w-2xl leading-relaxed text-muted">
         {t.subtitle}
         {demo && ` ${t.demoSuffix}`}
       </p>
 
-      <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_17rem] xl:grid-cols-[minmax(0,1fr)_16rem_minmax(0,0.85fr)]">
+      <div className="mt-8 grid gap-6 md:mt-10 lg:grid-cols-[minmax(0,1fr)_17rem] lg:gap-8 xl:grid-cols-[minmax(0,1fr)_16rem_minmax(0,0.85fr)]">
         <figure
           aria-labelledby="home-impact-title"
           aria-describedby="home-impact-subtitle"
-          className="min-w-0 rounded-card border border-line bg-white p-4 shadow-soft sm:p-6"
+          className="min-w-0 rounded-card border border-line bg-white p-5 shadow-soft sm:p-7"
         >
           <ul aria-label={t.legendLabel} className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-ink">
             {SERIES.map((series) => (
@@ -222,15 +222,15 @@ export function ImpactChart({
               </li>
             ))}
           </ul>
-          <div className="mt-3">
+          <div className="mt-5">
             <GroupedColumns counts={counts} t={t} />
           </div>
-          <details className="group mt-2 border-t border-line pt-1">
+          <details className="group mt-4 border-t border-line pt-2">
             <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-sm font-bold text-blue hover:underline [&::-webkit-details-marker]:hidden">
               {t.showTable}
               <ChevronDown aria-hidden="true" className="size-4 transition-transform group-open:rotate-180" />
             </summary>
-            <table className="mt-2 w-full max-w-md text-left text-sm tabular-nums">
+            <table className="mt-3 w-full max-w-md text-left text-sm tabular-nums">
               <caption className="sr-only">{t.tableCaption}</caption>
               <thead>
                 <tr className="border-b border-line text-muted">

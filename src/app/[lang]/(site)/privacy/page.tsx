@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalDocument, ToBeConfirmed, type LegalSectionContent } from "@/components/legal/LegalDocument";
+import { LEGAL_PAGE_PHOTOS, legalHeroSlides } from "@/components/legal/hero-slides";
 import { richText } from "@/components/legal/rich-text";
 import { PageHero, Section } from "@/components/ui";
 import { siteConfig } from "@/config/site";
@@ -21,6 +22,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function PrivacyPage() {
   const [locale, t, tc] = await Promise.all([getLocale(), getMessages("legal"), getMessages("common")]);
   const p = t.privacy;
+  const { sticky } = LEGAL_PAGE_PHOTOS.privacy;
   const tbc = <ToBeConfirmed label={t.tbc} />;
   const link = (href: string, label: string) => (
     <Link href={localePath(href, locale)} className="text-blue underline">
@@ -182,15 +184,15 @@ export default async function PrivacyPage() {
         crumbs={[{ label: p.hero.title }]}
         homeLabel={tc.labels.home}
         homeHref={localePath("/", locale)}
-        image={localizeImage(stockImages.notebookPlanning, locale)}
-        imageLabel={tc.labels.illustrativeStockPhoto}
+        slides={legalHeroSlides("privacy", tc.labels.illustrativeStockPhoto, locale)}
+        carouselLabels={tc.carousel}
       />
       <Section>
         <LegalDocument
           sections={sections}
           messages={t}
-          image={localizeImage(stockImages.booksAndNotebook, locale)}
-          secondaryImage={localizeImage(stockImages.libraryAisle, locale)}
+          image={localizeImage(stockImages[sticky[0]], locale)}
+          secondaryImage={localizeImage(stockImages[sticky[1]], locale)}
           imageLabel={tc.labels.illustrativeStockPhoto}
         />
       </Section>

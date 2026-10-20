@@ -7,7 +7,9 @@ import type { Messages } from "@/i18n/messages/types";
 import { localePath } from "@/i18n/paths";
 import { buildLoginHref, CHANGE_PASSWORD_PATH } from "@/lib/auth/paths";
 import { localizeImage } from "@/lib/data";
+import type { LearnerTools } from "./learner-tools-view";
 import { AccountPanel, AreaStatusCards, NotConnected, PortalPageHeader, PortalPanel } from "./PortalBlocks";
+import { DoubtsBlock, MockTestsBlock, PlannerBlock, ToolsPreview } from "./ToolPanels";
 
 /** The signed-in student's own account facts (from the session / account database). */
 export type StudentAccountView = { displayName: string; loginId: string; linkedParents: number };
@@ -19,16 +21,19 @@ export type StudentViewMessages = {
 };
 
 /**
- * Student dashboard. `account` is null for the data-free preview (D-014). Shows only the
- * account's own details and honest "not connected" cards (D-029): no timetable, results or
- * attendance data exists, so none is shown or estimated.
+ * Student dashboard. `account` / `tools` are null for the data-free preview (D-014). Shows the
+ * account's own details, the student's OWN activity in the M6 practice tools (mock tests, study
+ * planner, Ask Aspire doubt topics) and honest "not connected" cards for what still has no source
+ * (timetable, classroom results, attendance, study material): none of that is shown or estimated.
  */
 export function StudentOverview({
   account,
+  tools,
   locale,
   m,
 }: {
   account: StudentAccountView | null;
+  tools: LearnerTools | null;
   locale: Locale;
   m: StudentViewMessages;
 }) {
@@ -42,7 +47,7 @@ export function StudentOverview({
         eyebrow={t.areas.student.label}
         title={account ? format(s.welcome, { name: account.displayName }) : s.previewTitle}
         description={account ? s.lead : s.previewLead}
-        badge={account ? t.blocks.accountOnlyBadge : t.blocks.previewBadge}
+        badge={account && tools ? t.blocks.toolDataBadge : account ? t.blocks.accountOnlyBadge : t.blocks.previewBadge}
       />
 
       <AccountPanel
@@ -76,6 +81,20 @@ export function StudentOverview({
         }
       />
 
+      {tools ? (
+        <div className="mb-6 grid gap-6">
+          <MockTestsBlock id="student-mock-tests" level={2} audience="student" compact locale={locale} t={t} view={tools.mockTests} />
+          <div className="grid gap-6 xl:grid-cols-2">
+            <PlannerBlock id="student-planner" level={2} audience="student" compact locale={locale} t={t} view={tools.planner} />
+            <DoubtsBlock id="student-doubts" level={2} audience="student" compact locale={locale} t={t} view={tools.doubts} />
+          </div>
+        </div>
+      ) : (
+        <div className="mb-6">
+          <ToolsPreview id="student-tools-preview" t={t} />
+        </div>
+      )}
+
       <PortalPanel id="student-areas" title={s.areasTitle} description={s.areasDescription}>
         <AreaStatusCards
           area="student"
@@ -96,9 +115,9 @@ export function StudentOverview({
   );
 }
 
-type SectionKey = "timetable" | "resources" | "progress";
+type SectionKey = "timetable" | "resources";
 
-/** Student section pages (timetable, study material, progress): header + one honest empty state. */
+/** Student section pages (timetable, study material): header + one honest empty state. */
 export function StudentSection({
   section,
   preview,
@@ -112,8 +131,7 @@ export function StudentSection({
 }) {
   const s = t.student;
   const page = s[section];
-  const system =
-    section === "timetable" ? s.cards.timetable.system : section === "resources" ? s.cards.resources.system : s.progress.system;
+  const system = section === "timetable" ? s.cards.timetable.system : s.cards.resources.system;
   return (
     <>
       <PortalPageHeader
@@ -136,6 +154,40 @@ export function StudentSection({
             ) : undefined
           }
         >
+          {page.body}
+        </NotConnected>
+      </PortalPanel>
+    </>
+  );
+}
+
+/**
+ * Student progress: the student's own mock tests (with links to each attempt's result, certificate
+ * and parent report), study-planner consistency and doubt topics, then the classroom results and
+ * attendance that are still not connected. `tools` is null for the data-free preview.
+ */
+export function StudentProgress({ tools, locale, t }: { tools: LearnerTools | null; locale: Locale; t: Messages<"portal"> }) {
+  const page = t.student.progress;
+  return (
+    <>
+      <PortalPageHeader
+        area="student"
+        eyebrow={t.areas.student.label}
+        title={page.title}
+        description={page.description}
+        badge={tools ? t.blocks.toolDataBadge : t.blocks.previewBadge}
+      />
+      {tools ? (
+        <div className="grid gap-6">
+          <MockTestsBlock id="progress-mock-tests" level={2} audience="student" locale={locale} t={t} view={tools.mockTests} />
+          <PlannerBlock id="progress-planner" level={2} audience="student" locale={locale} t={t} view={tools.planner} />
+          <DoubtsBlock id="progress-doubts" level={2} audience="student" locale={locale} t={t} view={tools.doubts} />
+        </div>
+      ) : (
+        <ToolsPreview id="progress-tools-preview" t={t} />
+      )}
+      <PortalPanel id="student-progress-panel" title={page.panelTitle} className="mt-6">
+        <NotConnected title={page.emptyTitle} system={page.system} requiresLabel={t.blocks.requires}>
           {page.body}
         </NotConnected>
       </PortalPanel>

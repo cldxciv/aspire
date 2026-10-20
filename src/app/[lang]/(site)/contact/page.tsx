@@ -5,23 +5,24 @@ import { PhotoPanel } from "@/components/about/PhotoPanel";
 import { CampusDesks, type CampusDesk } from "@/components/contact/CampusDesks";
 import { ContactDetailsList } from "@/components/contact/ContactDetailsList";
 import { mailtoHref, telHref } from "@/components/contact/contact-links";
+import {
+  CONTACT_DESK_PHOTOS,
+  CONTACT_DETAILS_PHOTO,
+  CONTACT_FORM_PHOTO,
+  CONTACT_HELP_PHOTO,
+  CONTACT_HERO_KEYS,
+} from "@/components/contact/contact-photos";
 import { CONTACT_LINK_CLASS, DetailRow } from "@/components/contact/DetailRow";
 import { SocialLinks } from "@/components/contact/SocialLinks";
 import { EnquiryForm } from "@/components/forms/EnquiryForm";
 import { ButtonLink, Card, DemoBadge, Notice, PageHero, Section, SectionHeading } from "@/components/ui";
+import { heroSlides } from "@/components/ui/hero-slides";
 import { siteConfig } from "@/config/site";
-import { stockImages, type StockImageKey } from "@/content/images";
+import { stockImages } from "@/content/images";
 import type { Messages } from "@/i18n/messages/types";
 import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
 import { getCentres, getContactDetails, getInstituteProfile, isPlaceholder, localizeImage } from "@/lib/data";
-
-/**
- * Stock photos for the campus desks, in desk order (D-030). Generic study scenes, labelled as stock
- * and never captioned as a campus or office; no landscapes and no result cards beside a campus (D-031).
- * None of them is used elsewhere on this page.
- */
-const DESK_PHOTOS: StockImageKey[] = ["classroomDesks", "seminarFromBehind", "libraryReading", "booksAndNotebook"];
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getMessages("contact");
@@ -51,7 +52,7 @@ export default async function ContactPage() {
   const headOffice = details?.headOfficeCentreSlug ? centreBySlug.get(details.headOfficeCentreSlug) : undefined;
   const desks: CampusDesk[] = (details?.campusContacts ?? []).map((contact, index) => {
     const centre = centreBySlug.get(contact.centreSlug);
-    const photoKey = DESK_PHOTOS[index];
+    const photoKey = CONTACT_DESK_PHOTOS[index];
     return {
       slug: contact.centreSlug,
       name: contact.name,
@@ -72,14 +73,17 @@ export default async function ContactPage() {
         crumbs={[{ label: t.hero.crumb }]}
         homeLabel={tc.labels.home}
         homeHref={localePath("/", locale)}
-        image={localizeImage(stockImages.studentsTakingNotes, locale)}
-        imageLabel={photoLabel}
+        slides={heroSlides(
+          CONTACT_HERO_KEYS.map((key) => stockImages[key]),
+          photoLabel,
+          locale,
+        )}
       />
 
       {/* D-030: the form beside a tall photo (after the form on small screens, so the form stays near the top). */}
       <Section>
         <FillMediaSplit
-          image={localizeImage(stockImages.laptopStudy, locale)}
+          image={localizeImage(stockImages[CONTACT_FORM_PHOTO], locale)}
           imageSide="right"
           imageLabel={photoLabel}
           imageFirstOnMobile={false}
@@ -94,7 +98,7 @@ export default async function ContactPage() {
 
       <Section tone="surface">
         <FillMediaSplit
-          image={localizeImage(stockImages.mentoringConversation, locale)}
+          image={localizeImage(stockImages[CONTACT_DETAILS_PHOTO], locale)}
           imageSide="left"
           imageWidth="wide"
           imageLabel={photoLabel}
@@ -122,7 +126,7 @@ export default async function ContactPage() {
       </Section>
 
       <Section aria-labelledby="contact-help-heading">
-        <PhotoPanel image={localizeImage(stockImages.tableDiscussion, locale)} imageLabel={photoLabel} minHeight="lg">
+        <PhotoPanel image={localizeImage(stockImages[CONTACT_HELP_PHOTO], locale)} imageLabel={photoLabel} minHeight="lg">
           <h2
             id="contact-help-heading"
             className="text-[clamp(1.5rem,2.6vw,1.875rem)] font-extrabold leading-snug tracking-tight text-white"

@@ -3,6 +3,7 @@ import "server-only";
 import { mkdirSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { FEATURE_SCHEMAS } from "./features";
 
 /**
  * SQLite connection and schema for accounts, sessions, parent links, the audit log
@@ -121,6 +122,11 @@ export function migrate(db: DatabaseSync): void {
   }
 }
 
+/** Applies the idempotent per-feature schemas (src/lib/db/features, M6) after the core migrations. */
+export function applyFeatureSchemas(db: DatabaseSync): void {
+  for (const { sql } of FEATURE_SCHEMAS) if (sql.trim()) db.exec(sql);
+}
+
 /** Opens (creating the directory if needed), configures and migrates a database. */
 export function openDatabase(path: string): DatabaseSync {
   if (path !== MEMORY_DB_PATH) mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
@@ -133,6 +139,7 @@ export function openDatabase(path: string): DatabaseSync {
       db.exec("PRAGMA synchronous = NORMAL");
     }
     migrate(db);
+    applyFeatureSchemas(db);
   } catch (error) {
     db.close();
     throw error;

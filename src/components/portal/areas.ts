@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  Bot,
   CalendarDays,
   FileText,
   GraduationCap,
@@ -80,6 +81,7 @@ export const portalAreas: Record<Role, PortalAreaConfig> = {
       { key: "overview", href: "/admin", icon: LayoutDashboard },
       { key: "users", href: "/admin/users", icon: UsersRound },
       { key: "audit", href: "/admin/audit", icon: History },
+      { key: "mcp", href: "/admin/mcp", icon: Bot },
       { key: "enquiries", href: "/admin/enquiries", icon: Inbox },
       { key: "content", href: "/admin/content", icon: FileText },
       { key: "centres", href: "/admin/centres", icon: MapPin },

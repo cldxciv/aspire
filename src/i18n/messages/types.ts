@@ -20,6 +20,12 @@ import type portal from "./en/portal";
 import type programs from "./en/programs";
 import type resources from "./en/resources";
 import type results from "./en/results";
+import type tools from "./en/tools";
+import type predictor from "./en/predictor";
+import type mocktest from "./en/mocktest";
+import type ask from "./en/ask";
+import type planner from "./en/planner";
+import type mcp from "./en/mcp";
 
 export type Catalog = {
   common: typeof common;
@@ -36,6 +42,12 @@ export type Catalog = {
   legal: typeof legal;
   portal: typeof portal;
   auth: typeof auth;
+  tools: typeof tools;
+  predictor: typeof predictor;
+  mocktest: typeof mocktest;
+  ask: typeof ask;
+  planner: typeof planner;
+  mcp: typeof mcp;
 };
 
 export type Namespace = keyof Catalog;

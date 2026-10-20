@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { LegalDocument, ToBeConfirmed, type LegalSectionContent } from "@/components/legal/LegalDocument";
+import { LEGAL_PAGE_PHOTOS, legalHeroSlides } from "@/components/legal/hero-slides";
 import { PageHero, Section } from "@/components/ui";
 import { stockImages } from "@/content/images";
 import { localePath } from "@/i18n/paths";
@@ -17,6 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function TermsPage() {
   const [locale, t, tc] = await Promise.all([getLocale(), getMessages("legal"), getMessages("common")]);
+  const { sticky } = LEGAL_PAGE_PHOTOS.terms;
 
   // Neutral skeleton only (see the `legal.terms.sections` messages): each section says what it
   // will cover and stays "To be confirmed" until Aspire and its legal counsel supply approved text.
@@ -38,15 +40,15 @@ export default async function TermsPage() {
         crumbs={[{ label: t.terms.hero.title }]}
         homeLabel={tc.labels.home}
         homeHref={localePath("/", locale)}
-        image={localizeImage(stockImages.signingForm, locale)}
-        imageLabel={tc.labels.illustrativeStockPhoto}
+        slides={legalHeroSlides("terms", tc.labels.illustrativeStockPhoto, locale)}
+        carouselLabels={tc.carousel}
       />
       <Section>
         <LegalDocument
           sections={sections}
           messages={t}
-          image={localizeImage(stockImages.notebookPlanning, locale)}
-          secondaryImage={localizeImage(stockImages.deskLampEvening, locale)}
+          image={localizeImage(stockImages[sticky[0]], locale)}
+          secondaryImage={localizeImage(stockImages[sticky[1]], locale)}
           imageLabel={tc.labels.illustrativeStockPhoto}
         />
       </Section>

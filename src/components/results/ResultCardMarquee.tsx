@@ -104,7 +104,7 @@ export async function ResultCardMarquee({
           className="aspire-result-marquee-track flex w-max py-0.5"
           style={{ "--marquee-duration": `${Math.max(shown.length * secondsPerCard, 10)}s` } as CSSProperties}
         >
-          <ul aria-label={t.listLabel} className="m-0 flex list-none gap-3 p-0 pr-3">
+          <ul aria-label={t.listLabel} className="m-0 flex list-none gap-4 p-0 pr-4">
             {shown.map((card) => (
               <li key={card.id} className={cn(item, "snap-start")}>
                 <ResultCardTile card={card} demoLabel={demoLabel} sizes={sizes} />
@@ -112,7 +112,7 @@ export async function ResultCardMarquee({
             ))}
           </ul>
           {/* Second copy for a seamless loop: hidden from assistive tech and with reduced motion. */}
-          <ul aria-hidden="true" className="m-0 flex list-none gap-3 p-0 pr-3 motion-reduce:hidden">
+          <ul aria-hidden="true" className="m-0 flex list-none gap-4 p-0 pr-4 motion-reduce:hidden">
             {shown.map((card) => (
               <li key={card.id} className={item}>
                 <ResultCardTile card={card} demoLabel={demoLabel} sizes={sizes} decorative />
@@ -121,7 +121,7 @@ export async function ResultCardMarquee({
           </ul>
         </div>
       </div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <label className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-control border border-[#b9cbe0] bg-white px-3 text-xs font-bold text-navy has-checked:border-navy has-checked:bg-navy has-checked:text-white has-focus-visible:outline-3 has-focus-visible:outline-offset-2 has-focus-visible:outline-blue motion-reduce:hidden">
           <input type="checkbox" aria-label={t.pauseLabel} className="aspire-result-marquee-pause sr-only" />
           <Pause aria-hidden="true" className="size-3.5" />

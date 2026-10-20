@@ -78,7 +78,7 @@ export function CentreDirectory({
         role="search"
         aria-label={t.formLabel}
         onSubmit={(e) => e.preventDefault()}
-        className="flex flex-col gap-3 sm:flex-row sm:items-end"
+        className="flex flex-col gap-4 sm:flex-row sm:items-end"
       >
         <div className="flex-1">
           <label htmlFor={searchId} className="mb-1 block text-xs font-bold text-[#354b66]">
@@ -130,20 +130,20 @@ export function CentreDirectory({
         )}
       </form>
 
-      <p role="status" className="mb-4 mt-3 text-sm text-muted">
+      <p role="status" className="mb-6 mt-4 text-sm text-muted">
         {filtered.length === 1 ? t.showingOne : format(t.showingMany, { count: filtered.length })}
         {query.trim() !== "" && ` ${format(t.matching, { query: query.trim() })}`}
       </p>
 
       {hasPlaceholders && (
-        <Notice className="mb-5">
+        <Notice className="mb-8">
           {t.demoNotice}
           {!programsListed && ` ${t.programsUnlisted}`}
         </Notice>
       )}
 
       {filtered.length > 0 ? (
-        <ul id={listId} className="space-y-5">
+        <ul id={listId} className="space-y-8 md:space-y-10">
           {filtered.map((centre, index) => (
             <li key={centre.id}>
               <CentreCard

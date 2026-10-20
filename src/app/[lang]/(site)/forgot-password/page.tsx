@@ -1,6 +1,7 @@
 import { ArrowLeft, ArrowRight, Info } from "lucide-react";
 import type { Metadata } from "next";
 import { ButtonLink, MediaSplit, Notice, PageHero, Section } from "@/components/ui";
+import { heroSlides } from "@/components/ui/hero-slides";
 import { stockImages } from "@/content/images";
 import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
@@ -17,10 +18,19 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+/** Hero carousel: staff help, the identity check, quiet study. None is reused by the body splits. */
+const HERO_IMAGES = [
+  stockImages.mentoringConversation,
+  stockImages.signingForm,
+  stockImages.studyThroughWindow,
+  stockImages.booksAndNotebook,
+] as const;
+
 /**
  * /forgot-password and /hi/forgot-password (D-029). Honest: the site sends no email or SMS,
  * so there is no self-service reset form — Aspire staff reset passwords after checking who the
  * person is, and the account must choose a new password at the next sign-in.
+ * The hero is a carousel of labelled stock photos; no photo appears twice on the page.
  */
 export default async function ForgotPasswordPage() {
   const [locale, t, common] = await Promise.all([getLocale(), getMessages("auth"), getMessages("common")]);
@@ -41,8 +51,7 @@ export default async function ForgotPasswordPage() {
         homeLabel={common.labels.home}
         homeHref={localePath("/", locale)}
         crumbs={[{ label: t.login.crumb, href: loginHref }, { label: f.crumb }]}
-        image={localizeImage(stockImages.mentoringConversation, locale)}
-        imageLabel={common.labels.illustrativeStockPhoto}
+        slides={heroSlides(HERO_IMAGES, common.labels.illustrativeStockPhoto, locale)}
       >
         <ButtonLink href={contactHref}>
           {f.contactCta}

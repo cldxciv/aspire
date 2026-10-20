@@ -20,11 +20,11 @@ export function archiveAwaiting(t: Messages<"results">["awaiting"]): AwaitingCat
 
 export function AwaitingRecordCard({ category }: { category: AwaitingCategory }) {
   return (
-    <div className="flex h-full flex-col rounded-[13px] border border-line bg-white p-[18px] text-ink shadow-soft">
+    <div className="flex h-full flex-col rounded-[13px] border border-line bg-white p-5 text-ink shadow-soft md:p-6">
       <Badge className="self-start">{category.tag}</Badge>
       <h3 className="mt-3 text-[15px] font-bold text-navy">{category.title}</h3>
-      <p className="mt-1 flex-1 text-xs text-muted">{category.description}</p>
-      <p className="mt-3 rounded-lg border border-dashed border-[#cbd8e7] bg-[#f8fbff] p-2.5 text-[11px] font-semibold text-[#53657a]">
+      <p className="mt-1.5 flex-1 text-xs leading-relaxed text-muted">{category.description}</p>
+      <p className="mt-4 rounded-lg border border-dashed border-[#cbd8e7] bg-[#f8fbff] p-2.5 text-[11px] font-semibold text-[#53657a]">
         {category.status}
       </p>
     </div>

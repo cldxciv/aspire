@@ -1,13 +1,41 @@
-import Image from "next/image";
+import { cn } from "@/lib/cn";
 import type { ReactNode } from "react";
-import { Container } from "@/components/ui";
+import { carouselLabelsFor, Container, ImageCarousel, type CarouselLabels, type CarouselSlide, HERO_PANEL } from "@/components/ui";
 import type { ImageAsset } from "@/lib/types";
 
 /**
+ * Cover-crop `sizes` for the photo column. On `lg+` the box is about as tall as it is wide
+ * (≈1.1–1.2), so a 3:2 photo renders ~1.35× the column width (560 px column at 1200+).
+ * Below `lg` it is a full-width 16/10 band, where a 3:2 photo is no wider than the box.
+ */
+const MEDIA_SIZES = "(min-width: 1200px) 760px, (min-width: 1024px) 62vw, 100vw";
+
+type AuthSplitMedia =
+  | {
+      /** One photo (rendered as a static image). */
+      image: ImageAsset;
+      /** Visible label on the photo, e.g. "Illustrative stock photo". */
+      imageLabel: string;
+      slides?: undefined;
+      carouselLabels?: undefined;
+    }
+  | {
+      image?: undefined;
+      imageLabel?: undefined;
+      /** Carousel slides (licensed stock, each with its own visible `label`); one slide renders a static photo. */
+      slides: CarouselSlide[];
+      /** `common.carousel` in the page locale. */
+      carouselLabels: CarouselLabels;
+    };
+
+/**
  * Sign-in / account page layout (D-030): copy and a white form card on the left, a licensed
- * stock photo filling the right half on `lg+` (stacked under the card on smaller screens),
- * with a visible label and an optional navy note over the photo. Renders the page's only <h1>.
- * Never pass a person photo when the card can show a real name (signed-in panels do).
+ * stock photo (or a carousel of them) filling the right half on `lg+`, stacked under the card on
+ * smaller screens, with a visible label on each photo and an optional navy note under the media.
+ * Renders the page's only <h1>.
+ *
+ * Never pass a person photo when the card can show a real name (signed-in panels do): use
+ * object / desk / library stock only.
  */
 export function AuthSplit({
   eyebrow,
@@ -16,22 +44,26 @@ export function AuthSplit({
   notice,
   image,
   imageLabel,
+  slides,
+  carouselLabels,
   aside,
   children,
-}: {
+}: AuthSplitMedia & {
   eyebrow?: string;
   title: string;
   lead?: ReactNode;
   /** Shown between the lead and the card (e.g. "sign in to continue"). */
   notice?: ReactNode;
-  image: ImageAsset;
-  imageLabel: string;
-  /** Short note shown over (lg) or under (mobile) the photo. */
+  /** Short note shown under the photo / carousel (kept off the photo so it never covers the controls). */
   aside?: ReactNode;
   children: ReactNode;
 }) {
+  const mediaSlides: CarouselSlide[] = slides ?? (image ? [{ image, label: imageLabel }] : []);
+  // A single slide renders without controls, so its strings are never shown.
+  const labels = carouselLabels ?? carouselLabelsFor("en");
+
   return (
-    <section className="bg-surface">
+    <section className={cn(HERO_PANEL, "bg-surface")}>
       <Container className="grid gap-8 py-8 md:py-12 lg:grid-cols-2 lg:gap-12 lg:py-14">
         <div className="min-w-0">
           {eyebrow && <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-blue">{eyebrow}</p>}
@@ -43,25 +75,20 @@ export function AuthSplit({
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-4 lg:relative lg:block lg:min-h-[32rem]">
-          <figure className="relative m-0 aspect-16/10 overflow-hidden rounded-card bg-navy shadow-card lg:absolute lg:inset-0 lg:aspect-auto">
-            <Image
-              src={image.src}
-              alt={image.alt}
-              fill
-              preload
-              sizes="(min-width: 1200px) 560px, (min-width: 1024px) 46vw, 100vw"
-              className="object-cover"
+        {/* lg: the media box grows to the row height (at least 32rem with the note); the note sits under it. */}
+        <div className="flex min-w-0 flex-col gap-4 lg:min-h-[32rem]">
+          <div className="relative aspect-16/10 overflow-hidden rounded-card bg-navy shadow-card lg:aspect-auto lg:min-h-[22rem] lg:flex-1">
+            <ImageCarousel
+              slides={mediaSlides}
+              labels={labels}
+              aspect="fill"
+              sizes={MEDIA_SIZES}
+              priority
+              tone="light"
             />
-            <figcaption className="absolute left-2 top-2 rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white">
-              {imageLabel}
-            </figcaption>
-          </figure>
+          </div>
           {aside && (
-            <div
-              data-surface="dark"
-              className="rounded-card bg-navy p-5 text-white shadow-card lg:absolute lg:inset-x-4 lg:bottom-4 lg:bg-navy/90 lg:backdrop-blur-sm"
-            >
+            <div data-surface="dark" className="rounded-card bg-navy p-5 text-white shadow-card">
               {aside}
             </div>
           )}

@@ -5,6 +5,7 @@ import { PhotoPanel } from "@/components/about/PhotoPanel";
 import { mixedResultCards } from "@/components/about/result-cards";
 import { ArticleCard } from "@/components/resources/ArticleCard";
 import { DownloadList } from "@/components/resources/DownloadList";
+import { resourcesHeroSlides } from "@/components/resources/hero-slides";
 import { ResourceCategories } from "@/components/resources/ResourceCategories";
 import { ResultCardMarquee } from "@/components/results/ResultCardMarquee";
 import { ButtonLink, EmptyState, PageHero, Section, SectionHeading } from "@/components/ui";
@@ -51,8 +52,8 @@ export default async function ResourcesPage() {
         crumbs={[{ label: t.hero.crumb }]}
         homeLabel={tc.labels.home}
         homeHref={localePath("/", locale)}
-        image={localizeImage(stockImages.booksAndNotebook, locale)}
-        imageLabel={photoLabel}
+        slides={resourcesHeroSlides(photoLabel, locale)}
+        carouselLabels={tc.carousel}
       />
 
       <Section aria-labelledby="resource-types-heading">

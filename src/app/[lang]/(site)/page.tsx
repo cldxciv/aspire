@@ -3,6 +3,7 @@ import { Fragment, type ReactNode } from "react";
 import { CampusLifeTiles } from "@/components/home/CampusLifeTiles";
 import { CentresShowcase } from "@/components/home/CentresShowcase";
 import { CtaBand } from "@/components/home/CtaBand";
+import { HOME_CTA_SLIDES, homeSlides } from "@/components/home/home-carousels";
 import { HomeHero } from "@/components/home/HomeHero";
 import { ImpactChart } from "@/components/home/ImpactChart";
 import { ProgramPaths } from "@/components/home/ProgramPaths";
@@ -50,7 +51,9 @@ export async function generateMetadata(): Promise<Metadata> {
  * caption and testimonial filters run on the English records (their patterns are English).
  * D-031: the only landscape is the hero's. The results, "why" and closing sections show Aspire's
  * previous result cards (three disjoint sets, newest JEE and NEET mixed); without visible cards
- * (production today) each falls back to a labelled non-nature stock photo.
+ * (production today) each falls back to labelled non-nature stock photos (the closing band to a
+ * carousel). Programs and student life carry stock-photo carousels in both modes; no photo is used
+ * twice on the page (home-carousels.ts).
  */
 export default async function HomePage() {
   const [locale, t, tForms, common] = await Promise.all([
@@ -169,6 +172,8 @@ export default async function HomePage() {
         hours={contact?.hours}
         demo={contact ? isPlaceholder(contact) : false}
         strip={ctaStrip}
+        slides={ctaStrip ? undefined : homeSlides(HOME_CTA_SLIDES, common.labels.illustrativeStockPhoto, locale)}
+        carouselLabels={common.carousel}
         labels={{
           callUs: t.cta.callUs,
           demo: common.labels.demo,

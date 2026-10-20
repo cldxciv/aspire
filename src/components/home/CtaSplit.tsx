@@ -36,12 +36,12 @@ export function CtaSplit({
 }) {
   return (
     <MediaSplit image={image} imageLabel={imageLabel} imageSide={imageSide} aspect="16/10" caption={caption}>
-      <div className="rounded-card bg-linear-to-br from-[#eaf3ff] to-[#fff7dd] p-6 md:p-8">
+      <div className="rounded-card bg-linear-to-br from-[#eaf3ff] to-[#fff7dd] p-6 sm:p-8 lg:p-10">
         <h2 id={headingId} className="font-serif text-[clamp(1.5rem,3vw,2rem)] font-semibold leading-tight text-navy">
           {title}
         </h2>
-        <p className="mt-3 text-muted">{description}</p>
-        <div className="mt-6 flex flex-wrap gap-2.5">
+        <p className="mt-4 max-w-prose leading-relaxed text-muted">{description}</p>
+        <div className="mt-7 flex flex-wrap gap-3">
           <ButtonLink href={primary.href}>
             {primary.label} <ArrowRight aria-hidden="true" className="size-4" />
           </ButtonLink>
@@ -91,12 +91,12 @@ export function CtaBleedSplit({
       caption={caption}
       tone={tone}
     >
-      <div className="rounded-card bg-linear-to-br from-[#eaf3ff] to-[#fff7dd] p-6 md:p-8">
+      <div className="rounded-card bg-linear-to-br from-[#eaf3ff] to-[#fff7dd] p-6 sm:p-8 lg:p-10">
         <h2 id={headingId} className="font-serif text-[clamp(1.5rem,3vw,2rem)] font-semibold leading-tight text-navy">
           {title}
         </h2>
-        <p className="mt-3 text-muted">{description}</p>
-        <div className="mt-6 flex flex-wrap gap-2.5">
+        <p className="mt-4 max-w-prose leading-relaxed text-muted">{description}</p>
+        <div className="mt-7 flex flex-wrap gap-3">
           <ButtonLink href={primary.href}>
             {primary.label} <ArrowRight aria-hidden="true" className="size-4" />
           </ButtonLink>

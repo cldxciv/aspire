@@ -24,6 +24,7 @@
   --color-line: #e2eaf3;
   --color-surface: #eef5ff; /* Section BG */
   --color-page: #f8fafc; /* Background */
+  --color-gap: #eef2f8; /* Soft backdrop the section panels float on (owner request) */
   --color-success: #14845a;
   --color-success-soft: #e7f7ee;
   --color-danger: #b42318;
@@ -34,6 +35,8 @@
 
   --shadow-card: 0 12px 32px rgb(9 40 75 / 0.09);
   --shadow-soft: 0 4px 14px rgb(9 40 75 / 0.04);
+  /* Section panels (owner request: elegant gaps between sections) — hairline lift + soft navy depth. */
+  --shadow-panel: 0 1px 2px rgb(11 45 91 / 0.05), 0 18px 40px -26px rgb(11 45 91 / 0.3);
 
   --container-content: 1200px;
 }

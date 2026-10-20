@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { AspireImage, DemoBadge, Section, type SectionTone } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { aspireAssets } from "@/content/aspire-assets";
 import { stockImages } from "@/content/images";
 import type { Locale } from "@/i18n/config";
@@ -67,20 +68,20 @@ function QuoteCard({
 }) {
   const quoteLang = testimonial.quoteLang;
   return (
-    <figure className="flex h-full flex-col rounded-card border border-line bg-white p-5 shadow-soft md:p-6">
+    <figure className="flex h-full flex-col rounded-card border border-line bg-white p-6 shadow-soft md:p-7">
       <div className="flex items-start justify-between gap-3">
         <AspireImage asset={aspireAssets.quoteIcon} className="w-12 shrink-0" />
         {testimonial.status === "placeholder" && <DemoBadge label={demoLabel} />}
       </div>
       {testimonial.headline && (
-        <p lang={quoteLang} className="mt-3 font-serif text-lg font-semibold leading-snug text-navy">
+        <p lang={quoteLang} className="mt-4 font-serif text-lg font-semibold leading-snug text-navy">
           {testimonial.headline}
         </p>
       )}
-      <blockquote lang={quoteLang} className="mt-3 flex-1 text-[15px] leading-relaxed text-[#43556d]">
+      <blockquote lang={quoteLang} className="mt-4 flex-1 text-[15px] leading-relaxed text-[#43556d]">
         <p>&ldquo;{testimonial.quote}&rdquo;</p>
       </blockquote>
-      <figcaption className="mt-5 border-t border-line pt-3 text-sm">
+      <figcaption className="mt-6 border-t border-line pt-4 text-sm">
         <span className="block font-bold text-navy">{testimonial.author}</span>
         <span className="mt-0.5 block text-xs text-muted">
           {relationLabel}
@@ -123,7 +124,7 @@ export function TestimonialsSection({
 
   return (
     <Section tone={tone} aria-labelledby="home-voices-title">
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)] lg:gap-10">
+      <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)] lg:gap-12 xl:gap-16">
         <div>
           <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-blue">{t.eyebrow}</p>
           <h2
@@ -132,16 +133,17 @@ export function TestimonialsSection({
           >
             {t.title}
           </h2>
-          <p className="mt-3 text-muted">{t.lead}</p>
-          {hasPlaceholders && <p className="mt-3 text-sm text-muted">{t.demoNote}</p>}
-          <figure className="relative m-0 mt-6 hidden aspect-3/4 overflow-hidden rounded-card bg-surface shadow-soft lg:block">
+          <p className="mt-4 max-w-prose leading-relaxed text-muted">{t.lead}</p>
+          {hasPlaceholders && <p className="mt-4 text-sm text-muted">{t.demoNote}</p>}
+          <figure className="relative m-0 mt-8 hidden aspect-3/4 overflow-hidden rounded-card bg-surface shadow-soft lg:block">
             <Image src={photo.src} alt={photo.alt} fill sizes="300px" className="object-cover" />
             <span className="absolute bottom-2 left-2 rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white">
               {labels.illustrativeStockPhoto}
             </span>
           </figure>
         </div>
-        <ul className="grid gap-4 md:grid-cols-3">
+        {/* Two columns until there is room for three readable quote cards (and never a third, empty column). */}
+        <ul className={cn("grid gap-5 sm:grid-cols-2 md:gap-6 lg:self-center", picked.length >= 3 && "xl:grid-cols-3")}>
           {picked.map((testimonial) => (
             <li key={testimonial.id}>
               <QuoteCard testimonial={testimonial} relationLabel={relation[testimonial.relation]} demoLabel={demoLabel} />

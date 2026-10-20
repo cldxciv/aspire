@@ -102,6 +102,20 @@ const legal = {
       p1: "How to ask to see, correct or delete your enquiry details: {tbc}",
       p2: "Who to contact with privacy questions or concerns: {tbc}",
     },
+    /** Mirrors the M6 student tools (docs/m6-plan.md, D-033–D-035). Update whenever a tool's data flow changes. */
+    tools: {
+      title: "Student tools",
+      intro: "The free student tools handle information as follows:",
+      items: [
+        "Rank & college predictor: your inputs are used only to calculate your result and are not stored. The link of a shared result card contains only the exam and a score range.",
+        "Mock tests: if you are not signed in, your answers and results stay in this browser. If you are signed in with an Aspire student account, your attempts (answers, score and time taken) are saved to your account. When you start a test, the server records the start time (with your account if you are signed in; no internet address is kept) so that leaderboard times are measured fairly. Leaderboards are optional: if you join, your chosen nickname and district are shown publicly with your score and time; a school name you choose to give appears only in the schools table, once at least three students from that school have joined. Saved attempts get a verification code; its public page shows only the test, the date and a score range (and your nickname only if you joined the leaderboard).",
+        "Study planner: if you are not signed in, your plan and progress stay in this browser. If you are signed in, your plan, completed blocks, review progress and points are saved to your account. The weekly leaderboard is optional and shows only your chosen nickname.",
+        "Ask Aspire: your question and any photo are sent to Anthropic, the AI provider that writes the answer, and are not stored by Aspire. Photos are held only in memory for that one request, and location details are removed from the photo on your device before it is sent. Please do not include faces or names. For signed-in students, the subject and a short topic label of each question are saved to help with revision. To limit use, the website keeps a daily count per internet connection or account, stored only in scrambled (hashed) form and deleted after two days.",
+        "Parents linked to a student account can see that student's test results, planner consistency (counts only) and question topics in the parent portal.",
+        "Signing out clears the tools' saved data from that browser, which helps on shared computers.",
+      ],
+      p2: "How long tool data is kept, and how to ask for it to be deleted: {tbc}",
+    },
     cookies: {
       title: "Cookies and analytics",
       p1: "This website does not currently use analytics or advertising tools, tracking cookies, or embedded third-party content such as maps or chat widgets. If that changes, this notice will be updated first.",

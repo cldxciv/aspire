@@ -3,11 +3,12 @@ import type { Program } from "@/lib/types";
 import { ProgramCard, type ProgramCardMessages } from "./ProgramCard";
 
 const columnClasses = {
-  3: "grid gap-4 sm:grid-cols-2 lg:grid-cols-3",
-  4: "grid gap-4 sm:grid-cols-2 lg:grid-cols-4",
+  3: "grid gap-6 sm:grid-cols-2 md:gap-8 lg:grid-cols-3",
+  // Four across only from `xl`, so cards keep readable widths with the wider gutters (2 × 2 below).
+  4: "grid gap-6 sm:grid-cols-2 md:gap-8 xl:grid-cols-4 xl:gap-6",
 } as const;
 
-/** Responsive list of program cards: 1 column on phones, 2 on tablets, 3–4 on desktop. */
+/** Responsive list of program cards: 1 column on phones, 2 on tablets, 3 on desktop (4 from `xl`). */
 export function ProgramGrid({
   programs,
   t,

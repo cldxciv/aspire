@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { HeroEnquiryForm, type EnquiryDeliveryStatus } from "@/components/forms/HeroEnquiryForm";
-import { ButtonLink, Container } from "@/components/ui";
+import { ButtonLink, Container, HERO_PANEL } from "@/components/ui";
 import { aspireAssets } from "@/content/aspire-assets";
 import { stockImages } from "@/content/images";
 import type { Locale } from "@/i18n/config";
@@ -99,7 +99,7 @@ export function HomeHero({
     <section
       aria-labelledby="home-hero-title"
       data-surface="dark"
-      className="relative isolate overflow-hidden bg-navy text-white"
+      className={cn(HERO_PANEL, "relative isolate bg-navy text-white")}
     >
       {/* Fallback behind the photo (before it paints or if it fails). */}
       <MountainRidge className="pointer-events-none absolute inset-x-0 bottom-0 -z-20 h-[clamp(120px,22vw,320px)] w-full" />

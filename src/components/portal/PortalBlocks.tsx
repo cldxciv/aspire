@@ -295,7 +295,15 @@ export function AccountPanel({
         {action && <div className="mt-4 flex flex-wrap gap-3">{action}</div>}
       </div>
       <figure className="relative m-0 min-h-48 bg-navy md:min-h-full">
-        <Image src={image.src} alt={image.alt} fill sizes="(min-width: 1200px) 480px, (min-width: 768px) 40vw, 100vw" className="object-cover" />
+        {/* First panel on every dashboard, so it is usually the LCP image: load it eagerly. */}
+        <Image
+          src={image.src}
+          alt={image.alt}
+          fill
+          loading="eager"
+          sizes="(min-width: 1200px) 480px, (min-width: 768px) 40vw, 100vw"
+          className="object-cover"
+        />
         <figcaption className="absolute bottom-2 left-2 rounded-md bg-navy/85 px-2 py-0.5 text-[11px] font-semibold text-white">
           {imageLabel}
         </figcaption>

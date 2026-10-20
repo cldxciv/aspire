@@ -146,7 +146,7 @@ export async function ResultCardMosaic({
       aria-label={t.listLabel}
       className={cn(
         "m-0 grid list-none p-0",
-        fill ? cn("absolute inset-0 gap-1.5 bg-surface p-1.5", spec.fillGrid) : cn("gap-2 sm:gap-3", spec.grid),
+        fill ? cn("absolute inset-0 gap-2 bg-surface p-2 sm:gap-2.5 sm:p-2.5", spec.fillGrid) : cn("gap-3 sm:gap-4", spec.grid),
         !HeadingTag && className,
       )}
     >
@@ -182,7 +182,7 @@ export async function ResultCardMosaic({
   return (
     <div className={className}>
       <HeadingTag className="font-serif text-2xl font-bold text-navy">{t.title}</HeadingTag>
-      <p className="mt-1 mb-4 text-sm text-muted">{t.lead}</p>
+      <p className="mt-2 mb-5 text-sm text-muted">{t.lead}</p>
       {list}
     </div>
   );

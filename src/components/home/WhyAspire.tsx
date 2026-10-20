@@ -106,19 +106,26 @@ export function WhyAspire({
         </h2>
         {profile ? (
           <>
-            <p className="mt-4 text-lg font-semibold leading-snug text-navy">{profile.mission.title}</p>
-            <p className="mt-3 text-muted">{profile.summary}</p>
-            {profile.status === "placeholder" && <DemoBadge label={common.labels.demoPending} className="mt-3" />}
+            <p className="mt-5 text-lg font-semibold leading-snug text-navy">{profile.mission.title}</p>
+            <p className="mt-3 max-w-prose leading-relaxed text-muted">{profile.summary}</p>
+            {profile.status === "placeholder" && (
+              <div className="mt-4">
+                <DemoBadge label={common.labels.demoPending} />
+              </div>
+            )}
           </>
         ) : (
-          <p className="mt-4 text-muted">{t.fallbackLead}</p>
+          <p className="mt-5 max-w-prose leading-relaxed text-muted">{t.fallbackLead}</p>
         )}
-        <ButtonLink href={localePath("/about", locale)} className="mt-6">
-          {t.cta} <ArrowRight aria-hidden="true" className="size-4" />
-        </ButtonLink>
+        <div className="mt-7">
+          <ButtonLink href={localePath("/about", locale)}>
+            {t.cta} <ArrowRight aria-hidden="true" className="size-4" />
+          </ButtonLink>
+        </div>
       </div>
 
-      <ul className="mt-8 grid gap-5 sm:grid-cols-2">
+      {/* Two columns on tablets; one from `lg`, where the copy shares the width with the media column. */}
+      <ul className="mt-10 grid gap-x-8 gap-y-7 sm:grid-cols-2 md:mt-12 lg:grid-cols-1 lg:gap-y-6">
         {points.map(({ title, detail, Icon }) => (
           <li key={title} className="flex gap-4">
             <span
@@ -129,7 +136,7 @@ export function WhyAspire({
             </span>
             <div className="min-w-0">
               <h3 className="font-serif text-lg font-semibold leading-snug text-navy">{title}</h3>
-              <p className="mt-0.5 text-sm text-muted">{detail}</p>
+              <p className="mt-1 text-sm leading-relaxed text-muted">{detail}</p>
             </div>
           </li>
         ))}

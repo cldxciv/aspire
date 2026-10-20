@@ -9,11 +9,26 @@ import type { ApiFailure } from "@/lib/auth/client-api";
 import { AdminOverview, countAccounts } from "./AdminViews";
 import { AUDIT_LIMITS, AuditLog, auditActionLabel, auditDetails, parseAuditLimit } from "./AuditLog";
 import { DemoEnquiriesTable } from "./DemoEnquiriesTable";
-import { ParentOverview, ParentProgress } from "./ParentViews";
+import type { WeakTopic } from "@/lib/ask/weak-topics";
+import type { AttemptsSummary, SavedAttemptSummary } from "@/lib/mocktest/types";
+import { addDays } from "@/lib/planner/dates";
+import type { PlannerSummary } from "@/lib/planner/server/summary";
+import { format } from "@/i18n/format";
+import {
+  buildActivity,
+  buildDoubtsView,
+  buildMockTestsView,
+  buildPlannerView,
+  formatPercent,
+  formatPortalDateKey,
+  type LearnerTools,
+  type ToolAudience,
+} from "./learner-tools-view";
+import { ParentOverview, ParentProgress, ParentUpdates } from "./ParentViews";
 import { PortalNavLinks } from "./PortalNav";
 import { navMessages } from "./PortalShell";
 import { PortalUserMenu } from "./PortalUserMenu";
-import { StudentOverview, StudentSection } from "./StudentViews";
+import { StudentOverview, StudentProgress, StudentSection } from "./StudentViews";
 import { adminFailureMessage, filterUsers, UserManager, type AdminUserView } from "./UserManager";
 
 function views(locale: Locale) {
@@ -52,37 +67,244 @@ const USERS: AdminUserView[] = [
   { ...userBase, id: "s3", role: "student", displayName: "New Learner", loginId: "new.learner", mustChangePassword: true, linkedParentIds: [] },
 ];
 
+// ---------------------------------------------------------------------------------------------
+// Practice-tool fixtures (M6 phase 2), built with the same pure builders the server loader uses.
+
+const NOW = Date.UTC(2026, 9, 20, 6, 0);
+const DAY = 86_400_000;
+const TESTS = new Map([
+  ["jee-main-sample", { title: "JEE Main sample test", sample: true }],
+  ["neet-sample", { title: "NEET sample test", sample: true }],
+]);
+const ATTEMPTS: SavedAttemptSummary[] = [
+  { id: "11111111-1111-4111-8111-111111111111", testId: "jee-main-sample", windowId: null, score: 40, maxScore: 60, correct: 11, wrong: 1, unattempted: 3, timeTakenSec: 900, startedAt: NOW - DAY - 900_000, submittedAt: NOW - DAY },
+  { id: "22222222-2222-4222-8222-222222222222", testId: "jee-main-sample", windowId: null, score: 32, maxScore: 60, correct: 9, wrong: 2, unattempted: 4, timeTakenSec: 900, startedAt: NOW - 2 * DAY - 900_000, submittedAt: NOW - 2 * DAY },
+  // On a test that is not visible in this build: never listed.
+  { id: "33333333-3333-4333-8333-333333333333", testId: "hidden-test", windowId: null, score: 5, maxScore: 60, correct: 2, wrong: 5, unattempted: 8, timeTakenSec: 900, startedAt: NOW - 3 * DAY - 900_000, submittedAt: NOW - 3 * DAY },
+];
+const SUMMARY: AttemptsSummary = {
+  totalAttempts: 3,
+  testsTaken: 2,
+  lastAttemptAt: NOW - DAY,
+  averageAccuracy: 22 / 30,
+  bestByTest: [
+    { testId: "jee-main-sample", bestScore: 40, maxScore: 60, attempts: 2 },
+    { testId: "hidden-test", bestScore: 5, maxScore: 60, attempts: 1 },
+  ],
+  longestStreakDays: 3,
+  badges: ["first-test", "streak-3", "top-10"],
+};
+const last30 = Array.from({ length: 30 }, (_, i) => ({ date: addDays("2026-09-21", i), active: i >= 27, xp: i >= 27 ? 40 : 0 }));
+const PLANNER_SUMMARY: PlannerSummary = {
+  hasPlan: true,
+  exam: "neet",
+  examDate: "2027-01-18",
+  daysToExam: 90,
+  streak: { current: 3, best: 5, todayDone: true },
+  xp: { total: 480, thisWeek: 120 },
+  last30Days: last30,
+  activeDaysLast30: 3,
+  blocksDoneLast30: 9,
+  reviewsLast30: 15,
+  lastActiveDate: "2026-10-20",
+  lastSyncedAt: NOW,
+};
+const TOPICS: WeakTopic[] = [
+  { subject: "physics", topic: "Projectile motion", count: 4, firstSeen: "2026-10-01T05:00:00.000Z", lastSeen: "2026-10-19T05:00:00.000Z" },
+  { subject: "chemistry", topic: "Mole concept", count: 2, firstSeen: "2026-10-02T05:00:00.000Z", lastSeen: "2026-10-18T05:00:00.000Z" },
+];
+
+function toolsFor(audience: ToolAudience): LearnerTools {
+  return {
+    audience,
+    mockTests: buildMockTestsView({ attempts: ATTEMPTS, summary: SUMMARY, tests: TESTS }),
+    planner: buildPlannerView(PLANNER_SUMMARY, { audience, sample: true }),
+    doubts: buildDoubtsView(TOPICS, true),
+  };
+}
+
+function emptyTools(audience: ToolAudience): LearnerTools {
+  return {
+    audience,
+    mockTests: buildMockTestsView({ attempts: [], summary: { ...SUMMARY, totalAttempts: 0, testsTaken: 0, lastAttemptAt: null, averageAccuracy: null, bestByTest: [], longestStreakDays: 0, badges: [] }, tests: TESTS }),
+    planner: buildPlannerView({ ...PLANNER_SUMMARY, hasPlan: false, exam: null, examDate: null, daysToExam: null, streak: { current: 0, best: 0, todayDone: false }, xp: { total: 0, thisWeek: 0 }, activeDaysLast30: 0, blocksDoneLast30: 0, reviewsLast30: 0, lastActiveDate: null, lastSyncedAt: null }, { audience, sample: true }),
+    doubts: buildDoubtsView([], true),
+  };
+}
+
+/** Production with sample content hidden: no visible tests, planner closed, Ask Aspire without a key. */
+function gatedTools(audience: ToolAudience): LearnerTools {
+  return {
+    audience,
+    mockTests: buildMockTestsView({ attempts: ATTEMPTS, summary: SUMMARY, tests: new Map() }),
+    planner: buildPlannerView(null, { audience, sample: false }),
+    doubts: buildDoubtsView([], false),
+  };
+}
+
+/** Heading levels never skip downwards (h2 → h4) and there is exactly one h1. */
+function expectHeadingOrder(html: string) {
+  const levels = [...html.matchAll(/<h([1-6])[\s>]/g)].map((m) => Number(m[1]));
+  expect(levels.filter((l) => l === 1)).toHaveLength(1);
+  for (let i = 1; i < levels.length; i += 1) expect(levels[i], `heading ${i}: ${levels.join(",")}`).toBeLessThanOrEqual(levels[i - 1] + 1);
+}
+
+/** Every aria-labelledby points at an element id on the page. */
+function expectLabelledByTargets(html: string) {
+  const ids = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
+  for (const [, target] of html.matchAll(/aria-labelledby="([^"]+)"/g)) expect(ids.has(target), target).toBe(true);
+  // ids are unique
+  const all = [...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+  expect(new Set(all).size).toBe(all.length);
+}
+
+const visibleText = (html: string) => html.replace(/<[^>]+>/g, " ");
+
+/** A message as React escapes it in markup. */
+const esc = (text: string) => text.replace(/&/g, "&amp;").replace(/'/g, "&#x27;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
+describe("practice-tool view builders", () => {
+  it("leave out attempts on tests that are not visible and recompute totals from the visible ones", () => {
+    const view = buildMockTestsView({ attempts: ATTEMPTS, summary: SUMMARY, tests: TESTS });
+    expect(view.status).toBe("ready");
+    if (view.status !== "ready") return;
+    expect(view.recent.map((a) => a.id)).toEqual([ATTEMPTS[0].id, ATTEMPTS[1].id]);
+    expect(view.totalAttempts).toBe(2);
+    expect(view.testsTaken).toBe(1);
+    expect(view.averageAccuracy).toBeCloseTo(20 / 23);
+    expect(view.best).toEqual([{ testId: "jee-main-sample", title: "JEE Main sample test", sample: true, bestScore: 40, maxScore: 60, attempts: 2 }]);
+    // Leaderboard badges could come from the hidden test, so only activity badges are kept.
+    expect(view.badges).toEqual(["first-test"]);
+    expect(JSON.stringify(view)).not.toContain("hidden-test");
+  });
+
+  it("use the stored summary when every attempt is visible", () => {
+    const view = buildMockTestsView({ attempts: ATTEMPTS.slice(0, 2), summary: { ...SUMMARY, totalAttempts: 2, testsTaken: 1, bestByTest: SUMMARY.bestByTest.slice(0, 1) }, tests: TESTS });
+    expect(view).toMatchObject({ status: "ready", totalAttempts: 2, badges: ["first-test", "streak-3", "top-10"], longestStreakDays: 3 });
+  });
+
+  it("planner: parents get counts only; doubts: subjects totalled", () => {
+    expect(buildPlannerView(PLANNER_SUMMARY, { audience: "parent", sample: true })).toMatchObject({ xp: null, exam: null, daysToExam: null, activeDaysLast30: 3 });
+    expect(buildPlannerView(PLANNER_SUMMARY, { audience: "student", sample: true })).toMatchObject({ xp: { total: 480, thisWeek: 120 }, exam: "neet", daysToExam: 90 });
+    expect(buildDoubtsView(TOPICS, false)).toMatchObject({ status: "ready", totalDoubts: 6, topicCount: 2, bySubject: [{ subject: "physics", count: 4 }, { subject: "chemistry", count: 2 }] });
+  });
+
+  it("activity feed is newest first across the tools", () => {
+    const items = buildActivity(toolsFor("parent"));
+    expect(items.map((i) => i.kind)).toEqual(["planner", "mockTest", "doubt", "mockTest", "doubt"]);
+    expect(items.every((item, i) => i === 0 || items[i - 1].at >= item.at)).toBe(true);
+  });
+});
+
 describe("student views", () => {
-  it.each(["en", "hi"] as const)("signed-in dashboard (%s): own account only, honest not-connected areas, localised links", (locale) => {
+  it.each(["en", "hi"] as const)("signed-in dashboard (%s): own tool data, links to each attempt, remaining areas not connected", (locale) => {
     const m = views(locale);
+    const tt = m.portal.tools;
     const html = inLocale(
       locale,
       createElement(StudentOverview, {
         locale,
         m,
         account: { displayName: "Learner One", loginId: "learner.one", linkedParents: 2 },
+        tools: toolsFor("student"),
       }),
     );
-    expect(html.match(/<h1/g)).toHaveLength(1);
+    expectHeadingOrder(html);
+    expectLabelledByTargets(html);
     expect(html).toContain("Learner One");
-    expect(html).toContain("learner.one");
-    expect(html).toContain(m.portal.blocks.accountOnlyBadge);
+    expect(html).toContain(m.portal.blocks.toolDataBadge);
     expect(html).not.toContain(m.portal.blocks.previewBadge);
+    expect(html).toContain(tt.mock.title);
+    expect(html).toContain("JEE Main sample test");
+    expect(html).toContain(tt.sampleTest);
+    expect(html).toContain(esc(tt.sampleNote));
+    const prefix = locale === "hi" ? "/hi" : "";
+    for (const page of ["result", "certificate", "report"]) {
+      expect(html).toContain(`href="${prefix}/tools/mock-tests/jee-main-sample/${page}?saved=11111111-1111-4111-8111-111111111111"`);
+    }
+    expect(html).toContain(`href="${prefix}/student/progress"`);
+    expect(html).toContain(tt.mock.badges.firstTest);
+    expect(html).not.toContain(tt.mock.badges.top10);
+    expect(html).toContain(tt.planner.title);
+    expect(html).toContain(tt.samplePlan);
+    expect(html).toContain(format(tt.planner.stripActive, { date: formatPortalDateKey("2026-10-20", locale) }));
+    expect(html).toContain('<p class="break-words font-bold text-navy" lang="en">Projectile motion</p>');
+    expect(html).toContain(format(tt.doubts.count, { n: "4" }));
+    // Timetable, classroom results, attendance and study material are still not connected.
     expect(html.split(m.portal.blocks.notConnected).length - 1).toBe(4);
-    expect(html).toContain(m.photoLabel);
     expectLocalisedLinks(html, locale);
-    // No invented academic data: no percentages, grades or scores in the visible text.
-    const text = html.replace(/<[^>]+>/g, " ");
-    expect(text).not.toMatch(/\d+\s*%|\bGrade\b|\bScore:/);
+    // Nothing from the hidden test.
+    expect(html).not.toContain("hidden-test");
   });
 
-  it("preview (signed out) shows no account data and a sign-in link to the localised login", () => {
+  it("empty states link to the tools and show no numbers that look like results", () => {
+    const m = views("en");
+    const tt = m.portal.tools;
+    const html = inLocale(
+      "en",
+      createElement(StudentOverview, {
+        locale: "en",
+        m,
+        account: { displayName: "Learner One", loginId: "learner.one", linkedParents: 0 },
+        tools: emptyTools("student"),
+      }),
+    );
+    expect(html).toContain(tt.mock.emptyTitle);
+    expect(html).toContain(tt.planner.emptyTitle);
+    expect(html).toContain(tt.doubts.emptyTitle);
+    expect(html).toContain('href="/tools/mock-tests"');
+    expect(html).toContain('href="/tools/planner"');
+    expect(html).toContain('href="/tools/ask"');
+    expect(visibleText(html)).not.toMatch(/\d+\s*%|\bGrade\b|\bScore:/);
+    expectHeadingOrder(html);
+  });
+
+  it("production (tools gated): 'coming soon' and 'not connected', no sample titles, no tool links", () => {
     const m = views("hi");
-    const html = inLocale("hi", createElement(StudentOverview, { locale: "hi", m, account: null }));
+    const tt = m.portal.tools;
+    const html = inLocale(
+      "hi",
+      createElement(StudentOverview, {
+        locale: "hi",
+        m,
+        account: { displayName: "Learner One", loginId: "learner.one", linkedParents: 0 },
+        tools: gatedTools("student"),
+      }),
+    );
+    expect(html).toContain(tt.mock.comingSoonTitle);
+    expect(html).toContain(tt.planner.comingSoonTitle);
+    expect(html).toContain(tt.doubts.notConnectedTitle);
+    expect(html).not.toContain("sample test");
+    expect(html).not.toContain("/tools/");
+    expectLocalisedLinks(html, "hi");
+  });
+
+  it("preview (signed out) shows no account or tool data and a sign-in link to the localised login", () => {
+    const m = views("hi");
+    const html = inLocale("hi", createElement(StudentOverview, { locale: "hi", m, account: null, tools: null }));
     expect(html).toContain(m.portal.blocks.previewBadge);
     expect(html).toContain(m.portal.account.previewBody);
+    expect(html).toContain(m.portal.tools.previewBody);
     expect(html).toContain('href="/hi/login?next=%2Fstudent"');
     expect(html).not.toContain(m.portal.account.loginId);
+    expect(html).not.toContain(m.portal.tools.mock.recentTitle);
+  });
+
+  it.each(["en", "hi"] as const)("progress page (%s): full detail, then classroom results / attendance not connected", (locale) => {
+    const t = messagesFor(locale, "portal");
+    const html = inLocale(locale, createElement(StudentProgress, { locale, t, tools: toolsFor("student") }));
+    expectHeadingOrder(html);
+    expectLabelledByTargets(html);
+    expect(html).toContain(t.tools.mock.bestTitle);
+    expect(html).toContain(format(t.tools.mock.breakdown, { correct: "11", wrong: "1", skipped: "3" }));
+    expect(html).toContain(t.tools.doubts.bySubjectTitle);
+    expect(html).toContain(t.tools.planner.totals.xpTotal);
+    expect(html).toContain(format(t.tools.planner.exam, { exam: t.tools.planner.exams.neet }));
+    expect(html).toContain(t.student.progress.emptyTitle);
+    expectLocalisedLinks(html, locale);
+    const preview = inLocale(locale, createElement(StudentProgress, { locale, t, tools: null }));
+    expect(preview).toContain(t.blocks.previewBadge);
+    expect(preview).not.toContain("JEE Main sample test");
   });
 
   it("section pages are honest empty states", () => {
@@ -95,20 +317,31 @@ describe("student views", () => {
 });
 
 describe("parent views", () => {
-  it("lists only the linked learners passed in, each 'not connected'", () => {
-    const m = views("en");
+  const learner = (id: string, displayName: string, tools = toolsFor("parent")) => ({ id, displayName, tools });
+
+  it.each(["en", "hi"] as const)("dashboard (%s): only the linked learners passed in, a summary each, no attempt links", (locale) => {
+    const m = views(locale);
+    const f = m.portal.tools.facts;
     const html = inLocale(
-      "en",
+      locale,
       createElement(ParentOverview, {
-        locale: "en",
+        locale,
         m,
-        account: { displayName: "Parent One", loginId: "parent.one", learners: [{ id: "s1", displayName: "Learner One" }] },
+        account: { displayName: "Parent One", loginId: "parent.one", learners: [learner("s1", "Learner One")] },
       }),
     );
+    expectHeadingOrder(html);
     expect(html).toContain("Learner One");
     expect(html).not.toContain("Learner Two");
-    expect(html.split(m.portal.blocks.notConnected).length - 1).toBe(3);
-    expectLocalisedLinks(html, "en");
+    expect(html).toContain(format(f.mockValue, { n: "2", accuracy: formatPercent(20 / 23, locale) }));
+    expect(html).toContain(format(f.plannerValue, { streak: "3", active: "3" }));
+    expect(html).toContain(format(f.doubtsValue, { n: "6", topics: "2" }));
+    // Attendance is still not connected.
+    expect(html.split(m.portal.blocks.notConnected).length - 1).toBe(1);
+    expect(html).toContain(`href="${locale === "hi" ? "/hi" : ""}/parent/progress#parent-progress-learner-0"`);
+    // The attempt pages read the student's own account: never linked for parents.
+    expect(html).not.toContain("?saved=");
+    expectLocalisedLinks(html, locale);
   });
 
   it("shows an empty state when no learner is linked (Hindi)", () => {
@@ -122,22 +355,56 @@ describe("parent views", () => {
     expectLocalisedLinks(html, "hi");
   });
 
-  it("progress page: one panel per linked learner, preview without names", () => {
-    const t = messagesFor("en", "portal");
-    const signedIn = renderToStaticMarkup(
+  it.each(["en", "hi"] as const)("progress page (%s): one panel per learner, counts only, the portal is the report", (locale) => {
+    const t = messagesFor(locale, "portal");
+    const html = inLocale(
+      locale,
       createElement(ParentProgress, {
-        locale: "en",
+        locale,
         t,
-        learners: [
-          { id: "s1", displayName: "Learner One" },
-          { id: "s9", displayName: "Learner Nine" },
-        ],
+        learners: [learner("s1", "Learner One"), learner("s9", "Learner Nine", emptyTools("parent"))],
       }),
     );
-    expect(signedIn.split(t.parent.progressPage.emptyTitle).length - 1).toBe(2);
-    const preview = renderToStaticMarkup(createElement(ParentProgress, { locale: "en", t, learners: null }));
-    expect(preview).toContain(t.blocks.previewBadge);
-    expect(preview).not.toContain("Learner One");
+    expectHeadingOrder(html);
+    expectLabelledByTargets(html);
+    expect(html).toContain('id="parent-progress-learner-0"');
+    expect(html).toContain('id="parent-progress-learner-1"');
+    expect(html.split(t.parent.progressPage.classroomTitle).length - 1).toBe(2);
+    expect(html).toContain(esc(t.parent.progressPage.reportBody));
+    expect(html).toContain(t.tools.mock.bestTitle);
+    expect(html).toContain(t.tools.mock.emptyBodyParent);
+    // Counts only: no XP, exam or links into the student's own attempt pages.
+    expect(html).not.toContain(t.tools.planner.totals.xpTotal);
+    expect(html).not.toContain(t.tools.planner.totals.xpWeek);
+    expect(html).not.toContain(format(t.tools.planner.exam, { exam: t.tools.planner.exams.neet }));
+    expect(html).not.toContain("?saved=");
+    expectLocalisedLinks(html, locale);
+  });
+
+  it("progress and updates previews show no learner", () => {
+    const t = messagesFor("en", "portal");
+    const progress = renderToStaticMarkup(createElement(ParentProgress, { locale: "en", t, learners: null }));
+    expect(progress).toContain(t.blocks.previewBadge);
+    expect(progress).not.toContain("Learner One");
+    const updates = renderToStaticMarkup(createElement(ParentUpdates, { locale: "en", t, learners: null }));
+    expect(updates).toContain(t.parent.updatesPage.emptyTitle);
+    expect(updates).not.toContain('id="parent-activity"');
+  });
+
+  it.each(["en", "hi"] as const)("updates page (%s): recent activity per learner, no message channels, announcements not connected", (locale) => {
+    const t = messagesFor(locale, "portal");
+    const html = inLocale(
+      locale,
+      createElement(ParentUpdates, { locale, t, learners: [learner("s1", "Learner One"), learner("s9", "Learner Nine", emptyTools("parent"))] }),
+    );
+    expectHeadingOrder(html);
+    expectLabelledByTargets(html);
+    expect(html).toContain(t.tools.activity.mockTest);
+    expect(html).toContain(t.tools.activity.planner);
+    expect(html).toContain('<span lang="en">Projectile motion</span>');
+    expect(html).toContain(t.parent.updatesPage.activityEmpty);
+    expect(html).toContain(esc(t.parent.progressPage.reportBody));
+    expect(html).toContain(t.parent.updatesPage.emptyTitle);
   });
 });
 

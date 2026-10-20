@@ -32,15 +32,15 @@ export function StatsBand({ stats, locale }: { stats: Stat[]; locale: Locale }) 
   const demoLabel = messagesFor(locale, "common").labels.demo;
 
   return (
-    <Section tone="blue" aria-labelledby="home-stats-title" className="py-7! md:py-9!">
+    <Section tone="blue" aria-labelledby="home-stats-title" className="py-10! md:py-12! lg:py-14!">
       <h2 id="home-stats-title" className="sr-only font-serif">
         {t.title}
       </h2>
-      <ul className={cn("grid grid-cols-1 gap-6 min-[440px]:grid-cols-2", LG_COLUMNS[items.length])}>
+      <ul className={cn("grid grid-cols-1 gap-x-8 gap-y-8 min-[440px]:grid-cols-2 lg:gap-x-10", LG_COLUMNS[items.length])}>
         {items.map(({ stat, Icon }) => (
           <li
             key={stat.id}
-            className="flex min-w-0 items-center gap-4 lg:border-l lg:border-[#c9d9ee] lg:pl-6 lg:first:border-l-0 lg:first:pl-0"
+            className="flex min-w-0 items-center gap-4 lg:border-l lg:border-[#c9d9ee] lg:pl-8 lg:first:border-l-0 lg:first:pl-0 xl:gap-5"
           >
             <span
               aria-hidden="true"
@@ -50,8 +50,8 @@ export function StatsBand({ stats, locale }: { stats: Stat[]; locale: Locale }) 
             </span>
             <div className="min-w-0">
               <p className="font-serif text-[2rem] font-semibold leading-none tracking-tight text-navy">{stat.value}</p>
-              <p className="mt-1.5 font-semibold leading-snug text-ink">{stat.label}</p>
-              {stat.context && <p className="text-sm leading-snug text-muted">{stat.context}</p>}
+              <p className="mt-2 font-semibold leading-snug text-ink">{stat.label}</p>
+              {stat.context && <p className="mt-0.5 text-sm leading-snug text-muted">{stat.context}</p>}
               {stat.status === "placeholder" && <DemoBadge label={demoLabel} className="mt-2" />}
             </div>
           </li>

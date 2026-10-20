@@ -83,12 +83,23 @@ describe("openDatabase / migrate", () => {
     }
   });
 
-  it("creates every table", () => {
+  it("creates every core table", () => {
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
       .all()
-      .map((row) => row.name);
-    expect(tables).toEqual(["audit_log", "login_attempts", "parent_links", "sessions", "users"]);
+      .map((row) => String(row.name));
+    // Feature tables (src/lib/db/features, M6) carry their feature prefix and are tested by their owners.
+    const core = tables.filter((name) => !/^(predictor|mocktest|ask|planner|mcp)_/.test(name));
+    expect(core).toEqual(["audit_log", "login_attempts", "parent_links", "sessions", "users"]);
+  });
+
+  it("only adds feature tables with their feature prefix", () => {
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+      .all()
+      .map((row) => String(row.name));
+    const known = new Set(["audit_log", "login_attempts", "parent_links", "sessions", "users"]);
+    expect(tables.filter((name) => !known.has(name) && !/^(predictor|mocktest|ask|planner|mcp)_/.test(name))).toEqual([]);
   });
 
   it("enforces foreign keys and rolls back failed transactions", () => {

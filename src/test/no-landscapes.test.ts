@@ -47,8 +47,8 @@ const LANDSCAPE = [
 
 const ALLOWED = new Set(["src/components/home/HomeHero.tsx", "src/components/home/MountainRidge.tsx"]);
 
-/** Directories owned by RES-A (home, programs, results, centres): enforced. */
-const RES_A_DIRS = [
+/** Public page directories (RES-A: home, programs, results, centres; RES-B: the rest). All enforced. */
+const PAGE_DIRS = [
   "src/app/[lang]/(site)/page.tsx",
   "src/app/[lang]/(site)/programs",
   "src/app/[lang]/(site)/results",
@@ -57,10 +57,6 @@ const RES_A_DIRS = [
   "src/components/programs",
   "src/components/results",
   "src/components/centres",
-];
-
-/** Directories owned by RES-B (about, admissions, contact, hostels, resources, legal, portal views). */
-const RES_B_DIRS = [
   "src/app/[lang]/(site)/about",
   "src/app/[lang]/(site)/admissions",
   "src/app/[lang]/(site)/contact",
@@ -112,12 +108,9 @@ describe("D-031: landscapes only in the homepage hero", () => {
     expect(hero).toContain("himalayaHero");
   });
 
-  it.each(RES_A_DIRS)("%s uses no landscape image", (dir) => {
+  it.each(PAGE_DIRS)("%s uses no landscape image", (dir) => {
+    // A renamed or moved directory must fail here rather than pass silently with nothing scanned.
     expect(sourceFiles(dir).length, `${dir} has source files`).toBeGreaterThan(0);
-    expect(landscapeRefs(dir)).toEqual([]);
-  });
-
-  it.each(RES_B_DIRS)("%s uses no landscape image (RES-B)", (dir) => {
     expect(landscapeRefs(dir)).toEqual([]);
   });
 

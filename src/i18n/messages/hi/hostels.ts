@@ -17,6 +17,7 @@ const hostels: Messages<"hostels"> = {
     emptyLead: "अपने शहर से बाहर से Aspire में पढ़ने आने वाले विद्यार्थियों के लिए आवासीय विकल्प।",
     byCampus: "परिसर के अनुसार हॉस्टल",
     ask: "आवास के बारे में पूछें",
+    photoCaption: "Aspire का हॉस्टल नहीं",
   },
   empty: {
     heading: "हॉस्टल की जानकारी",

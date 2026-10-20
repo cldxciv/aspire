@@ -1,7 +1,8 @@
 import { ArrowRight, Phone } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
-import { ButtonLink, Container, DemoBadge } from "@/components/ui";
+import { ButtonLink, Container, DemoBadge, ImageCarousel, SECTION_PANEL, type CarouselLabels, type CarouselSlide } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { stockImages } from "@/content/images";
 
 type CtaAction = { label: string; href: string };
@@ -33,6 +34,14 @@ export type CtaBandProps = {
    * ResultCardMarquee of previous results (D-031; null in production, where the photo shows).
    */
   strip?: ReactNode;
+  /**
+   * Photo variant only: 2+ labelled slides (e.g. homeSlides(HOME_CTA_SLIDES, …)) turn the photo
+   * strip into an ImageCarousel when there is no `strip`; needs `carouselLabels` (`common.carousel`).
+   */
+  slides?: CarouselSlide[];
+  carouselLabels?: CarouselLabels;
+  /** Accessible name of that carousel (default `carouselLabels.label`). */
+  carouselLabel?: string;
   /**
    * Photo variant only: the "Call Us" button and the number/hours render only when this is
    * set (pass getContactDetails()?.phone — null in production today).
@@ -104,8 +113,9 @@ export function CtaBand(props: CtaBandProps) {
 /**
  * Homepage closing band (plan §4.12, design board 03; D-031): a strip of Aspire's previous result
  * cards (`strip`, the home page passes a ResultCardMarquee) or — without visible cards (production
- * today) — a decorative full-bleed stock photo (graduate silhouette, labelled; no landscape)
- * fading into a solid navy band. The navy band holds the serif heading, the gold primary button,
+ * today) — a carousel of labelled stock photos (`slides`; no landscape) in the same container box,
+ * or without slides a decorative full-bleed stock photo (graduate silhouette, labelled) fading
+ * into a solid navy band. The carousel has no fade: it would cover its controls. The navy band holds the serif heading, the gold primary button,
  * and — only when `phone` is set — a "Call Us" outline button (tel: link) beside the number and
  * hours, plus the decorative script slogan.
  *
@@ -118,6 +128,9 @@ function PhotoCtaBand({
   primary = DEFAULT_PRIMARY,
   secondary,
   strip,
+  slides,
+  carouselLabels,
+  carouselLabel,
   phone,
   hours,
   demo = false,
@@ -126,15 +139,30 @@ function PhotoCtaBand({
   const tel = phone?.tel.replace(/[^\d+]/g, "");
   const photo = stockImages.graduateSilhouette;
   const hasStrip = strip !== undefined && strip !== null && strip !== false;
+  const carousel = !hasStrip && slides && slides.length > 1 && carouselLabels ? { slides, labels: carouselLabels } : null;
 
   return (
     <section
       aria-labelledby={headingId}
       data-surface="dark"
-      className="relative isolate overflow-hidden bg-navy text-white"
+      className={cn(SECTION_PANEL, "relative isolate bg-navy text-white")}
     >
       {hasStrip ? (
-        <Container className="pt-10 md:pt-14">{strip}</Container>
+        <Container gutters="section" className="pt-14 md:pt-16 lg:pt-20">{strip}</Container>
+      ) : carousel ? (
+        <Container gutters="section" className="pt-14 md:pt-16 lg:pt-20">
+          <div className="relative aspect-16/10 overflow-hidden rounded-card shadow-soft sm:aspect-2/1 lg:aspect-3/1">
+            <ImageCarousel
+              slides={carousel.slides}
+              labels={carousel.labels}
+              label={carouselLabel}
+              aspect="fill"
+              sizes="(min-width: 1200px) 1120px, 100vw"
+              boxRatio={1.6}
+              tone="dark"
+            />
+          </div>
+        </Container>
       ) : (
         <div aria-hidden="true" className="relative h-36 sm:h-48 lg:h-72">
           <Image src={photo.src} alt="" fill sizes="100vw" className="object-cover object-[50%_30%]" />
@@ -147,7 +175,12 @@ function PhotoCtaBand({
         </div>
       )}
 
-      <Container className="grid items-center gap-8 pb-12 pt-6 md:pb-14 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:gap-10">
+      <Container
+        gutters="section"
+        className={cn(
+          "grid items-center gap-8 pb-14 pt-10 md:pb-16 md:pt-12 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:gap-12 lg:pb-20",
+        )}
+      >
         <div className="max-w-xl">
           <h2
             id={headingId}
@@ -155,10 +188,10 @@ function PhotoCtaBand({
           >
             {title}
           </h2>
-          <p className="mt-3 text-[#d9e6f6]">{description}</p>
+          <p className="mt-4 max-w-prose leading-relaxed text-[#d9e6f6]">{description}</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-4">
           <ButtonLink href={primary.href}>
             {primary.label} <ArrowRight aria-hidden="true" className="size-4" />
           </ButtonLink>

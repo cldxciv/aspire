@@ -17,11 +17,11 @@ export function DistrictsServed({ centres }: { centres: Centre[] }) {
   if (districts.length === 0) return null;
 
   return (
-    <dl className="grid gap-2 sm:grid-cols-2">
+    <dl className="grid gap-3 sm:grid-cols-2">
       {districts.map((district) => (
         <div
           key={district}
-          className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-control border border-line bg-white px-4 py-3"
+          className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-control border border-line bg-white px-5 py-3.5"
         >
           <dt className="font-bold text-navy">{district}</dt>
           <dd className="flex flex-wrap gap-x-3 text-sm">

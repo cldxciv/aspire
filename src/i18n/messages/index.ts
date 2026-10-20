@@ -14,6 +14,12 @@ import enPortal from "./en/portal";
 import enPrograms from "./en/programs";
 import enResources from "./en/resources";
 import enResults from "./en/results";
+import enTools from "./en/tools";
+import enPredictor from "./en/predictor";
+import enMocktest from "./en/mocktest";
+import enAsk from "./en/ask";
+import enPlanner from "./en/planner";
+import enMcp from "./en/mcp";
 import hiAbout from "./hi/about";
 import hiAdmissions from "./hi/admissions";
 import hiAuth from "./hi/auth";
@@ -28,6 +34,12 @@ import hiPortal from "./hi/portal";
 import hiPrograms from "./hi/programs";
 import hiResources from "./hi/resources";
 import hiResults from "./hi/results";
+import hiTools from "./hi/tools";
+import hiPredictor from "./hi/predictor";
+import hiMocktest from "./hi/mocktest";
+import hiAsk from "./hi/ask";
+import hiPlanner from "./hi/planner";
+import hiMcp from "./hi/mcp";
 import type { Catalog, Messages, Namespace } from "./types";
 
 export type { Catalog, Messages, Namespace } from "./types";
@@ -53,6 +65,12 @@ const catalogs: Readonly<Record<Locale, Catalog>> = {
     legal: enLegal,
     portal: enPortal,
     auth: enAuth,
+    tools: enTools,
+    predictor: enPredictor,
+    mocktest: enMocktest,
+    ask: enAsk,
+    planner: enPlanner,
+    mcp: enMcp,
   },
   hi: {
     common: hiCommon,
@@ -69,6 +87,12 @@ const catalogs: Readonly<Record<Locale, Catalog>> = {
     legal: hiLegal,
     portal: hiPortal,
     auth: hiAuth,
+    tools: hiTools,
+    predictor: hiPredictor,
+    mocktest: hiMocktest,
+    ask: hiAsk,
+    planner: hiPlanner,
+    mcp: hiMcp,
   },
 };
 

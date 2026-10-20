@@ -18,7 +18,7 @@ export function ScheduleFees({ program, headingId, locale }: { program: Program;
   const hasFees = Boolean(program.feeDisplay?.trim());
 
   return (
-    <div className="rounded-card border border-line bg-white p-5 shadow-soft md:p-6">
+    <div className="rounded-card border border-line bg-white p-6 shadow-soft md:p-7">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id={headingId} className="text-xl font-extrabold text-navy">
           {t.title}
@@ -26,19 +26,19 @@ export function ScheduleFees({ program, headingId, locale }: { program: Program;
         {program.status === "placeholder" && <DemoBadge label={common.labels.demo} />}
       </div>
       {known.length > 0 && (
-        <dl className="mt-3 divide-y divide-line">
+        <dl className="mt-4 divide-y divide-line">
           {known.map((fact) => (
-            <div key={fact.label} className="flex justify-between gap-4 py-2.5 text-sm">
+            <div key={fact.label} className="flex justify-between gap-4 py-3 text-sm">
               <dt className="text-muted">{fact.label}</dt>
               <dd className="text-right font-bold text-navy">{fact.value}</dd>
             </div>
           ))}
         </dl>
       )}
-      <p className="mt-3 text-sm text-muted">
+      <p className="mt-4 text-sm leading-relaxed text-muted">
         {known.length === 0 ? t.noneKnown : hasFees ? t.withFees : t.withoutFees} {t.askCounsellor}
       </p>
-      <ButtonLink href={localePath("/admissions#enquiry", locale)} className="mt-5 w-full">
+      <ButtonLink href={localePath("/admissions#enquiry", locale)} className="mt-6 w-full">
         {t.cta}
       </ButtonLink>
     </div>

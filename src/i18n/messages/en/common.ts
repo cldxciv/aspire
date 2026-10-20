@@ -36,6 +36,11 @@ const common = {
       articles: "Articles & guidance",
       downloads: "Downloads",
       admissionsFaqs: "Admissions FAQs",
+      studentTools: "Student tools",
+      predictor: "Rank & college predictor",
+      mockTests: "Mock tests",
+      askAspire: "Ask Aspire (doubts)",
+      planner: "Study planner",
       contact: "Contact",
       studentLogin: "Student Login",
       parentLogin: "Parent Login",
@@ -44,6 +49,7 @@ const common = {
     descriptions: {
       allPrograms: "IIT-JEE, NEET, Foundation and dropper pathways",
       admissions: "How to enquire and what happens next",
+      studentTools: "Free predictor, mock tests, doubt help and planner",
     },
     currentSection: "(current section)",
     openMenu: "Open menu",
@@ -110,6 +116,19 @@ const common = {
     loading: "Loading…",
     required: "Required",
     optional: "Optional",
+  },
+  /** Shared `ImageCarousel` (src/components/ui/ImageCarousel.tsx). `{n}` / `{total}` via `format()`. */
+  carousel: {
+    label: "Photo gallery",
+    previous: "Previous photo",
+    next: "Next photo",
+    pause: "Pause slideshow",
+    play: "Play slideshow",
+    goTo: "Go to slide {n}",
+    slideOf: "{n} of {total}",
+    /** Read aloud as the role of the carousel and of each slide (aria-roledescription). */
+    roleCarousel: "carousel",
+    roleSlide: "slide",
   },
 };
 

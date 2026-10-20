@@ -5,6 +5,12 @@ import { PhotoPanel } from "@/components/about/PhotoPanel";
 import { DailyRoutine } from "@/components/hostels/DailyRoutine";
 import { FeatureList } from "@/components/hostels/FeatureList";
 import { HostelCampusCard } from "@/components/hostels/HostelCampusCard";
+import {
+  HOSTEL_CAMPUS_PHOTOS,
+  HOSTEL_EMPTY_PHOTO,
+  HOSTEL_HERO_KEYS,
+  HOSTEL_PHOTOS,
+} from "@/components/hostels/hostel-photos";
 import { RoomTypes } from "@/components/hostels/RoomTypes";
 import {
   ButtonLink,
@@ -15,6 +21,7 @@ import {
   Section,
   SectionHeading,
 } from "@/components/ui";
+import { heroSlides } from "@/components/ui/hero-slides";
 import { stockImages, type StockImageKey } from "@/content/images";
 import { format } from "@/i18n/format";
 import { localePath } from "@/i18n/paths";
@@ -30,26 +37,23 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-/**
- * Stock photos beside the campus hostel cards, in card order (D-030): generic study scenes, each
- * captioned "not an Aspire hostel or campus". No landscapes, and never result cards beside a hostel
- * or campus (D-031). None of them is used elsewhere on this page.
- */
-const CAMPUS_PHOTOS: StockImageKey[] = ["tableDiscussion", "booksAndNotebook", "mathsNotebook", "libraryAisle"];
-
 export default async function HostelsPage() {
   const [locale, t, tc] = await Promise.all([getLocale(), getMessages("hostels"), getMessages("common")]);
   const [info, centres] = await Promise.all([getHostelInfo(locale), getCentres(undefined, locale)]);
   const centreBySlug = new Map(centres.map((centre) => [centre.slug, centre]));
   const photoLabel = tc.labels.illustrativeStockPhoto;
   const photo = (key: StockImageKey) => localizeImage(stockImages[key], locale);
+  // Residence-life carousel (stock photos, each labelled and captioned as not an Aspire hostel).
   const hero = {
     title: t.hero.title,
     crumbs: [{ label: t.hero.crumb }],
     homeLabel: tc.labels.home,
     homeHref: localePath("/", locale),
-    image: photo("studyThroughWindow"),
-    imageLabel: photoLabel,
+    slides: heroSlides(
+      HOSTEL_HERO_KEYS.map((key) => stockImages[key]),
+      photoLabel,
+      locale,
+    ).map((slide) => ({ ...slide, caption: t.hero.photoCaption })),
   };
   const enquiryHref = localePath("/admissions#enquiry", locale);
 
@@ -58,7 +62,7 @@ export default async function HostelsPage() {
       <>
         <PageHero {...hero} lead={t.hero.emptyLead} />
         <Section aria-labelledby="hostels-empty-title">
-          <FillMediaSplit image={photo("deskLampEvening")} imageSide="left" imageLabel={photoLabel} caption={t.stockCaption}>
+          <FillMediaSplit image={photo(HOSTEL_EMPTY_PHOTO)} imageSide="left" imageLabel={photoLabel} caption={t.stockCaption}>
             <h2 id="hostels-empty-title" className="sr-only">
               {t.empty.heading}
             </h2>
@@ -104,7 +108,7 @@ export default async function HostelsPage() {
       </PageHero>
 
       <Section tone={tone("intro")} aria-labelledby="hostels-intro-title">
-        <FillMediaSplit image={photo("deskLampEvening")} imageSide="right" imageLabel={photoLabel} caption={t.stockCaption}>
+        <FillMediaSplit image={photo(HOSTEL_PHOTOS.intro)} imageSide="right" imageLabel={photoLabel} caption={t.stockCaption}>
           {demoLabel && (
             <Notice variant="warning" title={t.demoNotice.title} className="mb-8">
               {t.demoNotice.body}
@@ -147,7 +151,7 @@ export default async function HostelsPage() {
                   demoLabel={demoLabel}
                 />
               );
-              const campusPhoto = CAMPUS_PHOTOS[index];
+              const campusPhoto = HOSTEL_CAMPUS_PHOTOS[index];
               return (
                 <li key={campus.centreSlug}>
                   {campusPhoto ? (
@@ -171,7 +175,7 @@ export default async function HostelsPage() {
       )}
 
       <Section tone={tone("care")} aria-labelledby="hostels-care-title">
-        <FillMediaSplit image={photo("libraryReading")} imageSide="left" imageLabel={photoLabel} caption={t.stockCaption}>
+        <FillMediaSplit image={photo(HOSTEL_PHOTOS.care)} imageSide="left" imageLabel={photoLabel} caption={t.stockCaption}>
           <SectionHeading
             id="hostels-care-title"
             title={t.care.title}
@@ -183,7 +187,7 @@ export default async function HostelsPage() {
 
         {(info.girlsResidency.features.length > 0 || info.girlsResidency.summary) && (
           <FillMediaSplit
-            image={photo("studentsWalkingPath")}
+            image={photo(HOSTEL_PHOTOS.girls)}
             imageSide="right"
             imageLabel={photoLabel}
             caption={t.stockCaption}
@@ -213,7 +217,7 @@ export default async function HostelsPage() {
 
       {hasRooms && (
         <Section tone={tone("rooms")} aria-labelledby="hostels-rooms-title">
-          <PhotoPanel image={photo("laptopStudy")} imageLabel={photoLabel} className="mb-8">
+          <PhotoPanel image={photo(HOSTEL_PHOTOS.roomsPanel)} imageLabel={photoLabel} className="mb-8">
             <SectionHeading
               id="hostels-rooms-title"
               title={t.rooms.title}
@@ -229,7 +233,7 @@ export default async function HostelsPage() {
           )}
           {info.roomFeatures.length > 0 && (
             <FillMediaSplit
-              image={photo("bunkBedRoom")}
+              image={photo(HOSTEL_PHOTOS.roomFeatures)}
               imageSide="right"
               imageLabel={photoLabel}
               caption={t.stockCaption}
@@ -246,7 +250,7 @@ export default async function HostelsPage() {
 
       {hasDay && (
         <Section tone={tone("day")} aria-labelledby="hostels-day-title">
-          <PhotoPanel image={photo("pocketWatchWorksheet")} imageLabel={photoLabel} className="mb-10">
+          <PhotoPanel image={photo(HOSTEL_PHOTOS.dayPanel)} imageLabel={photoLabel} className="mb-10">
             <SectionHeading
               id="hostels-day-title"
               title={t.day.title}
@@ -256,30 +260,18 @@ export default async function HostelsPage() {
               className="mb-0"
             />
           </PhotoPanel>
-          {info.dailyRoutine.length > 0 && (
-            <FillMediaSplit
-              image={photo("notebookSolutions")}
-              imageSide="right"
-              imageLabel={photoLabel}
-              caption={t.stockCaption}
-            >
-              <DailyRoutine items={info.dailyRoutine} />
-            </FillMediaSplit>
-          )}
-          {info.menuHighlights.length > 0 && (
-            <FillMediaSplit
-              image={photo("steelThali")}
-              imageSide="left"
-              imageLabel={photoLabel}
-              caption={t.stockCaption}
-              className={info.dailyRoutine.length > 0 ? "mt-12" : undefined}
-            >
-              <h3 className="text-[clamp(1.35rem,2.4vw,1.625rem)] font-extrabold leading-snug tracking-tight text-navy">
-                {t.day.menuTitle}
-              </h3>
-              <FeatureList features={info.menuHighlights} columns={1} className="mt-4" />
-            </FillMediaSplit>
-          )}
+          {/* The routine and the menu share one photo: the meal photo is in the hero carousel. */}
+          <FillMediaSplit image={photo(HOSTEL_PHOTOS.day)} imageSide="right" imageLabel={photoLabel} caption={t.stockCaption}>
+            <DailyRoutine items={info.dailyRoutine} />
+            {info.menuHighlights.length > 0 && (
+              <div className={info.dailyRoutine.length > 0 ? "mt-10" : undefined}>
+                <h3 className="text-[clamp(1.35rem,2.4vw,1.625rem)] font-extrabold leading-snug tracking-tight text-navy">
+                  {t.day.menuTitle}
+                </h3>
+                <FeatureList features={info.menuHighlights} columns={1} className="mt-4" />
+              </div>
+            )}
+          </FillMediaSplit>
         </Section>
       )}
 
@@ -290,7 +282,7 @@ export default async function HostelsPage() {
           description={t.cta.description}
           primary={{ label: t.cta.primary, href: enquiryHref }}
           secondary={{ label: t.cta.secondary, href: localePath("/centres", locale) }}
-          image={photo("notebookPlanning")}
+          image={photo(HOSTEL_PHOTOS.cta)}
           imageLabel={photoLabel}
         />
       </Section>

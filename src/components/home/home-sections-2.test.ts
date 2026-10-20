@@ -23,7 +23,9 @@ import {
 import type { Article, Centre, Testimonial } from "@/lib/types";
 import { CampusLifeTiles } from "./CampusLifeTiles";
 import { CentresShowcase, toCentrePickerItems } from "./CentresShowcase";
+import { stockImages } from "@/content/images";
 import { CtaBand } from "./CtaBand";
+import { HOME_LIFE_SLIDES } from "./home-carousels";
 import { CENTRE_PIN_POSITIONS } from "./HimachalMap";
 import { ImpactChart } from "./ImpactChart";
 import { ResourcesTeaser } from "./ResourcesTeaser";
@@ -156,10 +158,13 @@ describe("homepage sections II with placeholder content (development / preview)"
 
     expect(html).toContain('aria-labelledby="home-life-title"');
     expect(html).toContain("A home for learning and growth");
-    // D-030: a labelled stock photo band carrying the heading, then the four tiles.
-    expect(count(html, /<figure/g)).toBe(5);
-    expect(html).toContain("study-desk-through-window.jpg");
-    expect(html).toContain(">Illustrative stock photo<");
+    // D-030: a band carousel of labelled stock photos carrying the heading, then the four tiles.
+    expect(count(html, /<figure/g)).toBe(4);
+    expect(count(html, /aria-roledescription="carousel"/g)).toBe(1);
+    expect(html).toContain('aria-label="Student life: Photo gallery"');
+    for (const key of HOME_LIFE_SLIDES) expect(html).toContain(encodeURIComponent(stockImages[key].src));
+    expect(count(html, />Illustrative stock photo</g)).toBe(HOME_LIFE_SLIDES.length);
+    expect(html).not.toMatch(/fetchPriority="high"/i);
     for (const file of ["classroom-desks-sunlight.jpg", "library-reading-student.jpg", "science-lab-pipette-experiment.jpg", "campus-building.webp"]) {
       expect(html).toContain(file);
     }
@@ -339,7 +344,8 @@ describe("homepage sections II without placeholder content (production)", () => 
     const [hostel, centres] = await Promise.all([getHostelInfo(), getCentres()]);
     expect(hostel).toBeNull();
     const html = render(createElement(CampusLifeTiles, { hostel, centres, locale: "en" }));
-    expect(count(html, /<figure/g)).toBe(5); // photo band + four tiles
+    expect(count(html, /<figure/g)).toBe(4); // four tiles (the band is a carousel)
+    expect(count(html, /aria-roledescription="carousel"/g)).toBe(1);
     expect(html).toContain('href="/about"');
     expect(html).not.toContain('href="/hostels"');
     expect(textOf(html)).toContain("Campus life A place to focus");

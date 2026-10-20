@@ -95,7 +95,7 @@ export function RankersTable({
         role="search"
         aria-label={t.formLabel}
         onSubmit={(e) => e.preventDefault()}
-        className="flex flex-col gap-3 @2xl:flex-row @2xl:items-end"
+        className="flex flex-col gap-4 @2xl:flex-row @2xl:items-end"
       >
         <div className="flex-1">
           <label htmlFor={searchId} className="mb-1 block text-xs font-bold text-[#354b66]">
@@ -122,7 +122,7 @@ export function RankersTable({
             />
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3 @2xl:flex">
+        <div className="grid grid-cols-2 gap-4 @2xl:flex">
           <div className="@2xl:w-44">
             <label htmlFor={examId} className="mb-1 block text-xs font-bold text-[#354b66]">
               {t.exam}
@@ -175,7 +175,7 @@ export function RankersTable({
         )}
       </form>
 
-      <p role="status" className="mb-4 mt-3 text-sm text-muted">
+      <p role="status" className="mb-5 mt-4 text-sm text-muted">
         {filtered.length === 0
           ? filterSummary
             ? format(t.noMatchFor, { filters: filterSummary })
@@ -195,13 +195,13 @@ export function RankersTable({
                 <caption className="sr-only">{t.caption}</caption>
                 <thead className="bg-[#f4f7fb] text-xs font-bold text-[#40536b]">
                   <tr>
-                    <th scope="col" className="px-3 py-3 sm:px-4">
+                    <th scope="col" className="px-3 py-3.5 sm:px-5">
                       {t.student}
                     </th>
-                    <th scope="col" className="px-3 py-3 sm:px-4">
+                    <th scope="col" className="px-3 py-3.5 sm:px-5">
                       {t.institution}
                     </th>
-                    <th scope="col" className="px-3 py-3 sm:px-4">
+                    <th scope="col" className="px-3 py-3.5 sm:px-5">
                       {t.examYear}
                     </th>
                   </tr>
@@ -209,19 +209,19 @@ export function RankersTable({
                 <tbody>
                   {shown.map((row) => (
                     <tr key={row.id} className="border-t border-line align-top">
-                      <th scope="row" className="px-3 py-3 font-normal sm:px-4">
+                      <th scope="row" className="px-3 py-3.5 font-normal sm:px-5">
                         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                           <span className={row.name ? "font-semibold text-navy" : "text-muted"}>
                             {row.name ?? messages.nameWithheld}
                           </span>
                           {row.placeholder && <DemoBadge label={messages.demo} />}
                         </span>
-                        {row.note && <span className="mt-0.5 block text-xs text-muted">{row.note}</span>}
+                        {row.note && <span className="mt-1 block text-xs text-muted">{row.note}</span>}
                       </th>
-                      <td className="px-3 py-3 text-ink sm:px-4">
+                      <td className="px-3 py-3.5 text-ink sm:px-5">
                         {row.institution ?? <span className="text-muted">{t.notStated}</span>}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-3 text-ink sm:px-4">
+                      <td className="whitespace-nowrap px-3 py-3.5 text-ink sm:px-5">
                         {trackLabel(row.exam, messages.tracks)}
                         <span className="block text-xs text-muted">{row.year}</span>
                       </td>
@@ -231,7 +231,7 @@ export function RankersTable({
               </table>
             </div>
             {remaining > 0 && (
-              <div className="mt-4 flex justify-center">
+              <div className="mt-6 flex justify-center">
                 <Button
                   variant="outline"
                   aria-controls={listId}
@@ -258,7 +258,7 @@ export function RankersTable({
       </div>
 
       {sources.length > 0 && (
-        <p className="mt-4 text-xs text-muted [overflow-wrap:anywhere]">
+        <p className="mt-6 text-xs text-muted [overflow-wrap:anywhere]">
           <span className="font-bold text-[#354b66]">{t.source}</span> {sources.join(" · ")}
         </p>
       )}

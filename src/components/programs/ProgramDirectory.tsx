@@ -37,7 +37,7 @@ export function ProgramDirectory({ programs, messages }: { programs: Program[]; 
 
   return (
     <div>
-      <div role="group" aria-label={t.filterLabel} className="mb-3 flex flex-wrap gap-2">
+      <div role="group" aria-label={t.filterLabel} className="mb-4 flex flex-wrap gap-2.5">
         {options.map((option) => {
           const pressed = exam === option.value;
           return (
@@ -61,7 +61,7 @@ export function ProgramDirectory({ programs, messages }: { programs: Program[]; 
         })}
       </div>
       {/* Includes the filter name so the announcement changes even when the count doesn't. */}
-      <p role="status" className="mb-5 text-sm text-muted">
+      <p role="status" className="mb-6 text-sm text-muted md:mb-8">
         {visible.length === 1 ? t.showingOne : format(t.showingMany, { count: visible.length })}
         {exam !== "all" && ` ${format(t.forTrack, { track: trackLabel(exam, messages.tracks) })}`}
       </p>

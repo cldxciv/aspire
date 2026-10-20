@@ -107,7 +107,7 @@ export default async function CentresPage() {
             action={<ButtonLink href={localePath("/contact", locale)}>{t.directory.emptyCta}</ButtonLink>}
           />
         )}
-        {hasPhotos && <p className="mt-5 text-xs text-muted">{t.photos.note}</p>}
+        {hasPhotos && <p className="mt-8 text-xs text-muted">{t.photos.note}</p>}
       </Section>
 
       <BleedSplit
@@ -124,7 +124,7 @@ export default async function CentresPage() {
           action={servesListed && centres.some(isPlaceholder) ? <DemoBadge label={common.labels.demoPending} /> : undefined}
         />
         <DistrictsServed centres={centres} />
-        <aside aria-labelledby="centre-map-title" className="mt-8">
+        <aside aria-labelledby="centre-map-title" className="mt-10 md:mt-12">
           <MapPanel headingId="centre-map-title" t={t.map} compact />
         </aside>
       </BleedSplit>

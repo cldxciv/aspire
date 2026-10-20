@@ -141,7 +141,7 @@ export function CentreCard({
           </span>
         </figure>
       )}
-      <div className={cn("@container flex min-w-0 flex-col gap-5 p-5 md:p-6", photo ? "" : "md:flex-row")}>
+      <div className={cn("@container flex min-w-0 flex-col gap-6 p-6 md:p-8 xl:p-10", photo ? "" : "md:flex-row")}>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
@@ -156,13 +156,13 @@ export function CentreCard({
               {placeholder && <Badge variant="neutral">{t.pending}</Badge>}
             </div>
           </div>
-          {centre.summary && <p className="mt-2 text-sm text-ink">{centre.summary}</p>}
+          {centre.summary && <p className="mt-3 max-w-prose text-sm leading-relaxed text-ink">{centre.summary}</p>}
 
-          <div className={cn("mt-4 grid gap-5", photo ? "@lg:grid-cols-2" : "lg:grid-cols-2")}>
+          <div className={cn("mt-6 grid gap-6", photo ? "@lg:grid-cols-2" : "lg:grid-cols-2")}>
             <div>
               <h4 className={subheading}>{t.contact}</h4>
               {hasContact ? (
-                <dl className="mt-2 space-y-2 text-sm text-ink">
+                <dl className="mt-3 space-y-2.5 text-sm text-ink">
                   {centre.address && (
                     <ContactDetail icon={MapPin} label={t.address}>
                       {centre.address}
@@ -189,14 +189,14 @@ export function CentreCard({
                   )}
                 </dl>
               ) : (
-                <p className="mt-2 text-sm text-muted">{t.contactPending}</p>
+                <p className="mt-3 text-sm text-muted">{t.contactPending}</p>
               )}
             </div>
 
             {hasNotes && (
               <div>
                 <h4 className={subheading}>{t.notes}</h4>
-                <dl className="mt-2 space-y-2.5">
+                <dl className="mt-3 space-y-3">
                   {centre.hostelNote && (
                     <NoteDetail icon={BedDouble} label={t.hostel}>
                       {centre.hostelNote}
@@ -223,9 +223,9 @@ export function CentreCard({
           </div>
 
           {centre.programs.length > 0 && (
-            <div className="mt-4">
+            <div className="mt-6">
               <h4 className={subheading}>{t.programs}</h4>
-              <ul className="mt-2 flex flex-wrap gap-1.5">
+              <ul className="mt-3 flex flex-wrap gap-2">
                 {centre.programs.map((exam) => (
                   <li key={exam}>
                     <Pill>{trackLabel(exam, messages.tracks)}</Pill>
@@ -236,9 +236,9 @@ export function CentreCard({
           )}
 
           {highlights.length > 0 && (
-            <div className="mt-4">
+            <div className="mt-6">
               <h4 className={subheading}>{t.highlights}</h4>
-              <ul className="mt-2 flex flex-wrap gap-1.5">
+              <ul className="mt-3 flex flex-wrap gap-2">
                 {highlights.map((highlight) => (
                   <li key={highlight}>
                     <Pill>{highlight}</Pill>
@@ -249,16 +249,16 @@ export function CentreCard({
           )}
 
           {facilities.length > 0 && (
-            <details className="group mt-4 rounded-control border border-line bg-surface">
-              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-4 py-2 text-sm font-bold text-navy [&::-webkit-details-marker]:hidden">
+            <details className="group mt-6 rounded-control border border-line bg-surface">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-5 py-2.5 text-sm font-bold text-navy [&::-webkit-details-marker]:hidden">
                 {format(t.facilities, { count: facilities.length })}
                 <ChevronDown aria-hidden="true" className="size-4 transition-transform group-open:rotate-180" />
               </summary>
-              <ul className="grid gap-3 px-4 pb-4 text-sm sm:grid-cols-2">
+              <ul className="grid gap-4 px-5 pb-5 pt-1 text-sm sm:grid-cols-2">
                 {facilities.map((facility) => (
                   <li key={facility.name}>
                     <p className="font-semibold text-navy">{facility.name}</p>
-                    <p className="text-muted">{facility.description}</p>
+                    <p className="mt-0.5 leading-relaxed text-muted">{facility.description}</p>
                   </li>
                 ))}
               </ul>
@@ -266,7 +266,7 @@ export function CentreCard({
           )}
 
           {(tel || mailto || directions || hostelHref) && (
-            <div className="mt-5 flex flex-wrap gap-2">
+            <div className="mt-8 flex flex-wrap gap-3">
               {tel && (
                 <a href={tel} className={buttonClasses({ variant: "dark" })}>
                   <Phone aria-hidden="true" className="size-4" />

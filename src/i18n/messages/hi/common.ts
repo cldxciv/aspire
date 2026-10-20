@@ -35,6 +35,11 @@ const common: Messages<"common"> = {
       articles: "लेख और मार्गदर्शन",
       downloads: "डाउनलोड",
       admissionsFaqs: "प्रवेश संबंधी प्रश्न",
+      studentTools: "विद्यार्थी टूल्स",
+      predictor: "रैंक और कॉलेज प्रेडिक्टर",
+      mockTests: "मॉक टेस्ट",
+      askAspire: "Ask Aspire (शंका समाधान)",
+      planner: "स्टडी प्लानर",
       contact: "संपर्क",
       studentLogin: "विद्यार्थी लॉगिन",
       parentLogin: "अभिभावक लॉगिन",
@@ -42,6 +47,7 @@ const common: Messages<"common"> = {
     descriptions: {
       allPrograms: "IIT-JEE, NEET, फ़ाउंडेशन और ड्रॉपर प्रोग्राम",
       admissions: "पूछताछ कैसे करें और आगे क्या होता है",
+      studentTools: "मुफ़्त प्रेडिक्टर, मॉक टेस्ट, शंका समाधान और प्लानर",
     },
     currentSection: "(वर्तमान अनुभाग)",
     openMenu: "मेन्यू खोलें",
@@ -107,6 +113,17 @@ const common: Messages<"common"> = {
     loading: "लोड हो रहा है…",
     required: "आवश्यक",
     optional: "वैकल्पिक",
+  },
+  carousel: {
+    label: "फ़ोटो गैलरी",
+    previous: "पिछली फ़ोटो",
+    next: "अगली फ़ोटो",
+    pause: "स्लाइड शो रोकें",
+    play: "स्लाइड शो चलाएँ",
+    goTo: "स्लाइड {n} पर जाएँ",
+    slideOf: "{total} में से {n}",
+    roleCarousel: "कैरोसेल",
+    roleSlide: "स्लाइड",
   },
 };
 

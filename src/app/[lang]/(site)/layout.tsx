@@ -8,7 +8,8 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
     <>
       <SkipLink />
       <SiteHeader />
-      <main id="main" className="flex-1">
+      {/* Soft backdrop the section panels float on; spacing comes from SECTION_PANEL / HERO_PANEL (components/ui/Layout). */}
+      <main id="main" className="flex-1 bg-gap pb-3 sm:pb-5 lg:pb-7">
         {children}
       </main>
       <SiteFooter />
