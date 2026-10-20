@@ -26,6 +26,7 @@ import type mocktest from "./en/mocktest";
 import type ask from "./en/ask";
 import type planner from "./en/planner";
 import type mcp from "./en/mcp";
+import type crm from "./en/crm";
 
 export type Catalog = {
   common: typeof common;
@@ -48,6 +49,7 @@ export type Catalog = {
   ask: typeof ask;
   planner: typeof planner;
   mcp: typeof mcp;
+  crm: typeof crm;
 };
 
 export type Namespace = keyof Catalog;

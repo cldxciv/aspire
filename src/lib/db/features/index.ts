@@ -1,4 +1,5 @@
 import { schema as ask } from "./ask";
+import { schema as crm } from "./crm";
 import { schema as mcp } from "./mcp";
 import { schema as mocktest } from "./mocktest";
 import { schema as planner } from "./planner";
@@ -11,4 +12,5 @@ export const FEATURE_SCHEMAS: readonly { name: string; sql: string }[] = [
   { name: "ask", sql: ask },
   { name: "planner", sql: planner },
   { name: "mcp", sql: mcp },
+  { name: "crm", sql: crm },
 ];

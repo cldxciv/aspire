@@ -20,6 +20,7 @@ import enMocktest from "./en/mocktest";
 import enAsk from "./en/ask";
 import enPlanner from "./en/planner";
 import enMcp from "./en/mcp";
+import enCrm from "./en/crm";
 import hiAbout from "./hi/about";
 import hiAdmissions from "./hi/admissions";
 import hiAuth from "./hi/auth";
@@ -40,6 +41,7 @@ import hiMocktest from "./hi/mocktest";
 import hiAsk from "./hi/ask";
 import hiPlanner from "./hi/planner";
 import hiMcp from "./hi/mcp";
+import hiCrm from "./hi/crm";
 import type { Catalog, Messages, Namespace } from "./types";
 
 export type { Catalog, Messages, Namespace } from "./types";
@@ -71,6 +73,7 @@ const catalogs: Readonly<Record<Locale, Catalog>> = {
     ask: enAsk,
     planner: enPlanner,
     mcp: enMcp,
+    crm: enCrm,
   },
   hi: {
     common: hiCommon,
@@ -93,6 +96,7 @@ const catalogs: Readonly<Record<Locale, Catalog>> = {
     ask: hiAsk,
     planner: hiPlanner,
     mcp: hiMcp,
+    crm: hiCrm,
   },
 };
 
