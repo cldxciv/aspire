@@ -1,0 +1,23 @@
+# Aspire IIT & Medical website on a shared VPS (deploy/README.md).
+# Lives in /opt/aspire-web beside the server's other sites: the app listens on 127.0.0.1:3011
+# only; the host nginx terminates TLS and proxies to it. Settings (incl. secrets) are in
+# /opt/aspire-web/.env (mode 600, never committed); the auth database is ./data/aspire.sqlite.
+name: aspire-web
+services:
+  app:
+    image: aspire-web:${RELEASE:-latest}
+    build:
+      context: ./release
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:?set NEXT_PUBLIC_SITE_URL in .env}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      AUTH_DB_PATH: /data/aspire.sqlite
+      NODE_OPTIONS: --max-old-space-size=512
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:3011:3000"
+    mem_limit: 768m
