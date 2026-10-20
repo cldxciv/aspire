@@ -9,6 +9,7 @@ import { messagesFor } from "@/i18n/messages";
 import { getResultCards } from "@/lib/data";
 import { ResultCardMarquee } from "./ResultCardMarquee";
 import { ResultCardMosaic } from "./ResultCardMosaic";
+import { MARQUEE_CSS } from "./ResultMarqueeFrame";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -119,5 +120,33 @@ describe("ResultCardMarquee — preview", () => {
     expect(html).toContain("prefers-reduced-motion: no-preference");
     expect(html).toContain("motion-reduce:hidden");
     expect(html).toContain('href="/results"');
+  });
+
+  it("keeps the static server markup under reduced motion and pauses the CSS loop only for the right reasons", async () => {
+    preview();
+    const html = renderToStaticMarkup(await ResultCardMarquee({ locale: "en", limit: 6, secondsPerCard: 5 }));
+    // Before hydration nothing steps under reduced motion: the copy and the toggle are hidden there
+    // and the strip is a scrollable row (the toggle shows once the client frame can step it).
+    expect(html).toMatch(/<ul aria-hidden="true" class="[^"]*motion-reduce:hidden/);
+    expect(html).toMatch(/<label class="[^"]*motion-reduce:hidden"><input type="checkbox"/);
+    expect(html).toContain("motion-reduce:overflow-x-auto");
+    // Not idle (paused) in the server markup: the CSS loop runs before hydration as before.
+    expect(html).toContain('<div class="aspire-result-marquee min-w-0 max-w-full"><div role="region"');
+    expect(html).toContain("--marquee-duration:30s");
+    // The CSS loop: normal motion only (the global reduced-motion rule would cut it short), paused
+    // by hover, keyboard focus in the strip (not the toggle, so unticking Pause resumes at once),
+    // the Pause toggle and — once hydrated — a hidden tab or an off-screen strip.
+    expect(MARQUEE_CSS).toMatch(/@media \(prefers-reduced-motion: no-preference\) \{\s*\.aspire-result-marquee-track \{ animation:/);
+    expect(MARQUEE_CSS).not.toContain("prefers-reduced-motion: reduce");
+    expect(MARQUEE_CSS).not.toContain(":focus-within");
+    for (const pause of [
+      ".aspire-result-marquee:hover .aspire-result-marquee-track",
+      '.aspire-result-marquee [role="region"]:focus-visible .aspire-result-marquee-track',
+      ".aspire-result-marquee[data-marquee-idle] .aspire-result-marquee-track",
+      ".aspire-result-marquee:has(.aspire-result-marquee-pause:checked) .aspire-result-marquee-track",
+    ]) {
+      // One selector per rule: a browser without :has() still gets the other pauses.
+      expect(MARQUEE_CSS).toContain(`${pause} { animation-play-state: paused; }`);
+    }
   });
 });

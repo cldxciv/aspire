@@ -28,7 +28,7 @@ import { getCurrentSession, type CurrentSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/connection";
 
 /**
- * Ask Aspire — AI doubt solver (D-035; docs/ask-aspire.md). Node runtime (the default).
+ * Rancho — the AI doubt solver, formerly "Ask Aspire" (D-035; docs/ask-aspire.md). Node runtime (the default).
  *
  * GET /api/ask → `{ ok, data: AskStatus }`: whether it is connected, and today's allowance.
  *
@@ -45,14 +45,14 @@ import { getDb } from "@/lib/db/connection";
  * tracking; guests get nothing stored beyond a hashed per-day counter.
  */
 
-const BUSY_MESSAGE = "Ask Aspire is busy right now. Please try again in a minute.";
-const NOT_CONFIGURED_MESSAGE = "Ask Aspire isn't connected yet.";
+const BUSY_MESSAGE = "Rancho is busy right now. Please try again in a minute.";
+const NOT_CONFIGURED_MESSAGE = "Rancho isn't connected yet.";
 const UPSTREAM_MESSAGE = "We couldn't answer this question. If you added a photo, try a clearer JPG or PNG.";
 const SERVER_ERROR_MESSAGE = "Something went wrong. Please try again.";
 
 function limitMessage(reservation: Extract<Reservation, { allowed: false }>, asker: Asker): string {
-  if (reservation.reason === "global") return "Ask Aspire has answered all the questions it can for today. Please try again tomorrow.";
-  if (reservation.limit === 0) return "Ask Aspire is not available for this account type right now.";
+  if (reservation.reason === "global") return "Rancho has answered all the questions it can for today. Please try again tomorrow.";
+  if (reservation.limit === 0) return "Rancho is not available for this account type right now.";
   return asker.account === "guest"
     ? `You've used today's ${reservation.limit} free questions. Sign in with your Aspire student account for more, or come back tomorrow.`
     : `You've used today's ${reservation.limit} questions. Please come back tomorrow.`;

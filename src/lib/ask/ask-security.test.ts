@@ -50,7 +50,7 @@ function render(text: string): string {
 /** Tags the renderer itself may produce. */
 const ALLOWED_TAGS = new Set(["div", "p", "span", "br", "h3", "h4", "ol", "ul", "li", "pre", "code", "strong", "em", "sup", "hr"]);
 
-describe("Ask Aspire answer renderer — adversarial model output (QA-SEC-M6)", () => {
+describe("Rancho answer renderer — adversarial model output (QA-SEC-M6)", () => {
   it.each(PAYLOADS)("never turns %s into markup in any block or inline context", (payload) => {
     for (const wrap of WRAPPERS) {
       const html = render(wrap(payload));

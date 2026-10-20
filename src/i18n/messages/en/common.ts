@@ -39,7 +39,7 @@ const common = {
       studentTools: "Student tools",
       predictor: "Rank & college predictor",
       mockTests: "Mock tests",
-      askAspire: "Ask Aspire (doubts)",
+      askAspire: "Ask Rancho (doubts)",
       planner: "Study planner",
       contact: "Contact",
       studentLogin: "Student Login",

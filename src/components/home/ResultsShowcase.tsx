@@ -31,7 +31,7 @@ export function toResultCardViews(results: ResultRecord[], locale: Locale = "en"
 /**
  * Home results (plan §4.3, D-030 / D-031): a half-bleed split with a mosaic of Aspire's previous
  * result cards on one side (`media`, from the page: resultMosaicMedia(); each card is the
- * student's own card) and, on the other, the intro above a scroll-snap rail of result cards. Rail
+ * student's own card) and, on the other, the intro above an autoplaying, pausable scroll-snap rail of result cards. Rail
  * cards use initials and a generic graduation mark, never photos or crests. Without visible result
  * cards (production today) the column shows a labelled stock photo of objects only (no people: it
  * may sit beside student names, no landscape). With nothing publishable only the intro renders,
@@ -52,7 +52,7 @@ export function ResultsShowcase({
   const cards = toResultCardViews(results, locale);
   const hasCards = cards.length > 0;
   const t = messagesFor(locale, "home").results;
-  const { labels } = messagesFor(locale, "common");
+  const { labels, carousel } = messagesFor(locale, "common");
 
   return (
     <BleedSplit
@@ -90,6 +90,8 @@ export function ResultsShowcase({
               previous: t.previous,
               next: t.next,
               demo: labels.demo,
+              pause: carousel.pause,
+              play: carousel.play,
             }}
           />
         </div>

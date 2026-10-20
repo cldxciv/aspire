@@ -23,6 +23,27 @@ Owner: Orchestrator. Updated after each merge. Only commands actually run are li
 | Mobile menu (browser, dev) | Escape closes from toggle and from panel; focus returns to toggle |
 | Images (browser, dev) at 360 / 768 / 1280 on `/`, `/about`, `/programs`, `/programs/iit-jee`, `/resources`, article, `/admissions`, `/contact` | all load, no broken images, no horizontal overflow; hero served via `/_next/image` (~235 KB at 1920w) |
 
+## Next release — Rancho, homepage student tools, carousels always on (in progress 2026-10-20)
+Base: live release `828ec27` (M7: CRM lead engine, MCP per-service permissions, tablet fixes). Everything below is **uncommitted in the working tree**: not yet built, committed or deployed. Owner questions: `docs/aspire-approval-checklist.md` §16 (RA-1–RA-6, HT-1–HT-3, CA-1–CA-2) · Rancho: `docs/ask-aspire.md`, `docs/rancho.md` (being written).
+
+| Workstream | Owner | Status | Notes |
+|---|---|---|---|
+| Homepage student-tools widget between Programs and Why Aspire (predictor rank band, mock-test list, Ask Rancho examples, planner countdown) | HOME-TOOLS | complete, awaiting deploy | `src/components/home/HomeTools*.tsx`, `home-tools*.ts`; sample tables and tests only in dev / preview, labelled; planner countdown worked out in the browser; nothing typed is stored or sent |
+| "Ask Aspire" renamed to Rancho (Aspire's existing snow leopard mascot): en + hi copy, mascot on the Ask page and tools hub (`PageHero` `media` prop, `RanchoMediaPanel`), API fallback strings, persona prompt `2026-10-20.2`, CRM label "Ask Rancho (doubts)", privacy wording | RANCHO-NAME | complete, awaiting deploy | Route unchanged (`/tools/ask`). Temporary SVG stand-in until the official artwork arrives (`src/components/rancho/rancho-assets.ts` → `OFFICIAL_RANCHO_ART_AVAILABLE`). Admin MCP tool descriptions still say "Ask Aspire" |
+| Floating Rancho chat button on every public page (typed questions only; photo questions → `/tools/ask`; hidden on `/tools/ask`, during a mock-test attempt and in print) | RANCHO-UI | in progress | `src/components/rancho/**`, `(site)/layout.tsx`, `rancho` messages; same `/api/ask` backend and daily limits as the Ask page; footer bottom padding raised so its last row clears the button |
+| All carousels autoplay, including the results rail and result-card marquee; also under `prefers-reduced-motion`, with instant (non-sliding) changes; visible Pause on each (WCAG 2.2.2) | Carousel workflow | in progress (build, then 3 checks) | `src/components/ui/ImageCarousel.tsx`, `carousel-utils.ts`, `ResultRail.tsx`, `ResultCardMarquee.tsx`. Accessibility trade-off chosen by the owner (checklist CA-2) |
+| Owner sign-off items (checklist §16) and this section | DOCS | complete | |
+
+| Check | Result |
+|---|---|
+| typecheck / lint / test / `next build` / production smoke | **not run yet** for this release; due once the two in-progress workstreams land |
+
+### Next-release conditions
+- **Rancho's artwork is a temporary stand-in.** It must never be presented as Aspire's official Rancho. Swap it in when Aspire sends the files (checklist RA-2).
+- **Rancho must always read as an AI**: AI disclosure on the Ask page, in the chat and in the privacy notice; the persona never claims to be human and never invents mascot facts (RA-3, RA-4). Any prompt wording change is a new `ASK_PROMPT_VERSION`.
+- **Carousel autoplay on reduced-motion devices is the owner's choice**, not the web team's default (CA-2). The visible Pause control must stay on every carousel.
+- Hindi: the widget's example doubts need a subject teacher's check (HT-3). The Rancho copy is part of the Hindi machine-draft review (HI-1).
+
 ## Milestone 4 — Hindi site, logins, image-rich pages, faculty removed (integrated 2026-10-20)
 Plan: `docs/m4-plan.md` (D-028 i18n, D-029 auth, D-030 imagery) · briefs: `docs/m4-briefs.md` · integrity review: `docs/m4-integrity-review.md` · Hindi register: `docs/hindi-review-register.md` · auth: `docs/auth-and-portals.md` · owner questions: `docs/aspire-approval-checklist.md` §15.
 
@@ -125,6 +146,7 @@ Full report: `docs/homepage-implementation-report.md` · QA: `docs/visual-qa-rep
 | Staff permission model (which staff see which learners; audit) | Admin access to learner records (D-015) | Aspire |
 | Verified content (see `content-verification.md`) | Publishing anything as fact | Aspire |
 | Approved photography + brand files | Final visuals | Aspire |
+| Rancho official artwork: head / avatar ≥ 512 × 512 and waving / half-body ≥ 1024 px tall, transparent PNG / WebP / SVG, with confirmation of ownership | Replacing the temporary mascot stand-in | Aspire to send the files (checklist RA-2) |
 | Hosting / domain / deployment target | Launch | Aspire — no deployment without approval |
 
 ## Deferred technical items
@@ -134,4 +156,5 @@ Full report: `docs/homepage-implementation-report.md` · QA: `docs/visual-qa-rep
 - Error-code → HTTP-status mapping exists in both `src/lib/server/http.ts` (BE) and `src/lib/auth/responses.ts` (PORTAL); consolidate into `src/lib/contracts/api.ts`.
 - Portal "Preview" banner/badges must be removed when a real identity provider is connected (`docs/auth-and-portals.md`).
 - Analytics: none installed; event plan needs owner + privacy approval.
+- Admin MCP tool descriptions (`src/lib/mcp/tools/status.ts`, `progress.ts`) still say "Ask Aspire"; rename to Rancho in a later release (checklist RA-6).
 - No git repository yet (owner hasn't requested one).

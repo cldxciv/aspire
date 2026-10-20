@@ -16,9 +16,9 @@ import type { Role } from "@/lib/auth/roles";
 import { cn } from "@/lib/cn";
 import { resolveCrmViewer } from "@/lib/crm/access";
 import { crmPermissions } from "@/lib/crm/types";
-import { portalAreas, visibleStaffNavKeys, type PortalArea } from "./areas";
+import { crmNavItems, portalAreas, visibleStaffNavKeys, type PortalArea } from "./areas";
 import { PortalLanguageSwitcher } from "./PortalLanguageSwitcher";
-import { PortalNav, PortalNavLinks, type PortalNavMessages } from "./PortalNav";
+import { PortalBreadcrumb, PortalNav, PortalNavLinks, type PortalBreadcrumbMessages, type PortalNavMessages } from "./PortalNav";
 import { PortalUserMenu, type PortalUserMenuMessages } from "./PortalUserMenu";
 
 /**
@@ -44,7 +44,7 @@ export async function PortalShell({ area, children }: { area: PortalArea | null;
   const AreaIcon = config?.icon;
   const userMessages: PortalUserMenuMessages = { shell: t.shell, roles: auth.roles, signOut: auth.signOut };
   const homePath = area ? portalAreas[area].nav[0].href : "/";
-  const nav = area === "staff" ? staffNavMessages(t, crm) : area ? navMessages(t, area) : null;
+  const nav = area === "staff" ? staffNavMessages(t, crm) : area ? navMessages(t, area, crm) : null;
   const areaLabel = area === "staff" ? crm.area.label : area ? t.areas[area].label : "";
 
   return (
@@ -90,13 +90,14 @@ export async function PortalShell({ area, children }: { area: PortalArea | null;
 
       {area && nav ? (
         <Container className="grid flex-1 grid-cols-1 content-start gap-4 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:gap-6 md:py-8">
-          <div className="min-w-0 md:sticky md:top-4 md:self-start">
+          <div className="min-w-0 md:sticky md:top-4 md:max-h-[calc(100dvh-2rem)] md:self-start md:overflow-y-auto">
             {area === "staff" ? (
               // Counsellors don't see manager-only items; the static shell starts with the counsellor set.
+              // Admins get the whole admin console nav (CRM pages as its "Leads & admissions" group).
               <Suspense
                 fallback={<PortalNavLinks area={area} locale={locale} messages={nav} visibleKeys={visibleStaffNavKeys(false)} pathname={null} />}
               >
-                <StaffNav locale={locale} messages={nav} />
+                <StaffNav locale={locale} messages={nav} adminMessages={navMessages(t, "admin", crm)} />
               </Suspense>
             ) : (
               <Suspense fallback={<PortalNavLinks area={area} locale={locale} messages={nav} pathname={null} />}>
@@ -105,6 +106,11 @@ export async function PortalShell({ area, children }: { area: PortalArea | null;
             )}
           </div>
           <main id="main" className="min-w-0">
+            {area === "staff" && (
+              <Suspense fallback={null}>
+                <AdminCrmBreadcrumb locale={locale} messages={crmBreadcrumbMessages(t, crm)} />
+              </Suspense>
+            )}
             {children}
           </main>
         </Container>
@@ -119,12 +125,28 @@ export async function PortalShell({ area, children }: { area: PortalArea | null;
   );
 }
 
-export function navMessages(t: Messages<"portal">, area: Exclude<Role, "staff">): PortalNavMessages {
+/** Student / parent / admin nav labels; the admin console also needs `crm` for its CRM group. */
+export function navMessages(t: Messages<"portal">, area: Exclude<Role, "staff">, crm?: Messages<"crm">): PortalNavMessages {
   const { sectionsLabel, ...items } = t.nav;
   return {
     label: format(sectionsLabel, { area: t.areas[area].label }),
     sidebarTitle: t.areas[area].sidebarTitle,
-    items,
+    items: { ...crm?.nav, ...items },
+    groups: t.navGroups,
+    menu: t.shell.menu,
+  };
+}
+
+/** Breadcrumb an admin sees on every CRM page: Staff admin › Leads & admissions › <page>. */
+export function crmBreadcrumbMessages(t: Messages<"portal">, crm: Messages<"crm">): PortalBreadcrumbMessages {
+  return {
+    label: t.shell.breadcrumbLabel,
+    trail: [
+      { label: t.areas.admin.label, href: portalAreas.admin.nav[0].href },
+      { label: t.navGroups.leads, href: crmNavItems[0].href },
+    ],
+    pages: crmNavItems.map((item) => ({ label: crm.nav[item.key as keyof Messages<"crm">["nav"]], href: item.href, exact: item.exact })),
+    fallback: crm.lead.metaTitle,
   };
 }
 
@@ -137,12 +159,23 @@ export function staffNavMessages(t: Messages<"portal">, crm: Messages<"crm">): P
   };
 }
 
-/** Staff nav for the verified viewer (request time): managers / admins also get "Staff & rules". */
-async function StaffNav({ locale, messages }: { locale: Locale; messages: PortalNavMessages }) {
+/**
+ * CRM nav for the verified viewer (request time). Admins get the admin console nav, so the CRM is a
+ * section of it rather than a dead end; managers also get "Staff & rules"; counsellors the rest.
+ */
+async function StaffNav({ locale, messages, adminMessages }: { locale: Locale; messages: PortalNavMessages; adminMessages: PortalNavMessages }) {
   const session = await getPageSession();
   const viewer = resolveCrmViewer(session);
+  if (viewer?.role === "admin") return <PortalNav area="admin" locale={locale} messages={adminMessages} />;
   const canManage = viewer ? crmPermissions(viewer).canViewStaff : false;
   return <PortalNav area="staff" locale={locale} messages={messages} visibleKeys={visibleStaffNavKeys(canManage)} />;
+}
+
+/** The way back to the admin console on CRM pages: admins only (staff have the CRM as their home). */
+async function AdminCrmBreadcrumb({ locale, messages }: { locale: Locale; messages: PortalBreadcrumbMessages }) {
+  const session = await getPageSession();
+  if (session?.role !== "admin" || session.mustChangePassword === true) return null;
+  return <PortalBreadcrumb locale={locale} messages={messages} />;
 }
 
 /** Reads the verified session (request time). */

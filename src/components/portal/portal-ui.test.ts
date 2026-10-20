@@ -25,8 +25,9 @@ import {
   type ToolAudience,
 } from "./learner-tools-view";
 import { ParentOverview, ParentProgress, ParentUpdates } from "./ParentViews";
-import { PortalNavLinks } from "./PortalNav";
-import { navMessages } from "./PortalShell";
+import { crmNavItems, isActivePortalItem, portalAreas, visibleStaffNavKeys } from "./areas";
+import { PortalBreadcrumbLinks, PortalNavLinks } from "./PortalNav";
+import { crmBreadcrumbMessages, navMessages, staffNavMessages } from "./PortalShell";
 import { PortalUserMenu } from "./PortalUserMenu";
 import { StudentOverview, StudentProgress, StudentSection } from "./StudentViews";
 import { adminFailureMessage, filterUsers, UserManager, type AdminUserView } from "./UserManager";
@@ -426,6 +427,9 @@ describe("admin views", () => {
     expect(html).toContain(m.portal.admin.overview.statNote);
     expect(html).toContain('href="/admin/users"');
     expect(html).toContain('href="/admin/audit"');
+    // The admissions CRM is one of the admin areas.
+    expect(html).toContain('href="/crm"');
+    expect(html).toContain(esc(m.portal.admin.overview.areas.crmTitle));
     const preview = inLocale("hi", createElement(AdminOverview, { locale: "hi", m: views("hi"), account: null }));
     expect(preview.split(messagesFor("hi", "portal").blocks.noValue).length - 1).toBe(5);
     expectLocalisedLinks(preview, "hi");
@@ -532,7 +536,7 @@ describe("portal chrome", () => {
   it("nav links are localised and the active item ignores the locale prefix", () => {
     const t = messagesFor("hi", "portal");
     const html = renderToStaticMarkup(
-      createElement(PortalNavLinks, { area: "admin", locale: "hi", messages: navMessages(t, "admin"), pathname: "/hi/admin/users" }),
+      createElement(PortalNavLinks, { area: "admin", locale: "hi", messages: navMessages(t, "admin", messagesFor("hi", "crm")), pathname: "/hi/admin/users" }),
     );
     expect(html).toContain(`aria-label="${t.areas.admin.label} के भाग"`);
     expect(html).toContain('href="/hi/admin/audit"');
@@ -563,5 +567,132 @@ describe("portal chrome", () => {
     expect(signedOut).toContain(portal.shell.notSignedIn);
     expect(signedOut).toContain('href="/hi/login?next=%2Fparent"');
     expect(signedOut).not.toContain(auth.signOut.label);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Admin console navigation: the CRM is a "Leads & admissions" group of the admin nav, never a
+// dead end. Staff (counsellors / managers) keep the flat CRM nav.
+
+const CRM_PAGES = ["/crm", "/crm/today", "/crm/pipeline", "/crm/reports", "/crm/staff"] as const;
+const ADMIN_PAGES = ["/admin", "/admin/enquiries", "/admin/content", "/admin/centres", "/admin/results", "/admin/users", "/admin/audit", "/admin/mcp"] as const;
+
+function adminNav(locale: Locale, path: string): string {
+  const portal = messagesFor(locale, "portal");
+  const crm = messagesFor(locale, "crm");
+  const prefix = locale === "hi" ? "/hi" : "";
+  return renderToStaticMarkup(
+    createElement(PortalNavLinks, { area: "admin", locale, messages: navMessages(portal, "admin", crm), pathname: `${prefix}${path}` }),
+  );
+}
+
+/** hrefs of the links marked `aria-current="page"`. */
+const currentHrefs = (html: string) => [...html.matchAll(/<a [^>]*aria-current="page"[^>]*>/g)].map((m) => /href="([^"]+)"/.exec(m[0])?.[1]);
+
+/** The CRM nav label of a CRM page path. */
+function crmLabel(crm: ReturnType<typeof messagesFor<"crm">>, path: string): string {
+  const item = crmNavItems.find((entry) => entry.href === path);
+  if (!item) throw new Error(path);
+  return crm.nav[item.key as keyof typeof crm.nav];
+}
+
+describe.each(["en", "hi"] as const)("admin console navigation (%s)", (locale) => {
+  const portal = messagesFor(locale, "portal");
+  const crm = messagesFor(locale, "crm");
+  const prefix = locale === "hi" ? "/hi" : "";
+
+  function expectBothGroups(html: string) {
+    for (const path of [...ADMIN_PAGES, ...CRM_PAGES]) expect(html, path).toContain(`href="${prefix}${path}"`);
+    for (const label of Object.values(portal.navGroups)) expect(html).toContain(esc(label));
+    for (const label of Object.values(crm.nav)) expect(html).toContain(esc(label));
+    expect(html).toContain(esc(portal.areas.admin.sidebarTitle));
+    // Group headings label their lists; every aria-labelledby / aria-controls target exists.
+    expect(html.match(/<ul aria-labelledby="/g)).toHaveLength(Object.keys(portal.navGroups).length);
+    expectLabelledByTargets(html);
+    const controls = /aria-controls="([^"]+)"/.exec(html)?.[1];
+    expect(controls && html.includes(`id="${controls}"`)).toBe(true);
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain(esc(portal.shell.menu));
+  }
+
+  it.each(ADMIN_PAGES)("on %s: admin sections and the Leads & admissions group, one current page", (path) => {
+    const html = adminNav(locale, path);
+    expectBothGroups(html);
+    expect(currentHrefs(html)).toEqual([`${prefix}${path}`]);
+  });
+
+  it.each(CRM_PAGES)("on %s: the same admin nav, the CRM page is current and Overview leads back", (path) => {
+    const html = adminNav(locale, path);
+    expectBothGroups(html);
+    expect(currentHrefs(html)).toEqual([`${prefix}${path}`]);
+    expect(html).toContain(`href="${prefix}/admin"`);
+    // The collapsed mobile menu button names the current page.
+    const button = /<button[^>]*>([\s\S]*?)<\/button>/.exec(html)?.[1] ?? "";
+    expect(button).toContain(esc(crmLabel(crm, path)));
+  });
+
+  it("a lead's own page highlights nothing (Inbox matches /crm only)", () => {
+    expect(currentHrefs(adminNav(locale, "/crm/leads/abc123"))).toEqual([]);
+  });
+
+  it.each([...CRM_PAGES, "/crm/leads/abc123"])("breadcrumb on %s: back to the admin console, then Leads & admissions", (path) => {
+    const messages = crmBreadcrumbMessages(portal, crm);
+    const html = renderToStaticMarkup(createElement(PortalBreadcrumbLinks, { locale, messages, pathname: `${prefix}${path}` }));
+    expect(html).toContain(`aria-label="${esc(portal.shell.breadcrumbLabel)}"`);
+    expect(html).toMatch(new RegExp(`<a [^>]*href="${prefix}/admin"[^>]*>.*?${esc(portal.areas.admin.label)}</a>`));
+    expect(html).toMatch(new RegExp(`<a [^>]*href="${prefix}/crm"[^>]*>.*?${esc(portal.navGroups.leads)}</a>`));
+    const current = path.startsWith("/crm/leads/") ? crm.lead.metaTitle : crmLabel(crm, path);
+    expect(html).toMatch(new RegExp(`<span aria-current="page"[^>]*>${esc(current)}</span>`));
+    expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+    expectLocalisedLinks(html, locale);
+  });
+
+  it("staff (counsellor / manager) nav is unchanged: CRM pages only, no admin sections, no groups", () => {
+    for (const canManage of [false, true]) {
+      const html = renderToStaticMarkup(
+        createElement(PortalNavLinks, {
+          area: "staff",
+          locale,
+          messages: staffNavMessages(portal, crm),
+          visibleKeys: visibleStaffNavKeys(canManage),
+          pathname: `${prefix}/crm/today`,
+        }),
+      );
+      expect(html).not.toContain(`href="${prefix}/admin`);
+      expect(html).not.toContain("aria-expanded");
+      expect(html).not.toContain("aria-labelledby");
+      expect(html).toContain(esc(crm.area.sidebarTitle));
+      expect(currentHrefs(html)).toEqual([`${prefix}/crm/today`]);
+      expect(html.includes(`href="${prefix}/crm/staff"`)).toBe(canManage);
+    }
+  });
+
+  it("student and parent navs stay flat strips", () => {
+    for (const area of ["student", "parent"] as const) {
+      const html = renderToStaticMarkup(
+        createElement(PortalNavLinks, { area, locale, messages: navMessages(portal, area, crm), pathname: `${prefix}/${area}` }),
+      );
+      expect(html).not.toContain("aria-expanded");
+      expect(html).not.toContain("/crm");
+      expect(currentHrefs(html)).toEqual([`${prefix}/${area}`]);
+    }
+  });
+});
+
+describe("portal nav config", () => {
+  it("admin groups cover every admin item once; the CRM items are shared with the staff area", () => {
+    const admin = portalAreas.admin;
+    expect(admin.groups?.flatMap((group) => group.items)).toEqual(admin.nav);
+    expect(new Set(admin.nav.map((item) => item.href)).size).toBe(admin.nav.length);
+    expect(admin.groups?.find((group) => group.key === "leads")?.items.slice(0, crmNavItems.length)).toEqual(crmNavItems);
+    expect(portalAreas.staff.nav).toBe(crmNavItems);
+    expect(portalAreas.staff.groups).toBeUndefined();
+  });
+
+  it("exact items match only their own path", () => {
+    expect(isActivePortalItem("/crm/today", "/crm", "/admin", true)).toBe(false);
+    expect(isActivePortalItem("/crm", "/crm", "/admin", true)).toBe(true);
+    expect(isActivePortalItem("/crm/today", "/crm/today", "/admin")).toBe(true);
+    expect(isActivePortalItem("/admin/users", "/admin", "/admin")).toBe(false);
   });
 });

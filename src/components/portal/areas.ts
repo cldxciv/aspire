@@ -11,6 +11,7 @@ import {
   History,
   Inbox,
   LayoutDashboard,
+  Mail,
   MapPin,
   Megaphone,
   ShieldCheck,
@@ -25,6 +26,8 @@ import type { Messages } from "@/i18n/messages/types";
 import type { Role } from "@/lib/auth/roles";
 
 export type PortalNavKey = Exclude<keyof Messages<"portal">["nav"], "sectionsLabel">;
+/** Sidebar group headings (`portal.navGroups`). */
+export type PortalNavGroupKey = keyof Messages<"portal">["navGroups"];
 /** Staff (CRM) sidebar keys: labels come from the `crm` messages (`crm.nav`). */
 export type CrmNavKey = keyof Messages<"crm">["nav"];
 export type AnyPortalNavKey = PortalNavKey | CrmNavKey;
@@ -37,15 +40,24 @@ export type PortalArea = Role | "staff";
 
 /**
  * A sidebar item: `href` is LOCALE-FREE (localise with `localePath`), the label comes from
- * `portal.nav` (or `crm.nav` for the staff area). `managersOnly` items are hidden from
- * counsellors (the page itself re-checks on the server).
+ * `portal.nav` (or `crm.nav` for the CRM items). `managersOnly` items are hidden from
+ * counsellors (the page itself re-checks on the server). `exact` items match only their own
+ * path (the area home always does), so `/crm` (Inbox) is not "current" on `/crm/today`.
  */
-export type PortalNavItem = { key: AnyPortalNavKey; href: string; icon: LucideIcon; managersOnly?: boolean };
+export type PortalNavItem = { key: AnyPortalNavKey; href: string; icon: LucideIcon; managersOnly?: boolean; exact?: boolean };
+
+/** A headed block of sidebar items; `key: null` is the untitled first block (e.g. Overview). */
+export type PortalNavGroup = { key: PortalNavGroupKey | null; items: PortalNavItem[] };
 
 export interface PortalAreaConfig {
   icon: LucideIcon;
-  /** Area home is matched exactly; every other item also matches its sub-paths. */
+  /** Every item, in order. Area home (`nav[0]`) is matched exactly; other items also match their sub-paths. */
   nav: PortalNavItem[];
+  /**
+   * Grouped sidebar (admin console): headed blocks on md+, a "Menu" disclosure below md. Areas
+   * without groups keep the flat list (a scrollable strip below md).
+   */
+  groups?: PortalNavGroup[];
   // Static Tailwind class strings (kept literal so Tailwind can detect them).
   strip: string;
   badge: string;
@@ -55,6 +67,41 @@ export interface PortalAreaConfig {
   tileAccent: string;
   iconTile: string;
 }
+
+/**
+ * The admissions CRM pages (`/crm/**`, D-038). Staff (counsellors / centre managers) get them as
+ * their whole sidebar; admins get them as the "Leads & admissions" group of the admin console, so
+ * the CRM is never a dead end for an admin.
+ */
+export const crmNavItems: PortalNavItem[] = [
+  { key: "inbox", href: "/crm", icon: Inbox, exact: true },
+  { key: "today", href: "/crm/today", icon: CalendarCheck },
+  { key: "pipeline", href: "/crm/pipeline", icon: SquareKanban },
+  { key: "reports", href: "/crm/reports", icon: ChartColumn },
+  { key: "staff", href: "/crm/staff", icon: UserCog, managersOnly: true },
+];
+
+/** Admin console: Overview, then the CRM and the other admin sections in headed groups. */
+const adminGroups: PortalNavGroup[] = [
+  { key: null, items: [{ key: "overview", href: "/admin", icon: LayoutDashboard }] },
+  { key: "leads", items: [...crmNavItems, { key: "enquiries", href: "/admin/enquiries", icon: Mail }] },
+  {
+    key: "website",
+    items: [
+      { key: "content", href: "/admin/content", icon: FileText },
+      { key: "centres", href: "/admin/centres", icon: MapPin },
+      { key: "results", href: "/admin/results", icon: Trophy },
+    ],
+  },
+  {
+    key: "access",
+    items: [
+      { key: "users", href: "/admin/users", icon: UsersRound },
+      { key: "audit", href: "/admin/audit", icon: History },
+      { key: "mcp", href: "/admin/mcp", icon: Bot },
+    ],
+  },
+];
 
 /**
  * Visual identity per portal area: same layout, different accent colour, icon
@@ -95,17 +142,8 @@ export const portalAreas: Record<PortalArea, PortalAreaConfig> = {
   },
   admin: {
     icon: ShieldCheck,
-    nav: [
-      { key: "overview", href: "/admin", icon: LayoutDashboard },
-      { key: "users", href: "/admin/users", icon: UsersRound },
-      { key: "audit", href: "/admin/audit", icon: History },
-      { key: "mcp", href: "/admin/mcp", icon: Bot },
-      { key: "crm", href: "/crm", icon: Inbox },
-      { key: "enquiries", href: "/admin/enquiries", icon: Inbox },
-      { key: "content", href: "/admin/content", icon: FileText },
-      { key: "centres", href: "/admin/centres", icon: MapPin },
-      { key: "results", href: "/admin/results", icon: Trophy },
-    ],
+    nav: adminGroups.flatMap((group) => group.items),
+    groups: adminGroups,
     strip: "bg-gold",
     badge: "border-[#f2dfa0] bg-gold-soft text-[#7a5600]",
     eyebrow: "text-[#7a5600]",
@@ -116,13 +154,7 @@ export const portalAreas: Record<PortalArea, PortalAreaConfig> = {
   },
   staff: {
     icon: BriefcaseBusiness,
-    nav: [
-      { key: "inbox", href: "/crm", icon: Inbox },
-      { key: "today", href: "/crm/today", icon: CalendarCheck },
-      { key: "pipeline", href: "/crm/pipeline", icon: SquareKanban },
-      { key: "reports", href: "/crm/reports", icon: ChartColumn },
-      { key: "staff", href: "/crm/staff", icon: UserCog, managersOnly: true },
-    ],
+    nav: crmNavItems,
     strip: "bg-[#7c5cd6]",
     badge: "border-[#d9ccf7] bg-[#f3eeff] text-[#5b3cc4]",
     eyebrow: "text-[#5b3cc4]",
@@ -140,9 +172,9 @@ export function visibleStaffNavKeys(canManage: boolean): CrmNavKey[] {
     .map((item) => item.key as CrmNavKey);
 }
 
-/** Whether `href` is the current section for a LOCALE-FREE `pathname`. */
-export function isActivePortalItem(pathname: string | null, href: string, areaHome: string): boolean {
+/** Whether `href` is the current section for a LOCALE-FREE `pathname` (`exact`: no sub-paths). */
+export function isActivePortalItem(pathname: string | null, href: string, areaHome: string, exact = false): boolean {
   if (pathname === null) return false;
-  if (href === areaHome) return pathname === href;
+  if (exact || href === areaHome) return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
 }

@@ -51,6 +51,65 @@ const home = {
     emptyBody: "Programs will be listed here once Aspire has confirmed them. A counsellor can help in the meantime.",
     emptyCta: "Talk to a counsellor",
   },
+  /**
+   * "Student tools" widget (HomeTools). Tool names, form labels, sample labels and most CTAs come
+   * from the `tools`, `predictor`, `mocktest`, `ask` and `planner` namespaces; only widget copy is here.
+   */
+  tools: {
+    eyebrow: "Free student tools",
+    title: "Practise, predict and plan",
+    lead: "Estimate a rank band, take an exam-style mock test, get help with a doubt or count the days to your exam — free, in English or Hindi.",
+    points: {
+      free: "Free to try — no sign-up needed to start",
+      private: "What you type in this box stays in your browser",
+      languages: "In English and Hindi",
+    },
+    seeAll: "See all tools",
+    tabs: {
+      predictor: "Rank predictor",
+      mockTests: "Mock tests",
+      ask: "Ask Rancho",
+      planner: "Study planner",
+    },
+    predictor: {
+      lead: "Enter a score or percentile to see an estimated rank band. The full predictor adds colleges, category and home-state quota.",
+      empty: "Your estimated rank band will appear here.",
+      cta: "See colleges & full prediction",
+    },
+    mockTests: {
+      lead: "Exam-style computer-based tests with a timer, question palette and negative marking, then a topic-wise analysis of your attempt.",
+      listLabel: "Tests you can start now",
+    },
+    /**
+     * Rancho is Aspire's existing snow leopard mascot (not a new character) and now names the AI doubt
+     * solver (owner request). The AI caveat comes from `ask.answer.disclaimer`; the full tool keeps its own `ask` copy.
+     */
+    ask: {
+      title: "Ask Rancho",
+      lead: "Rancho, Aspire's friendly snow leopard, now answers your doubts: type or photograph a Physics, Chemistry, Maths or Biology question and get step-by-step help in English or Hindi from our AI doubt solver.",
+      examplesTitle: "Questions you could ask",
+      examples: {
+        physics: "Find the maximum height of a ball thrown at 20 m/s at 30° to the ground.",
+        chemistry: "Why does the boiling point of water rise when salt is added?",
+        maths: "How do I integrate x·eˣ?",
+        biology: "How does double circulation work in the human heart?",
+      },
+    },
+    planner: {
+      lead: "Pick your exam and its date to see how many days you have. The planner then builds a day-by-day plan to that date.",
+      prompt: "Choose your exam date to see the days left.",
+      daysLeft: "{days} days to {exam}",
+      today: "{exam} is today — all the best!",
+      past: "That date has passed. Choose your next exam date.",
+      featuresLabel: "What the planner does",
+      features: {
+        plan: "A day-by-day plan to your exam date",
+        revise: "Spaced revision of what you study",
+        cards: "Formula flashcards",
+        streak: "Streaks and XP to keep you going",
+      },
+    },
+  },
   why: {
     eyebrow: "Why Aspire",
     title: "More than coaching",

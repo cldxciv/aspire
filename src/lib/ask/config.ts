@@ -1,8 +1,8 @@
 import "server-only";
 
 /**
- * Ask Aspire server configuration (D-035; names documented in .env.example and
- * docs/ask-aspire.md). Read per call so tests and deployments see the current environment.
+ * Server configuration of Rancho, the AI doubt solver (formerly "Ask Aspire", so the env names
+ * keep ASK_ASPIRE_*; D-035; names documented in .env.example and docs/ask-aspire.md). Read per call so tests and deployments see the current environment.
  * The API key never leaves the server: it is not logged, returned or sent to the browser.
  */
 

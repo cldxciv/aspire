@@ -2,6 +2,7 @@ import { AttributionCapture } from "@/components/forms/AttributionCapture";
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { SkipLink } from "@/components/layout/SkipLink";
+import { RanchoDock } from "@/components/rancho/RanchoDock";
 
 /** Public-site shell: skip link, header, main landmark, footer. Portal routes use their own (portal) layout. */
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
@@ -16,6 +17,8 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
         {children}
       </main>
       <SiteFooter />
+      {/* Floating "Ask Rancho" button + lazy chat panel (hidden on /tools/ask; components/rancho). */}
+      <RanchoDock />
     </>
   );
 }

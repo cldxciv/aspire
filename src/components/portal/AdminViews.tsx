@@ -1,10 +1,10 @@
-import { FileText, History, Inbox, KeyRound, LogIn, MapPin, Trophy, UsersRound } from "lucide-react";
+import { BriefcaseBusiness, FileText, History, Inbox, KeyRound, LogIn, MapPin, Trophy, UsersRound } from "lucide-react";
 import { ButtonLink, Notice } from "@/components/ui";
 import { stockImages } from "@/content/images";
 import type { Locale } from "@/i18n/config";
 import type { Messages } from "@/i18n/messages/types";
 import { localePath } from "@/i18n/paths";
-import { buildLoginHref, CHANGE_PASSWORD_PATH } from "@/lib/auth/paths";
+import { buildLoginHref, CHANGE_PASSWORD_PATH, CRM_HOME } from "@/lib/auth/paths";
 import type { Role } from "@/lib/auth/roles";
 import { localizeImage } from "@/lib/data";
 import { AccountPanel, NotConnected, PortalPageHeader, PortalPanel, QuickLinks, StatTiles } from "./PortalBlocks";
@@ -109,6 +109,7 @@ export function AdminOverview({
         <QuickLinks
           area="admin"
           links={[
+            { title: o.areas.crmTitle, description: o.areas.crmBody, href: href(CRM_HOME), icon: BriefcaseBusiness },
             { title: o.areas.usersTitle, description: o.areas.usersBody, href: href("/admin/users"), icon: UsersRound },
             { title: o.areas.auditTitle, description: o.areas.auditBody, href: href("/admin/audit"), icon: History },
             { title: o.areas.enquiriesTitle, description: o.areas.enquiriesBody, href: href("/admin/enquiries"), icon: Inbox },

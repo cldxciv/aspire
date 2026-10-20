@@ -61,7 +61,8 @@ export async function SiteFooter() {
 
   return (
     <footer data-surface="dark" className="bg-navy-deep text-[#dce8f7]">
-      <Container className="pb-6 pt-10 md:pt-12">
+      {/* pb-24: the last row (legal + login links) scrolls clear of the floating Rancho button (components/rancho). */}
+      <Container className="pb-24 pt-10 md:pt-12 print:pb-6">
         <div className="grid gap-8 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)_auto] lg:gap-10">
           <div>
             <Logo tone="dark" locale={locale} label={t.logo.homeLabel} />

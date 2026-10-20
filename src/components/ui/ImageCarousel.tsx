@@ -2,20 +2,11 @@
 
 import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
 import Image from "next/image";
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type FocusEvent,
-  type KeyboardEvent,
-  type PointerEvent,
-} from "react";
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { format } from "@/i18n/format";
 import type { Messages } from "@/i18n/messages/types";
 import { cn } from "@/lib/cn";
+import { useHydrated, useInView, useInteractionPause, usePageHidden, useReducedMotion } from "./carousel-env";
 import {
   autoplayDelay,
   carouselAspectClass,
@@ -27,6 +18,7 @@ import {
   liveMode,
   nextIndex,
   prevIndex,
+  scrollBehaviorFor,
   shouldAutoRotate,
   wrapIndex,
   type CarouselAspect,
@@ -57,8 +49,9 @@ type ImageCarouselBase = {
   label?: string;
   /** Preload slide 1 at high fetch priority (above-the-fold heroes only). */
   priority?: boolean;
+  /** Default true, on every device (reduced motion makes each step an instant swap instead). */
   autoPlay?: boolean;
-  /** Autoplay interval; never below 2000, and 6000 for a non-finite value. */
+  /** Autoplay interval; never below 2000, and 6000 for a non-finite value; at least 8000 under reduced motion. */
   intervalMs?: number;
   /** Control styling: `dark` = navy buttons + gold focus ring (dark heroes), `light` = white buttons + blue ring. */
   tone?: CarouselTone;
@@ -85,41 +78,6 @@ export type ImageCarouselProps = ImageCarouselBase &
       }
   );
 
-/* ---- external stores (SSR snapshots keep the first client render identical to the server) ---- */
-
-const noopSubscribe = () => () => {};
-
-let reducedMq: MediaQueryList | undefined;
-const rmq = (): MediaQueryList | undefined =>
-  (reducedMq ??= window.matchMedia?.("(prefers-reduced-motion: reduce)"));
-
-function subscribeReducedMotion(onChange: () => void) {
-  const mq = rmq();
-  mq?.addEventListener("change", onChange);
-  return () => mq?.removeEventListener("change", onChange);
-}
-const getReducedMotion = () => rmq()?.matches ?? false;
-
-function subscribeVisibility(onChange: () => void) {
-  document.addEventListener("visibilitychange", onChange);
-  return () => document.removeEventListener("visibilitychange", onChange);
-}
-const getPageHidden = () => document.visibilityState === "hidden";
-
-const getTrue = () => true;
-const getFalse = () => false;
-
-/** Keyboard focus only: a click or tap also focuses a button, but must not pause rotation. */
-function isKeyboardFocus(el: HTMLElement): boolean {
-  try {
-    return el.matches(":focus-visible");
-  } catch {
-    return true;
-  }
-}
-
-const isToggle = (el: EventTarget | null) => el instanceof HTMLElement && el.hasAttribute("data-carousel-toggle");
-
 /**
  * Accessible image carousel (WAI-ARIA APG carousel pattern) on a CSS scroll-snap track.
  *
@@ -133,11 +91,13 @@ const isToggle = (el: EventTarget | null) => el instanceof HTMLElement && el.has
  * - Fixed aspect box (no layout shift); `aspect="fill"` absolutely fills a positioned parent and
  *   then requires `sizes`. The `21/9` band is 16/10 below `md`; `hero` (PageHero) is 4/3 on tablets
  *   (`md`) and 16/10 otherwise.
- * - Autoplay (default on, 6 s) never starts under `prefers-reduced-motion`, and pauses on mouse
- *   hover, while keyboard focus is inside (not on the pause / play button), while the tab is hidden
- *   and while scrolled out of view; taps and clicks do not pause it. The visible pause / play
- *   button (WCAG 2.2.2) is the visitor's override. The slide track is `aria-live="polite"` whenever
- *   it is not actually rotating, so Next / Previous / dots / keys are announced.
+ * - Autoplay (default on, 6 s) runs on every device once hydrated. Under `prefers-reduced-motion`
+ *   it still runs, but each change is an instant swap (no smooth slide) every 8 s at least. It
+ *   pauses on mouse hover, while keyboard focus is inside (not on the pause / play button), while
+ *   the tab is hidden and while scrolled out of view; taps and clicks do not pause it. The visible
+ *   pause / play button (WCAG 2.2.2) is the visitor's override, and a Pause sticks until Play. The
+ *   slide track is `aria-live="polite"` whenever it is not actually rotating, so Next / Previous /
+ *   dots / keys are announced.
  * - It is a named `role="group"` (not a landmark), so several carousels on a page are fine.
  * - `priority` preloads the FIRST slide only, at `fetchPriority="high"`; every other slide is lazy.
  * - One slide renders a plain static image (no controls); no slides render nothing.
@@ -166,17 +126,18 @@ export function ImageCarousel(props: ImageCarouselProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
   const [choice, setChoice] = useState<PlayChoice>("auto");
-  const [hovered, setHovered] = useState(false);
-  const [focusWithin, setFocusWithin] = useState(false);
-  const [inView, setInView] = useState(true);
-  const hydrated = useSyncExternalStore(noopSubscribe, getTrue, getFalse);
-  const reducedMotion = useSyncExternalStore(subscribeReducedMotion, getReducedMotion, getFalse);
-  const pageHidden = useSyncExternalStore(subscribeVisibility, getPageHidden, getFalse);
+  const { hovered, focusWithin, noteKey, pointerHandlers, focusHandlers } = useInteractionPause();
+  const hydrated = useHydrated();
+  const reducedMotion = useReducedMotion();
+  const pageHidden = usePageHidden();
+  // Pause while scrolled out of view (saves bandwidth and avoids off-screen motion).
+  const inView = useInView(rootRef, count > 1);
 
   // `slides` can shrink after mount; never point past the end.
   const current = clampIndex(active, count);
   // Nothing rotates before hydration, so the server markup says "not playing" (live region on).
-  const playing = hydrated && isPlaying({ autoPlay, choice, reducedMotion });
+  // Reduced motion does not stop it: `goTo` then jumps instantly and the interval is ≥ 8 s.
+  const playing = hydrated && isPlaying({ autoPlay, choice });
   const rotate = shouldAutoRotate({ count, playing, hovered, focusWithin, pageHidden, inView });
 
   const goTo = useCallback(
@@ -184,7 +145,7 @@ export function ImageCarousel(props: ImageCarouselProps) {
       const track = trackRef.current;
       if (!track || count < 2) return;
       const target = wrapIndex(index, count);
-      track.scrollTo({ left: target * track.clientWidth, behavior: reducedMotion ? "auto" : "smooth" });
+      track.scrollTo({ left: target * track.clientWidth, behavior: scrollBehaviorFor(reducedMotion) });
     },
     [count, reducedMotion],
   );
@@ -200,22 +161,9 @@ export function ImageCarousel(props: ImageCarouselProps) {
   // Autoplay: one timeout per slide, so a manual move restarts the full interval.
   useEffect(() => {
     if (!rotate) return;
-    const timer = window.setTimeout(() => goTo(nextIndex(current, count)), autoplayDelay(intervalMs));
+    const timer = window.setTimeout(() => goTo(nextIndex(current, count)), autoplayDelay(intervalMs, reducedMotion));
     return () => window.clearTimeout(timer);
-  }, [rotate, current, count, intervalMs, goTo]);
-
-  // Pause while scrolled out of view (saves bandwidth and avoids off-screen motion).
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root || count < 2 || typeof IntersectionObserver === "undefined") return;
-    // The last entry of a batch is the newest state of the one observed element.
-    const observer = new IntersectionObserver(
-      (entries) => setInView(entries[entries.length - 1]?.isIntersecting ?? true),
-      { threshold: 0.25 },
-    );
-    observer.observe(root);
-    return () => observer.disconnect();
-  }, [count]);
+  }, [rotate, current, count, intervalMs, reducedMotion, goTo]);
 
   if (count === 0) return null;
 
@@ -263,30 +211,15 @@ export function ImageCarousel(props: ImageCarouselProps) {
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     // A click-focused control that is then used from the keyboard is keyboard focus too.
-    if (!isToggle(event.target)) setFocusWithin(true);
+    noteKey(event.target);
     const target = indexForKey(event.key, current, count);
     if (target === null) return;
     event.preventDefault();
     goTo(target);
   };
 
-  // Keyboard focus inside pauses rotation, except on the pause / play button itself (APG), so that
-  // pressing Play from the keyboard visibly resumes. Mouse / touch focus does not pause.
-  const onFocus = (event: FocusEvent<HTMLElement>) => {
-    const target = event.target as HTMLElement;
-    setFocusWithin(!isToggle(target) && isKeyboardFocus(target));
-  };
-  const onBlur = (event: FocusEvent<HTMLElement>) => {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusWithin(false);
-  };
-  // Real mouse hover only: a tap fires compatibility mouseenter without a matching mouseleave.
-  const onPointerEnter = (event: PointerEvent<HTMLElement>) => {
-    if (event.pointerType === "mouse") setHovered(true);
-  };
-  const onPointerLeave = (event: PointerEvent<HTMLElement>) => {
-    if (event.pointerType === "mouse") setHovered(false);
-  };
-
+  // Keyboard focus inside and mouse hover pause rotation (`useInteractionPause`), except focus on
+  // the pause / play button itself (APG), so that pressing Play from the keyboard visibly resumes.
   return (
     <div
       ref={rootRef}
@@ -296,10 +229,8 @@ export function ImageCarousel(props: ImageCarouselProps) {
       data-surface={surface}
       className={cn("group/carousel isolate overflow-hidden bg-surface", carouselAspectClass[aspect], className)}
       onKeyDown={onKeyDown}
-      onFocus={onFocus}
-      onBlur={onBlur}
-      onPointerEnter={onPointerEnter}
-      onPointerLeave={onPointerLeave}
+      {...focusHandlers}
+      {...pointerHandlers}
     >
       {hydrated && (
         // First in the tab order (APG), drawn bottom right.

@@ -1,7 +1,7 @@
 import "server-only";
 
 /**
- * Structured logging for Ask Aspire with fixed codes only (D-035). Never logged: the question,
+ * Structured logging for Rancho, the AI doubt solver, with fixed codes only (D-035). Never logged: the question,
  * the photo, the answer, the topic, an IP address, an account id or login, the API key, or an
  * upstream error message (those can echo request content). Token counts are logged so the
  * owner can watch costs.

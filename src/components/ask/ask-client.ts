@@ -1,7 +1,7 @@
 import type { AskStreamEvent } from "@/lib/ask/constants";
 
 /**
- * Browser-side helpers for Ask Aspire (pure functions, unit-tested): reading the NDJSON answer
+ * Browser-side helpers for Rancho, the AI doubt solver (pure functions, unit-tested): reading the NDJSON answer
  * stream and turning API error responses into UI states.
  */
 

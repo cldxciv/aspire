@@ -34,6 +34,10 @@ const SPLIT = "grid items-center gap-8 md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.
  * `label`. One slide renders as a static photo. `slides` wins over `image` when both are given.
  * Build slides with `heroSlides(images, label, locale)` from `@/components/ui/hero-slides`.
  *
+ * `media` replaces the photo inside the same rounded aspect box (positioned, so a child with
+ * `absolute inset-0` fills it), e.g. an illustration such as the Rancho mascot on /tools/ask.
+ * It wins over `slides` and `image`; give it its own accessible name or caption.
+ *
  * Localisation: pass `homeLabel` / `homeHref` from the page's messages (defaults are English).
  * The breadcrumb landmark label and the carousel strings follow the locale of `homeHref` unless
  * `breadcrumbLabel` / `carouselLabels` are given.
@@ -45,6 +49,7 @@ export function PageHero({
   children,
   image,
   imageLabel,
+  media,
   slides,
   carouselLabels,
   imagePriority = true,
@@ -61,6 +66,8 @@ export function PageHero({
   image?: ImageAsset;
   /** Visible label on the photo, e.g. "Illustrative stock photo". */
   imageLabel?: string;
+  /** Rendered in the photo box instead of `image` / `slides` (see above). */
+  media?: ReactNode;
   /** Hero carousel (2+ slides; licensed stock or approved assets, each with its own visible label). */
   slides?: CarouselSlide[];
   /** Carousel strings; defaults to `common.carousel` in the locale of `homeHref`. */
@@ -76,7 +83,7 @@ export function PageHero({
   const common = localeFromPathname(homeHref) === "hi" ? hiCommon : enCommon;
   const navLabel = breadcrumbLabel ?? common.labels.breadcrumb;
   const hasSlides = (slides?.length ?? 0) > 0;
-  const hasMedia = hasSlides || Boolean(image);
+  const hasMedia = hasSlides || Boolean(image) || Boolean(media);
 
   const copy = (
     <div className={cn(hasMedia && "md:py-2 lg:py-4")}>
@@ -116,7 +123,14 @@ export function PageHero({
   return (
     <div data-surface="dark" className={cn(HERO_PANEL, "bg-linear-to-r from-navy to-navy-2 py-12 text-white md:py-16 lg:py-20")}>
       <Container gutters="section">
-        {hasSlides ? (
+        {media ? (
+          <div className={SPLIT}>
+            {copy}
+            <div className="relative aspect-16/10 overflow-hidden rounded-card shadow-card ring-1 ring-white/15 md:aspect-4/3 lg:aspect-16/10">
+              {media}
+            </div>
+          </div>
+        ) : hasSlides ? (
           <div className={SPLIT}>
             {copy}
             <ImageCarousel

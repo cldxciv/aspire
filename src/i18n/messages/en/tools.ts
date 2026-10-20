@@ -6,7 +6,7 @@ const tools = {
   meta: {
     title: "Student tools",
     description:
-      "Free study tools from Aspire IIT & Medical: rank & college predictor, CBT mock tests, Ask Aspire doubt help and a study planner — in English and Hindi.",
+      "Free study tools from Aspire IIT & Medical: rank & college predictor, CBT mock tests, Rancho (our AI doubt solver) and a study planner — in English and Hindi.",
   },
   hero: {
     title: "Free tools for JEE, NEET and BOH students",
@@ -28,14 +28,18 @@ const tools = {
       body: "Exam-style tests with a timer, question palette, mark-for-review and negative marking — then a topic-wise analysis and a 30-day plan. Sample questions for now.",
     },
     ask: {
-      title: "Ask Aspire",
-      body: "Type or photograph a Physics, Chemistry, Maths or Biology question and get step-by-step help in English or Hindi. AI can make mistakes — check with your teacher.",
+      title: "Ask Rancho",
+      body: "Rancho, Aspire's friendly snow leopard, now answers your doubts. Type or photograph a Physics, Chemistry, Maths or Biology question and our AI doubt solver walks you through it step by step, in English or Hindi. AI can make mistakes — check with your teacher.",
     },
     planner: {
       title: "Study planner",
       body: "A day-by-day plan to your exam date, spaced revision, formula flashcards, streaks and XP. Works on your phone and can be installed like an app.",
     },
   },
+  /** Accessible name of the Rancho mascot illustration on the Ask Rancho card. */
+  ranchoMascot: "Rancho, Aspire's snow leopard mascot",
+  /** Visible pill on that illustration. */
+  ranchoCaption: "AI doubt solver",
   note: "These tools are free to try. Sign in with your Aspire student account to save tests, plans and streaks; parents linked to your account can see your progress in the parent portal.",
 };
 

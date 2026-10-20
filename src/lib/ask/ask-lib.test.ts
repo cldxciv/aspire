@@ -19,7 +19,7 @@ import { createTrailerFilter, parseTrailerBody, splitAnswer, tidyAnswerEnd, TRAI
 import { istDay, reserveQuestion, secondsUntilNextIstDay, usageStatus } from "./usage";
 import { clearDoubtTopics, getWeakTopicsFromDoubts, recordDoubtTopic } from "./weak-topics";
 
-/** Unit tests for Ask Aspire's building blocks (no network: the Claude API is never called). */
+/** Unit tests for the building blocks of Rancho, the AI doubt solver (no network: the Claude API is never called). */
 
 const JPEG_BYTES = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
 const PNG_BYTES = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
@@ -89,6 +89,40 @@ describe("prompt", () => {
     expect(system).toMatch(/unreadable/);
     // Stable across requests (prompt caching): nothing per-request in the system prompt.
     expect(buildSystemPrompt()).toBe(system);
+  });
+
+  it("speaks as Rancho: an AI that never claims to be human, with any snow-leopard touch kept out of the working", () => {
+    const system = buildSystemPrompt();
+    expect(system).toMatch(/^You are Rancho, the AI doubt solver/);
+    expect(system).not.toMatch(/Ask Aspire/);
+    // AI disclosure and no invented mascot facts.
+    expect(system).toMatch(/You are an AI \(an AI model made by Anthropic\)/);
+    expect(system).toMatch(/not a person/);
+    expect(system).toMatch(/Never claim or pretend to be human/);
+    expect(system).toMatch(/Do not invent facts about Rancho or about Aspire/);
+    // "Who is Rancho?" / "are you a real snow leopard?" never drops the AI disclosure.
+    const selfDescription = system.match(/If asked about Rancho[^\n]*/)?.[0] ?? "";
+    expect(selfDescription, "self-description rule").not.toBe("");
+    expect(selfDescription).toMatch(/\bAI\b/);
+    expect(selfDescription).toMatch(/not a person/);
+    // Voice: teaching first, one optional snow-leopard touch outside the maths, no emojis.
+    expect(system).toMatch(/Teaching comes first/);
+    expect(system).toMatch(/at most one light, generic snow-leopard touch per answer: a single short phrase in either the opening line or the closing line, never both/);
+    expect(system).toMatch(/Keep it out of the steps, the working, the mathematics and the \*\*Final answer:\*\* line/);
+    expect(system).toMatch(/Do not use emojis/);
+    expect(system).toMatch(/Leave the playful touch out completely when you decline a harmful request/);
+    // Same language as requested, persona included; Hindi name in Devanagari.
+    expect(system).toMatch(/always answer in the requested language/);
+    expect(system).toMatch(/Rancho's voice, including any snow-leopard touch, follows the answer language/);
+    expect(system).toContain("रैंचो");
+    expect(system).toContain("\"आप\" throughout");
+    // Scope and safety rules survive the persona (declines stay in character but serious ones stay serious).
+    expect(system).toMatch(/in Rancho's friendly voice that you only help with Physics, Chemistry, Maths and Biology doubts/);
+    expect(system).toMatch(/refuse anything harmful or dangerous/);
+    expect(system).toMatch(/sitting a live exam or test right now/);
+    expect(system).toMatch(/Never ask for personal details/);
+    expect(ASK_PROMPT_VERSION).not.toBe("2026-10-20.1");
+    expect(ASK_PROMPT_VERSION).not.toBe("2026-10-20.2");
   });
 
   it("puts the language and subject in the user turn and fences the student's text", () => {

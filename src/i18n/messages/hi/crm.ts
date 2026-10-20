@@ -105,7 +105,7 @@ const crm: Messages<"crm"> = {
   tools: {
     predictor: "रैंक प्रेडिक्टर",
     mocktest: "मॉक टेस्ट",
-    ask: "Ask Aspire",
+    ask: "रैंचो से पूछें (डाउट)",
     planner: "स्टडी प्लानर",
   },
   programs: {

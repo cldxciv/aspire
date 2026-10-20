@@ -3,7 +3,7 @@ import { cn } from "@/lib/cn";
 import { parseAnswer, type BlockNode, type InlineLine, type InlineNode } from "@/lib/ask/markdown";
 
 /**
- * Renders an Ask Aspire answer from the whitelist parser in src/lib/ask/markdown.ts.
+ * Renders a Rancho answer (the AI doubt solver, formerly "Ask Aspire") from the whitelist parser in src/lib/ask/markdown.ts.
  * Model output only ever becomes React text children (escaped by React); no HTML is injected.
  */
 

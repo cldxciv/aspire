@@ -1,10 +1,17 @@
-# Ask Aspire — AI doubt solver (M6, D-035)
+# Rancho — AI doubt solver (formerly "Ask Aspire"; M6, D-035)
 
 Students type or photograph a Physics, Chemistry, Maths or Biology question and get a step-by-step answer in English or Hindi from Claude (Anthropic). Page: `/tools/ask` and `/hi/tools/ask`. API: `GET|POST /api/ask`. Owner: A3-ASK.
 
+## Name and mascot (owner request, 2026-10-20)
+
+- The tool is **Rancho** (Hindi **रैंचो**), named after Aspire's existing friendly snow leopard mascot (from Aspire's Instagram reels). User-facing names: "Ask Rancho" / "रैंचो से पूछें" (tool, nav, breadcrumb), "Rancho — your doubt-solving study buddy" / "रैंचो — डाउट हल करने वाला आपका स्टडी बडी" (page h1), "Rancho (our AI doubt solver)" in the privacy notice. Every surface keeps clear that Rancho is an **AI, not a person**, that it can make mistakes, and that Anthropic processes the question.
+- **Unchanged on purpose:** the routes (`/tools/ask`, `/hi/tools/ask`), the API (`/api/ask`), the database tables (`ask_usage`, `ask_topics`), the env names (`ASK_ASPIRE_*`), the log/audit codes, the `ask` message namespace and its keys, `nav.askAspire`, the `askAspire` field of the MCP `site_status` output and the code identifiers (`AskAspire` component, `AskAspirePage`). Old links keep working; no redirect is needed.
+- Mascot artwork: `RanchoMascot` (`src/components/rancho/`, owner RANCHO-UI; a temporary SVG stand-in until Aspire's official artwork is added, see `docs/rancho.md`). On `/tools/ask` the hero shows Rancho waving in place of a photo (`RanchoMediaPanel` through `PageHero`'s `media` slot) with an "AI doubt solver" pill, and the head avatar sits beside "Rancho's answer". The `/tools` hub card shows the same panel instead of its stock photo. On these surfaces and the homepage tools widget the stand-in's wave and blink play once and finish within 4.5 s (`RANCHO_MOTION_ONCE` in `RanchoMediaPanel.tsx`, WCAG 2.2.2), not in an endless loop; `prefers-reduced-motion` stops them entirely. The floating "Ask Rancho" button on every page is RANCHO-UI's (`rancho` namespace).
+- Do not invent mascot facts (age, origin, catchphrases); the owner can add them later.
+
 ## How it works
 
-1. The page is static. In the browser it calls `GET /api/ask` → `{ configured, account, limit, used, remaining, resetsInSeconds, maxImageBytes }`. Without a key it shows **"Ask Aspire isn't connected yet"**. The how-it-works, honest notes and enquiry link stay on the page.
+1. The page is static. In the browser it calls `GET /api/ask` → `{ configured, account, limit, used, remaining, resetsInSeconds, maxImageBytes }`. Without a key it shows **"Rancho isn't connected yet"**. The how-it-works, honest notes and enquiry link stay on the page.
 2. The student picks a subject (or "not sure") and the answer language, then types the question and/or adds one photo (`accept="image/*" capture="environment"`). The browser re-encodes the photo through a canvas to a JPEG of at most 1600 px on the longer side. This also removes EXIF metadata such as GPS. The student must tick "this photo shows only the question: no faces, names…" before sending a photo.
 3. `POST /api/ask` (JSON, at most about 5.6 MB) runs these checks in order. Same-origin (403) → key configured (503 `not_configured`) → JSON and size (415 / 413 / 400) → zod and cross-field rules (422) → photo re-checked by magic bytes (JPEG/PNG/WebP) and limited to 4 MB decoded (422 / 413) → daily allowance (429 + `Retry-After`) → Claude.
 4. The answer streams back as NDJSON events: `start` (remaining/limit), `delta` (text), `done` (stop reason + topic tag) and `error`. If Claude fails before the answer starts, the API returns 503 (busy) or 502, or `not_configured` for a rejected key, and the question is **not counted**.
@@ -60,6 +67,18 @@ Weakness: guests on a shared IP (a school or a mobile carrier's NAT) share 5 que
 - **"Was this helpful?":** kept in the browser's `localStorage` (counts only). Nothing is sent to the server.
 - **Logs:** fixed codes only, such as outcome, reason, account kind, photo yes/no, language, prompt version, model, duration and token counts. Never the question, photo, answer, topic, IP, account id or API key.
 
+## Rancho persona (prompt `2026-10-21.1`)
+
+The answers speak as Rancho. In the system prompt (still one constant string, so prompt caching is unchanged; model, effort, token cap and request shape are unchanged too):
+
+- **Who you are:** Rancho, the AI doubt solver on Aspire's website, speaking as Aspire's friendly snow leopard mascot. It is an AI made by Anthropic, not a person, teacher or staff member, and never claims or pretends to be human; asked "are you real?", it says plainly that it is Rancho, Aspire's AI doubt solver, and that Aspire's teachers are real people to ask in class. Asked about Rancho or who it is ("are you a real snow leopard?"), it says only that it is Rancho, Aspire's friendly snow leopard mascot, an AI doubt solver (not a person, not a real snow leopard), so the AI disclosure is never dropped (`2026-10-20.3`). No invented facts about Rancho or Aspire (backstory, age, catchphrases, results, fees, staff).
+- **Voice:** warm, encouraging, simple words and short sentences; jargon explained; a short word of encouragement when the student sounds stuck. Teaching comes first: accuracy and complete working over personality.
+- **Snow-leopard touch:** at most one light, generic phrase per answer, in either the opening or the closing line but never both (e.g. a playful "let's pounce on this one"), in its own words each time and optional, never inside the steps, the maths or the **Final answer:** line, never presented as an official catchphrase, and left out entirely when declining a harmful request or when the student seems upset or unsafe. No emojis, emoticons or animal noises.
+- **Language:** the persona follows the requested answer language; in Hindi the name is written रैंचो.
+- Scope, safety, live-exam, privacy, honesty, formatting and trailer rules are unchanged; off-topic requests are declined politely in Rancho's friendly voice.
+
+Checked in `src/lib/ask/ask-lib.test.ts` ("speaks as Rancho…"; no API calls).
+
 ## Prompt versioning
 
 The prompt lives in `src/lib/ask/prompt.ts`. `ASK_PROMPT_VERSION` (date + counter) is logged with every request. Any wording change gets a new version and a changelog line in that file. Rules (D-035):
@@ -90,6 +109,6 @@ The prompt lives in `src/lib/ask/prompt.ts`. `ASK_PROMPT_VERSION` (date + counte
 
 ## Files
 
-`src/app/api/ask/route.ts`, `src/lib/ask/*` (config, constants, prompt, trailer, image, schema, usage, asker, claude, log, weak-topics, markdown), `src/lib/db/features/ask.ts`, `src/components/ask/*` (AskAspire, AnswerContent, ask-client, prepare-photo), `src/app/[lang]/(site)/tools/ask/page.tsx`, messages `ask`.
+`src/app/api/ask/route.ts`, `src/lib/ask/*` (config, constants, prompt, trailer, image, schema, usage, asker, claude, log, weak-topics, markdown), `src/lib/db/features/ask.ts`, `src/components/ask/*` (AskAspire, AnswerContent, ask-client, prepare-photo, RanchoMediaPanel), `src/app/[lang]/(site)/tools/ask/page.tsx`, messages `ask` (and the Rancho strings in `tools`, `common`, `portal`, `legal`, `crm`).
 
-Tests (SDK mocked, no network): `src/lib/ask/ask-lib.test.ts`, `src/app/api/ask/ask-route.test.ts`, `src/components/ask/ask-page.test.ts`.
+Tests (SDK mocked, no network): `src/lib/ask/ask-lib.test.ts`, `src/app/api/ask/ask-route.test.ts`, `src/components/ask/ask-page.test.ts` (also checks that no English or Hindi message in any namespace still says "Ask Aspire").

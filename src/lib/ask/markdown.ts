@@ -1,5 +1,5 @@
 /**
- * A tiny, whitelist-only Markdown parser for Ask Aspire answers (client-safe, no dependencies).
+ * A tiny, whitelist-only Markdown parser for Rancho answers (client-safe, no dependencies).
  *
  * It turns model text into a small tree that `AnswerContent` renders with React elements, so
  * every character of model output ends up as escaped text: there is no HTML pass-through and no

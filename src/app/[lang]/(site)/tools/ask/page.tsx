@@ -1,11 +1,10 @@
 import { BookOpenCheck, Camera, ListOrdered } from "lucide-react";
 import type { Metadata } from "next";
 import { AskAspire } from "@/components/ask/AskAspire";
+import { RanchoMediaPanel } from "@/components/ask/RanchoMediaPanel";
 import { ButtonLink, PageHero, Section } from "@/components/ui";
-import { stockImages } from "@/content/images";
 import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
-import { localizeImage } from "@/lib/data";
 
 const PATH = "/tools/ask";
 
@@ -23,10 +22,11 @@ const STEPS = [
 const HONEST_ITEMS = ["ai", "scope", "sources", "exams", "privacy"] as const;
 
 /**
- * Ask Aspire — AI doubt solver (M6, D-035; docs/ask-aspire.md). The page itself is static; the
- * client tool fetches `GET /api/ask` for "connected?" and today's allowance, so without
- * ANTHROPIC_API_KEY it says "Ask Aspire isn't connected yet" and the rest of the page (how it
- * works, honest notes, enquiry link) stays useful.
+ * Rancho — the AI doubt solver (formerly "Ask Aspire"; M6, D-035; docs/ask-aspire.md). The route
+ * stays /tools/ask. The hero shows Rancho, Aspire's snow leopard mascot, in place of a photo (with an
+ * "AI doubt solver" pill). The page itself is static; the client tool fetches `GET /api/ask` for
+ * "connected?" and today's allowance, so without ANTHROPIC_API_KEY it says "Rancho isn't
+ * connected yet" and the rest of the page (how it works, honest notes, enquiry link) stays useful.
  */
 export default async function AskAspirePage() {
   const [locale, t, tc, tTools] = await Promise.all([
@@ -47,11 +47,10 @@ export default async function AskAspirePage() {
             <p className="mt-2 text-sm text-[#b9d3f3]">{t.hero.note}</p>
           </>
         }
-        crumbs={[{ label: tTools.meta.title, href: localePath("/tools", locale) }, { label: t.hero.title }]}
+        crumbs={[{ label: tTools.meta.title, href: localePath("/tools", locale) }, { label: t.hero.crumb }]}
         homeLabel={tc.labels.home}
         homeHref={localePath("/", locale)}
-        image={localizeImage(stockImages.physicsWhiteboard, locale)}
-        imageLabel={tc.labels.illustrativeStockPhoto}
+        media={<RanchoMediaPanel title={t.hero.mascotLabel} caption={t.hero.mascotCaption} />}
       />
 
       <Section tone="surface">

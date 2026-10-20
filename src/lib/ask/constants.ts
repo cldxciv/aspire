@@ -1,5 +1,5 @@
 /**
- * Ask Aspire constants shared by the API route and the browser UI (client-safe: no secrets,
+ * Constants of Rancho, the AI doubt solver, shared by the API route and the browser UI (client-safe: no secrets,
  * no server imports). See docs/ask-aspire.md.
  */
 

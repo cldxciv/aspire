@@ -104,7 +104,7 @@ const crm = {
   tools: {
     predictor: "Rank predictor",
     mocktest: "Mock tests",
-    ask: "Ask Aspire",
+    ask: "Ask Rancho (doubts)",
     planner: "Study planner",
   },
   programs: {

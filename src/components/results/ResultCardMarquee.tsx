@@ -1,7 +1,7 @@
-import { ArrowRight, Pause } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { Locale } from "@/i18n/config";
 import { messagesFor } from "@/i18n/messages";
 import { localePath } from "@/i18n/paths";
@@ -9,23 +9,7 @@ import { cn } from "@/lib/cn";
 import { getResultCards, type ResultCard } from "@/lib/data";
 import type { ExamTrack, ImageAsset } from "@/lib/types";
 import { ResultCardTile } from "./ResultCardTile";
-
-/*
- * CSS-only motion (no client JS): the track holds the list twice and slides by half its width.
- * It pauses on hover, on keyboard focus inside, and while the "Pause" toggle (a checkbox) is
- * checked (WCAG 2.2.2). With prefers-reduced-motion it never animates: the copy is hidden and the
- * strip scrolls sideways instead.
- */
-const MARQUEE_CSS = `
-@keyframes aspire-result-marquee { to { transform: translateX(-50%); } }
-@media (prefers-reduced-motion: no-preference) {
-  .aspire-result-marquee-track { animation: aspire-result-marquee var(--marquee-duration, 64s) linear infinite; }
-}
-.aspire-result-marquee:hover .aspire-result-marquee-track,
-.aspire-result-marquee:focus-within .aspire-result-marquee-track,
-.aspire-result-marquee:has(.aspire-result-marquee-pause:checked) .aspire-result-marquee-track {
-  animation-play-state: paused;
-}`;
+import { ResultMarqueeFrame } from "./ResultMarqueeFrame";
 
 /**
  * A horizontally moving strip of result cards from Aspire's previous batches (D-031). Server
@@ -33,9 +17,12 @@ const MARQUEE_CSS = `
  * and fallback rules as ResultCardMosaic: no visible cards (production today) → `fallback`, else
  * `fallbackImage`, else nothing. Placeholder cards carry the DEMO badge.
  *
- * Motion: pauses on hover / focus and with the visible "Pause" toggle; no animation at all with
- * prefers-reduced-motion (the strip becomes a keyboard-scrollable row). Never wider than its
- * container, so it cannot cause horizontal page scroll.
+ * Motion (ResultMarqueeFrame): always plays. Normally a smooth CSS loop (no JS needed); under
+ * prefers-reduced-motion, once hydrated, it advances one card at a time with instant jumps (no
+ * continuous motion) every 8 s at least, and the strip stays a keyboard-scrollable row. Both pause
+ * on hover, keyboard focus in the strip, a hidden tab, when off screen and with the visible
+ * "Pause" toggle (WCAG 2.2.2), which sticks until unticked. Never wider than its container, so it
+ * cannot cause horizontal page scroll.
  */
 export async function ResultCardMarquee({
   locale,
@@ -56,7 +43,10 @@ export async function ResultCardMarquee({
   exam?: ExamTrack;
   year?: number;
   limit?: number;
-  /** Speed: one full loop takes `cards × secondsPerCard` seconds. */
+  /**
+   * Speed: one full loop takes `cards × secondsPerCard` seconds (at least 10). Under reduced motion
+   * it steps one card every `secondsPerCard` seconds, but never more often than every 8 s.
+   */
   secondsPerCard?: number;
   /** "See all results" link under the strip; default localePath("/results", locale); null hides it. */
   seeAllHref?: string | null;
@@ -89,51 +79,38 @@ export async function ResultCardMarquee({
   const item = "aspect-square w-36 shrink-0 sm:w-44 lg:w-48";
 
   return (
-    <div className={cn("aspire-result-marquee min-w-0 max-w-full", className)}>
-      <style href="aspire-result-marquee" precedence="default">
-        {MARQUEE_CSS}
-      </style>
-      {/* Focusable so keyboard users can pause it (focus) or scroll it (reduced motion). */}
-      <div
-        role="region"
-        aria-label={t.scrollLabel}
-        tabIndex={0}
-        className="overflow-hidden rounded-card focus-visible:-outline-offset-3 motion-reduce:overflow-x-auto motion-reduce:snap-x"
-      >
-        <div
-          className="aspire-result-marquee-track flex w-max py-0.5"
-          style={{ "--marquee-duration": `${Math.max(shown.length * secondsPerCard, 10)}s` } as CSSProperties}
-        >
-          <ul aria-label={t.listLabel} className="m-0 flex list-none gap-4 p-0 pr-4">
-            {shown.map((card) => (
-              <li key={card.id} className={cn(item, "snap-start")}>
-                <ResultCardTile card={card} demoLabel={demoLabel} sizes={sizes} />
-              </li>
-            ))}
-          </ul>
-          {/* Second copy for a seamless loop: hidden from assistive tech and with reduced motion. */}
-          <ul aria-hidden="true" className="m-0 flex list-none gap-4 p-0 pr-4 motion-reduce:hidden">
-            {shown.map((card) => (
-              <li key={card.id} className={item}>
-                <ResultCardTile card={card} demoLabel={demoLabel} sizes={sizes} decorative />
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <label className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded-control border border-[#b9cbe0] bg-white px-3 text-xs font-bold text-navy has-checked:border-navy has-checked:bg-navy has-checked:text-white has-focus-visible:outline-3 has-focus-visible:outline-offset-2 has-focus-visible:outline-blue motion-reduce:hidden">
-          <input type="checkbox" aria-label={t.pauseLabel} className="aspire-result-marquee-pause sr-only" />
-          <Pause aria-hidden="true" className="size-3.5" />
-          <span aria-hidden="true">{t.pause}</span>
-        </label>
-        {href && (
+    <ResultMarqueeFrame
+      className={className}
+      count={shown.length}
+      regionLabel={t.scrollLabel}
+      pauseLabel={t.pauseLabel}
+      pauseText={t.pause}
+      loopSeconds={Math.max(shown.length * secondsPerCard, 10)}
+      stepMs={secondsPerCard * 1000}
+      footer={
+        href && (
           <Link href={href} className="inline-flex items-center gap-1.5 text-sm font-bold text-blue hover:underline">
             {t.seeAll}
             <ArrowRight aria-hidden="true" className="size-4" />
           </Link>
-        )}
-      </div>
-    </div>
+        )
+      }
+    >
+      <ul aria-label={t.listLabel} className="m-0 flex list-none gap-4 p-0 pr-4">
+        {shown.map((card) => (
+          <li key={card.id} className={cn(item, "snap-start")}>
+            <ResultCardTile card={card} demoLabel={demoLabel} sizes={sizes} />
+          </li>
+        ))}
+      </ul>
+      {/* Second copy for a seamless CSS loop: hidden from assistive tech, and not shown with reduced motion. */}
+      <ul aria-hidden="true" className="m-0 flex list-none gap-4 p-0 pr-4 motion-reduce:hidden">
+        {shown.map((card) => (
+          <li key={card.id} className={item}>
+            <ResultCardTile card={card} demoLabel={demoLabel} sizes={sizes} decorative />
+          </li>
+        ))}
+      </ul>
+    </ResultMarqueeFrame>
   );
 }

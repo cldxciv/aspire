@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import { withEnquiryTool } from "@/components/forms/enquiry-context";
+import { RanchoMascot } from "@/components/rancho/RanchoMascot";
 import { Button, ButtonLink, Notice } from "@/components/ui";
+import { RANCHO_MOTION_ONCE } from "./RanchoMediaPanel";
 import { format } from "@/i18n/format";
 import type { Locale } from "@/i18n/config";
 import type { Messages } from "@/i18n/messages/types";
@@ -568,9 +570,17 @@ export function AskAspire({
         className="mt-6 scroll-mt-24 rounded-card border border-line bg-white p-5 shadow-soft md:p-7"
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id={ids.answerHeading} className="text-xl font-extrabold text-navy">
-            {t.answer.heading}
-          </h2>
+          {/* Rancho's avatar beside the answer (decorative: the heading already names Rancho). */}
+          <div className="flex min-w-0 items-center gap-3">
+            <span
+              className={`flex size-12 shrink-0 items-center justify-center rounded-full bg-gold-soft ring-1 ring-[#f2dfa0] ${RANCHO_MOTION_ONCE}`}
+            >
+              <RanchoMascot variant="head" className="size-10" />
+            </span>
+            <h2 id={ids.answerHeading} className="text-xl font-extrabold text-navy">
+              {t.answer.heading}
+            </h2>
+          </div>
           {phase === "done" && answer && (
             <Button variant="light" size="sm" onClick={() => void copyAnswer()}>
               {copied ? <Check aria-hidden="true" className="size-4" /> : <Copy aria-hidden="true" className="size-4" />}
@@ -656,7 +666,7 @@ export function AskAspire({
                 <p className="font-bold text-navy">{t.stuck.title}</p>
                 <p className="text-sm text-[#5c4a12]">{t.stuck.body}</p>
               </div>
-              {/* D-039: `from=ask` so the lead records that it came from Ask Aspire (nothing else is passed). */}
+              {/* D-039: `from=ask` so the lead records that it came from Rancho, the AI doubt solver (nothing else is passed). */}
               <ButtonLink href={withEnquiryTool(links.enquiry, "ask")} size="sm">
                 {t.stuck.cta}
               </ButtonLink>

@@ -27,6 +27,7 @@ import type ask from "./en/ask";
 import type planner from "./en/planner";
 import type mcp from "./en/mcp";
 import type crm from "./en/crm";
+import type rancho from "./en/rancho";
 
 export type Catalog = {
   common: typeof common;
@@ -50,6 +51,7 @@ export type Catalog = {
   planner: typeof planner;
   mcp: typeof mcp;
   crm: typeof crm;
+  rancho: typeof rancho;
 };
 
 export type Namespace = keyof Catalog;

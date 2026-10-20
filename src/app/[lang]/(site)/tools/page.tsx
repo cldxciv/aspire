@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { RanchoMediaPanel } from "@/components/ask/RanchoMediaPanel";
 import { Badge, ButtonLink, MediaSplit, Notice, PageHero, Section } from "@/components/ui";
 import { heroSlides } from "@/components/ui/hero-slides";
 import { stockImages } from "@/content/images";
@@ -18,7 +19,9 @@ export async function generateMetadata(): Promise<Metadata> {
 const TOOLS = [
   { key: "predictor", href: "/tools/predictor", image: stockImages.graduateSilhouette, status: "sample" },
   { key: "mockTests", href: "/tools/mock-tests", image: stockImages.pocketWatchWorksheet, status: "sample" },
-  // "live": the status depends on ANTHROPIC_API_KEY, which only exists at runtime (see AskStatusBadge).
+  // Rancho, the AI doubt solver (formerly "Ask Aspire"): the card shows the mascot (`media` below)
+  // instead of this photo. "live": the status depends on ANTHROPIC_API_KEY, which only exists at
+  // runtime (see AskStatusBadge).
   { key: "ask", href: "/tools/ask", image: stockImages.notebookSolutions, status: "live" },
   // Syllabus + flashcards are sample content (D-032) until Aspire reviews them.
   { key: "planner", href: "/tools/planner", image: stockImages.notebookPlanning, status: "sample" },
@@ -29,7 +32,7 @@ const STATUS_BADGE = { sample: "demo", notConnected: "warning", ready: "success"
 type ToolStatusLabels = Record<keyof typeof STATUS_BADGE, string>;
 
 /**
- * Ask Aspire is "Ready" only when the server has an API key. Read at request time (the page shell
+ * Rancho (the AI doubt solver) is "Ready" only when the server has an API key. Read at request time (the page shell
  * stays static under Cache Components); the key itself never leaves the server.
  */
 async function AskStatusBadge({ labels }: { labels: ToolStatusLabels }) {
@@ -68,6 +71,7 @@ export default async function ToolsPage() {
             <MediaSplit
               image={localizeImage(tool.image, locale)}
               imageLabel={stockLabel}
+              media={tool.key === "ask" ? <RanchoMediaPanel title={t.ranchoMascot} caption={t.ranchoCaption} /> : undefined}
               imageSide={index % 2 === 0 ? "right" : "left"}
             >
               {tool.status === "live" ? (

@@ -5,6 +5,8 @@ import { CentresShowcase } from "@/components/home/CentresShowcase";
 import { CtaBand } from "@/components/home/CtaBand";
 import { HOME_CTA_SLIDES, homeSlides } from "@/components/home/home-carousels";
 import { HomeHero } from "@/components/home/HomeHero";
+import { HomeTools } from "@/components/home/HomeTools";
+import { getHomeToolsData } from "@/components/home/home-tools-data";
 import { ImpactChart } from "@/components/home/ImpactChart";
 import { ProgramPaths } from "@/components/home/ProgramPaths";
 import { ResourcesTeaser } from "@/components/home/ResourcesTeaser";
@@ -53,7 +55,8 @@ export async function generateMetadata(): Promise<Metadata> {
  * previous result cards (three disjoint sets, newest JEE and NEET mixed); without visible cards
  * (production today) each falls back to labelled non-nature stock photos (the closing band to a
  * carousel). Programs and student life carry stock-photo carousels in both modes; no photo is used
- * twice on the page (home-carousels.ts).
+ * twice on the page (home-carousels.ts). The student-tools widget (between programs and "why") has
+ * no photos.
  */
 export default async function HomePage() {
   const [locale, t, tForms, common] = await Promise.all([
@@ -90,6 +93,8 @@ export default async function HomePage() {
   // Fall back to the newest visible results when none is marked as featured.
   const results = featured.length > 0 ? featured : (await getResults(undefined, locale)).slice(0, 4);
   const rankerStat = stats.find((stat) => stat.id === "stat-verified-rankers");
+  // Tool data under the tools' own visibility rules (sample tables / tests only in dev / preview).
+  const toolsData = getHomeToolsData();
 
   // Same option rule as /admissions (D-016): visible campuses only; empty in production → field hidden.
   const centreOptions = centres.map((centre) => ({
@@ -106,6 +111,9 @@ export default async function HomePage() {
       render: (tone) => <ResultsShowcase results={results} locale={locale} tone={tone} media={resultsMedia} />,
     },
     { key: "programs", show: true, render: (tone) => <ProgramPaths programs={programs} locale={locale} tone={tone} /> },
+    // Student tools widget: mid-page, between programs and "why" (owner request). Always shown —
+    // without visible tool data each panel describes its tool and links to it.
+    { key: "tools", show: true, render: (tone) => <HomeTools tools={toolsData} locale={locale} tone={tone} /> },
     {
       key: "why",
       show: true,

@@ -38,7 +38,7 @@ const common: Messages<"common"> = {
       studentTools: "विद्यार्थी टूल्स",
       predictor: "रैंक और कॉलेज प्रेडिक्टर",
       mockTests: "मॉक टेस्ट",
-      askAspire: "Ask Aspire (शंका समाधान)",
+      askAspire: "रैंचो से पूछें (डाउट)",
       planner: "स्टडी प्लानर",
       contact: "संपर्क",
       studentLogin: "विद्यार्थी लॉगिन",
@@ -47,7 +47,7 @@ const common: Messages<"common"> = {
     descriptions: {
       allPrograms: "IIT-JEE, NEET, फ़ाउंडेशन और ड्रॉपर प्रोग्राम",
       admissions: "पूछताछ कैसे करें और आगे क्या होता है",
-      studentTools: "मुफ़्त प्रेडिक्टर, मॉक टेस्ट, शंका समाधान और प्लानर",
+      studentTools: "मुफ़्त प्रेडिक्टर, मॉक टेस्ट, डाउट में मदद और प्लानर",
     },
     currentSection: "(वर्तमान अनुभाग)",
     openMenu: "मेन्यू खोलें",

@@ -1,7 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
 
 /**
- * SQLite schema and queries for "Ask Aspire" (owner: A3-ASK; docs/ask-aspire.md, D-034/D-035).
+ * SQLite schema and queries for Rancho, the AI doubt solver (formerly "Ask Aspire"; the table
+ * names are unchanged; owner: A3-ASK; docs/ask-aspire.md, D-034/D-035).
  * Applied on every open after the core migrations, so the schema MUST stay idempotent: only
  * `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`. Never alter core tables.
  *

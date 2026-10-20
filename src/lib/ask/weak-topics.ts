@@ -7,8 +7,8 @@ import type { AskAnswerMeta } from "./constants";
 import { cleanTopic, topicKey } from "./trailer";
 
 /**
- * Weak-topic tracking from Ask Aspire doubts (D-034): signed-in STUDENTS only. Each answered
- * doubt adds one to the (subject, topic) the model tagged it with. Nothing is stored for guests,
+ * Weak-topic tracking from doubts asked to Rancho, the AI doubt solver (D-034): signed-in
+ * STUDENTS only. Each answered doubt adds one to the (subject, topic) the model tagged it with. Nothing is stored for guests,
  * parents or admins, and no question text, photo or answer is ever stored.
  *
  * Phase 2 (portal panels) and A4-PLANNER read it through `getWeakTopicsFromDoubts`.
@@ -31,7 +31,7 @@ const SUBJECTS: readonly AskSubject[] = ["physics", "chemistry", "maths", "biolo
 
 /**
  * A student's most-asked doubt topics (most doubts first; ties: most recent first).
- * Returns `[]` for unknown ids or accounts that never used Ask Aspire.
+ * Returns `[]` for unknown ids or accounts that never asked Rancho a doubt.
  */
 export function getWeakTopicsFromDoubts(
   userId: string,

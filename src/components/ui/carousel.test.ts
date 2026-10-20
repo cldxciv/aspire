@@ -17,8 +17,13 @@ import {
   indexForKey,
   isPlaying,
   liveMode,
+  nearestIndex,
   nextIndex,
   prevIndex,
+  railEdges,
+  railNextIndex,
+  REDUCED_MOTION_MIN_DELAY,
+  scrollBehaviorFor,
   shouldAutoRotate,
   wrapIndex,
   type CarouselSlide,
@@ -68,12 +73,44 @@ describe("carousel helpers", () => {
     expect(indexForKey(" ", 0, 3)).toBeNull();
   });
 
-  it("never autoplays by itself under prefers-reduced-motion, but honours an explicit Play", () => {
-    expect(isPlaying({ autoPlay: true, choice: "auto", reducedMotion: false })).toBe(true);
-    expect(isPlaying({ autoPlay: true, choice: "auto", reducedMotion: true })).toBe(false);
-    expect(isPlaying({ autoPlay: false, choice: "auto", reducedMotion: false })).toBe(false);
-    expect(isPlaying({ autoPlay: true, choice: "paused", reducedMotion: false })).toBe(false);
-    expect(isPlaying({ autoPlay: false, choice: "playing", reducedMotion: true })).toBe(true);
+  it("autoplays by default (reduced motion included: it has no say) and an explicit choice wins", () => {
+    expect(isPlaying({ autoPlay: true, choice: "auto" })).toBe(true);
+    expect(isPlaying({ autoPlay: false, choice: "auto" })).toBe(false);
+    // A Pause sticks until Play, and Play works even where autoPlay is off.
+    expect(isPlaying({ autoPlay: true, choice: "paused" })).toBe(false);
+    expect(isPlaying({ autoPlay: false, choice: "playing" })).toBe(true);
+    // Reduced motion is not an input of the play / rotate decision any more.
+    expect(shouldAutoRotate({ count: 3, playing: isPlaying({ autoPlay: true, choice: "auto" }) })).toBe(true);
+  });
+
+  it("swaps instantly and a little less often under reduced motion, smoothly otherwise", () => {
+    expect(scrollBehaviorFor(true)).toBe("instant");
+    expect(scrollBehaviorFor(false)).toBe("smooth");
+    expect(REDUCED_MOTION_MIN_DELAY).toBe(8000);
+    expect(autoplayDelay(6000, true)).toBe(8000);
+    expect(autoplayDelay(4000, true)).toBe(8000);
+    expect(autoplayDelay(12000, true)).toBe(12000);
+    expect(autoplayDelay(Number.NaN, true)).toBe(8000);
+    expect(autoplayDelay(6000, false)).toBe(6000);
+  });
+
+  it("steps a multi-card rail one card at a time and wraps from the end to the first card", () => {
+    expect(nearestIndex([0, 300, 600, 900], 0)).toBe(0);
+    expect(nearestIndex([0, 300, 600, 900], 320)).toBe(1);
+    expect(nearestIndex([0, 300, 600, 900], 1200)).toBe(3);
+    expect(nearestIndex([], 50)).toBe(0);
+    expect(railEdges(0, 600, 1200)).toEqual({ atStart: true, atEnd: false });
+    expect(railEdges(600, 600, 1200)).toEqual({ atStart: false, atEnd: true });
+    // Sub-pixel layouts: within 1 px counts as the end.
+    expect(railEdges(599.5, 600, 1200)).toEqual({ atStart: false, atEnd: true });
+    expect(railEdges(0, 600, 600)).toEqual({ atStart: true, atEnd: true });
+    expect(railNextIndex(0, 6, false)).toBe(1);
+    expect(railNextIndex(4, 6, false)).toBe(5);
+    // Scrolled to the end while several cards are in view: back to the first card.
+    expect(railNextIndex(3, 6, true)).toBe(0);
+    expect(railNextIndex(5, 6, false)).toBe(0);
+    expect(railNextIndex(0, 1, false)).toBe(0);
+    expect(railNextIndex(0, 0, false)).toBe(0);
   });
 
   it("rotates only when playing, 2+ slides, visible and not hovered / focused", () => {
@@ -159,6 +196,14 @@ describe("ImageCarousel SSR markup", () => {
     expect(html).not.toContain('aria-hidden="true" class="relative h-full');
     // Scroll-snap track: swipe works natively.
     expect(html).toContain("snap-x snap-mandatory overflow-x-auto");
+  });
+
+  it("keeps the server markup static: autoplay is on by default but nothing rotates before hydration", () => {
+    // Default autoPlay and an explicit one render the same markup: the live region stays polite
+    // (not "off") and there is no pause / play button until hydration.
+    expect(render({ autoPlay: true })).toBe(render());
+    expect(render()).not.toContain('aria-live="off"');
+    expect(render()).not.toContain("data-carousel-toggle");
   });
 
   it("renders no dead controls before hydration; the track is focusable and scrollable without JS", () => {

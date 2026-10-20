@@ -1,6 +1,14 @@
 /**
- * Pure helpers for `ImageCarousel` (client-safe, no React, no messages). Unit-tested in
- * `carousel.test.ts`.
+ * Pure helpers for `ImageCarousel`, the home `ResultRail` and the reduced-motion stepping of
+ * `ResultCardMarquee` (client-safe, no React, no messages). Unit-tested in `carousel.test.ts`.
+ *
+ * Motion policy (owner decision, 2026-10-20): every carousel, rail and marquee autoplays by
+ * default on every device, including under `prefers-reduced-motion: reduce` (many Windows PCs
+ * report it because animations are switched off for performance). Reduced motion only changes HOW
+ * it moves: discrete, instant steps instead of smooth scrolling or a continuous slide, and at least
+ * `REDUCED_MOTION_MIN_DELAY` between steps. A visible pause / play control (WCAG 2.2.2) is always
+ * there, and rotation pauses on mouse hover, keyboard focus inside, a hidden tab and when scrolled
+ * out of view (APG carousel pattern).
  */
 import type { ImageAsset } from "@/lib/types";
 
@@ -58,9 +66,21 @@ export function clampIndex(index: number, count: number): number {
   return Math.min(Math.max(index, 0), Math.max(count - 1, 0));
 }
 
-/** Autoplay delay: never below 2 s; a non-finite value (NaN from a bad prop) falls back to 6 s. */
-export function autoplayDelay(intervalMs: number): number {
-  return Number.isFinite(intervalMs) ? Math.max(intervalMs, 2000) : 6000;
+/** Shortest time between two automatic steps under `prefers-reduced-motion: reduce`. */
+export const REDUCED_MOTION_MIN_DELAY = 8000;
+
+/**
+ * Autoplay delay: never below 2 s; a non-finite value (NaN from a bad prop) falls back to 6 s.
+ * Under reduced motion the steps are instant jumps, so they come a little less often (≥ 8 s).
+ */
+export function autoplayDelay(intervalMs: number, reducedMotion = false): number {
+  const delay = Number.isFinite(intervalMs) ? Math.max(intervalMs, 2000) : 6000;
+  return reducedMotion ? Math.max(delay, REDUCED_MOTION_MIN_DELAY) : delay;
+}
+
+/** `scrollTo` behaviour for a step: smooth normally, an instant jump under reduced motion. */
+export function scrollBehaviorFor(reducedMotion: boolean): ScrollBehavior {
+  return reducedMotion ? "instant" : "smooth";
 }
 
 /** APG: the slide region is a polite live region except while it is actually auto-rotating. */
@@ -89,26 +109,20 @@ export type PlayChoice = "auto" | "playing" | "paused";
 
 /**
  * Whether the pause/play button shows the "playing" state (its label is then "Pause").
- * Autoplay never starts by itself under prefers-reduced-motion (WCAG 2.2.2 / 2.3.3), but an
- * explicit Play click is honoured.
+ * The visitor's explicit choice wins and sticks (a Pause stays paused until they press Play);
+ * untouched, it follows `autoPlay`. Reduced motion does not stop autoplay: it only makes each step
+ * an instant swap (`scrollBehaviorFor`) at a longer interval (`autoplayDelay`).
  */
-export function isPlaying({
-  autoPlay,
-  choice,
-  reducedMotion,
-}: {
-  autoPlay: boolean;
-  choice: PlayChoice;
-  reducedMotion: boolean;
-}): boolean {
+export function isPlaying({ autoPlay, choice }: { autoPlay: boolean; choice: PlayChoice }): boolean {
   if (choice === "playing") return true;
   if (choice === "paused") return false;
-  return autoPlay && !reducedMotion;
+  return autoPlay;
 }
 
 /**
  * Whether the carousel should advance on a timer right now: it must be playing, have 2+ slides,
  * and be visible, in view, not hovered and not holding keyboard focus (APG carousel pattern).
+ * Reduced motion is deliberately not an input: it changes how a step looks, not whether it happens.
  */
 export function shouldAutoRotate({
   count,
@@ -126,6 +140,38 @@ export function shouldAutoRotate({
   inView?: boolean;
 }): boolean {
   return count > 1 && playing && !hovered && !focusWithin && !pageHidden && inView;
+}
+
+/**
+ * Index of the snap point nearest to `scrollLeft`. `starts` are the items' left edges measured from
+ * the first item's left edge (so `starts[0]` is 0). 0 when there are no items.
+ */
+export function nearestIndex(starts: readonly number[], scrollLeft: number): number {
+  let nearest = 0;
+  let best = Number.POSITIVE_INFINITY;
+  starts.forEach((start, i) => {
+    const distance = Math.abs(start - scrollLeft);
+    if (distance < best) {
+      best = distance;
+      nearest = i;
+    }
+  });
+  return nearest;
+}
+
+/** Whether a horizontal scroller is at its start / end (1 px tolerance for sub-pixel layouts). */
+export function railEdges(scrollLeft: number, clientWidth: number, scrollWidth: number): { atStart: boolean; atEnd: boolean } {
+  return { atStart: scrollLeft <= 1, atEnd: scrollLeft + clientWidth >= scrollWidth - 1 };
+}
+
+/**
+ * Autoplay step of a scroll-snap rail that shows several items at once: the next item, or back to
+ * the first once the rail is scrolled to its end (the last items are then all in view) or sits on
+ * the last item.
+ */
+export function railNextIndex(index: number, count: number, atEnd: boolean): number {
+  if (count <= 1) return 0;
+  return atEnd || index >= count - 1 ? 0 : index + 1;
 }
 
 /** Index for an arrow / Home / End key, or `null` when the key is not a carousel key. */

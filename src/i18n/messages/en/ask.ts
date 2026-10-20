@@ -1,21 +1,29 @@
 /**
- * Namespace "ask" — ASK ASPIRE (owner: A3-ASK). English defines the shape; ../hi/ask.ts must match it.
+ * Namespace "ask" — RANCHO, the AI doubt solver at /tools/ask (formerly "Ask Aspire"; owner: A3-ASK).
+ * Rancho is Aspire's own friendly snow leopard mascot; the copy always keeps clear that the doubt solver is an AI.
+ * English defines the shape; ../hi/ask.ts must match it.
  * Plain object, no `as const` (see src/i18n/README.md).
  */
 const ask = {
   meta: {
-    title: "Ask Aspire: doubt help in English and Hindi",
+    title: "Ask Rancho: AI doubt solver in English and Hindi",
     description:
-      "Type or photograph a Physics, Chemistry, Maths or Biology question and get step-by-step help in English or Hindi. Free daily questions. AI can make mistakes — check with your teacher.",
+      "Rancho, Aspire's snow leopard, now answers your doubts. Type or photograph a Physics, Chemistry, Maths or Biology question and get step-by-step help in English or Hindi from our AI doubt solver. Free daily questions. AI can make mistakes — check with your teacher.",
   },
   hero: {
     crumbTools: "Student tools",
-    title: "Ask Aspire",
-    lead: "Stuck on a Physics, Chemistry, Maths or Biology question? Type it or take a photo and get step-by-step help in English or Hindi.",
-    note: "An AI study helper for Class 9–12, JEE and NEET students. AI can make mistakes — check with your teacher.",
+    /** Breadcrumb and short name of the tool. */
+    crumb: "Ask Rancho",
+    title: "Rancho — your doubt-solving study buddy",
+    lead: "Rancho, Aspire's friendly snow leopard, now answers your doubts. Stuck on a Physics, Chemistry, Maths or Biology question? Type it or take a photo and Rancho walks you through it step by step, in English or Hindi.",
+    note: "Rancho is an AI doubt solver for Class 9–12, JEE and NEET students, not a person. AI can make mistakes — check with your teacher.",
+    /** Accessible name of the mascot illustration. */
+    mascotLabel: "Rancho, Aspire's snow leopard mascot, waving",
+    /** Visible pill on the mascot illustration (keeps the AI disclosure next to the picture). */
+    mascotCaption: "AI doubt solver",
   },
   form: {
-    heading: "Ask your doubt",
+    heading: "Ask Rancho your doubt",
     lead: "One question at a time works best.",
     subjectLabel: "Subject",
     subjects: {
@@ -64,8 +72,8 @@ const ask = {
     },
   },
   answer: {
-    heading: "Answer",
-    working: "Aspire is working through your question…",
+    heading: "Rancho's answer",
+    working: "Rancho is working through your question…",
     workingHint: "Hard questions can take up to a minute.",
     ready: "The answer is ready.",
     stopped: "You stopped the answer.",
@@ -80,7 +88,7 @@ const ask = {
       hard: "Hard",
     },
     truncated: "The answer was cut short because it got very long. Try asking about one part of the question at a time.",
-    refused: "Ask Aspire can't help with that request. Try a Physics, Chemistry, Maths or Biology question.",
+    refused: "Rancho can't help with that request. Try a Physics, Chemistry, Maths or Biology question.",
     disclaimer: "AI can make mistakes — check with your teacher.",
     helpfulQuestion: "Was this helpful?",
     helpfulYes: "Yes",
@@ -89,14 +97,14 @@ const ask = {
     askAnother: "Ask another question",
   },
   errors: {
-    notConnectedTitle: "Ask Aspire isn't connected yet",
+    notConnectedTitle: "Rancho isn't connected yet",
     notConnectedBody:
       "The AI service hasn't been switched on for this website yet, so questions can't be answered here for now. Bring your doubt to class, or send us an enquiry and an Aspire teacher can help.",
     limitTitle: "Daily limit reached",
     limitBody: "You've used today's questions. Try again in about {hours} h (the limit resets at midnight, India time).",
     limitGuest: "Aspire students get more questions a day when they sign in.",
-    busy: "Ask Aspire is busy right now. Please try again in a minute.",
-    network: "We couldn't reach Ask Aspire. Check your internet connection and try again.",
+    busy: "Rancho is busy right now. Please try again in a minute.",
+    network: "We couldn't reach Rancho. Check your internet connection and try again.",
     interrupted: "The answer stopped part-way. Please try again.",
     tooLarge: "The photo is too large. Please use a smaller photo.",
     invalidImage: "Please use a JPG, PNG or WebP photo.",
@@ -117,7 +125,7 @@ const ask = {
       },
       solve: {
         title: "Follow the steps",
-        body: "Ask Aspire explains the method step by step, names the concepts used and marks the final answer.",
+        body: "Rancho explains the method step by step, names the concepts used and marks the final answer.",
       },
       revise: {
         title: "Revise",
@@ -128,8 +136,8 @@ const ask = {
   honest: {
     title: "Good to know",
     items: {
-      ai: "Answers are written by an AI model (Claude, made by Anthropic). It can make mistakes, so check important answers with your teacher.",
-      scope: "It only helps with Physics, Chemistry, Maths and Biology for Class 9–12, JEE and NEET.",
+      ai: "Rancho is an AI, not a person: answers are written by an AI model (Claude, made by Anthropic). It can make mistakes, so check important answers with your teacher.",
+      scope: "Rancho only helps with Physics, Chemistry, Maths and Biology for Class 9–12, JEE and NEET.",
       sources: "It is not connected to Aspire's notes, lectures or DPPs. Chapter suggestions are general NCERT references.",
       exams: "Please don't use it during a live exam or test.",
       privacy:

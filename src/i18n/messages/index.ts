@@ -21,6 +21,7 @@ import enAsk from "./en/ask";
 import enPlanner from "./en/planner";
 import enMcp from "./en/mcp";
 import enCrm from "./en/crm";
+import enRancho from "./en/rancho";
 import hiAbout from "./hi/about";
 import hiAdmissions from "./hi/admissions";
 import hiAuth from "./hi/auth";
@@ -42,6 +43,7 @@ import hiAsk from "./hi/ask";
 import hiPlanner from "./hi/planner";
 import hiMcp from "./hi/mcp";
 import hiCrm from "./hi/crm";
+import hiRancho from "./hi/rancho";
 import type { Catalog, Messages, Namespace } from "./types";
 
 export type { Catalog, Messages, Namespace } from "./types";
@@ -74,6 +76,7 @@ const catalogs: Readonly<Record<Locale, Catalog>> = {
     planner: enPlanner,
     mcp: enMcp,
     crm: enCrm,
+    rancho: enRancho,
   },
   hi: {
     common: hiCommon,
@@ -97,6 +100,7 @@ const catalogs: Readonly<Record<Locale, Catalog>> = {
     planner: hiPlanner,
     mcp: hiMcp,
     crm: hiCrm,
+    rancho: hiRancho,
   },
 };
 
