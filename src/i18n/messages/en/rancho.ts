@@ -50,7 +50,7 @@ const rancho = {
     remainingNone: "No questions left today",
     disclaimer: "AI can make mistakes — check with your teacher.",
     privacy:
-      "Don't type names or personal details. Your question and any photo are processed by Anthropic's API (Claude) to write the answer and aren't stored.",
+      "Don't type names or personal details in your question. Your question and any photo are processed by Anthropic's API (Claude) to write the answer and aren't stored.",
     privacyLink: "Privacy notice",
     /** Short link in the one-line disclaimer under the composer. */
     privacyShort: "Privacy",
@@ -216,6 +216,28 @@ const rancho = {
         consentRequired: "Tick the box to confirm the photo has no faces or names.",
         rejected: "Rancho couldn't use that photo. Please try a clearer JPG or PNG.",
       },
+    },
+    /**
+     * The lead gate (docs/lead-gate-plan.md §8.6): before Rancho's first answer on a browser, the
+     * question waits while the family shares contact details once (the form's own copy is in the
+     * `leadGate` namespace, including the honest sample-data line).
+     */
+    gate: {
+      /** Announced when the contact form appears under the question (its heading also gets focus). */
+      formShown: "Share a contact number once to get Rancho's answer. The form is under your question.",
+      /** The same in optional mode (the form also offers "Continue without sharing"). */
+      formShownOptional: "You can share a contact number before Rancho's answer, or continue without it. The form is under your question.",
+      /**
+       * Above the form when the question was refused again right after this chat's form shared
+       * details (the browser didn't keep the pass: cookies blocked, or the pass rejected).
+       */
+      notKept:
+        "Rancho still couldn't answer: this browser didn't remember that you shared your details. Cookies may be blocked: allow cookies for this site or sign in, then try again.",
+      /** The composer's placeholder while a question waits for the form (the composer is disabled). */
+      composerWaiting: "Your question is waiting above.",
+      /** Contact details were shared in another tab or tool while the question waited. */
+      unlocked: "You're all set. Your question is ready to send.",
+      sendNow: "Send now",
     },
     errors: {
       questionRequired: "Type your question or add a photo of it.",

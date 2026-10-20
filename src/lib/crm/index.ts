@@ -18,7 +18,8 @@ import "server-only";
  *     withdrawGateConsent(leadId, now?)                      → { withdrawn, passesRevoked }
  *   leadInputFromEnquiry(enquiry, { consentTextVersion?, consentAt?, context?, reference? }?) → CaptureLeadInput
  *     (consent version + context default to the enquiry's own `consentVersion` / `context`)
- *   createManualLead(viewer, input: ManualLeadInput, now?)   → CrmResult<{ leadId, isNew }>
+ *   createManualLead(viewer, input: ManualLeadInput, now?)   → CrmResult<ManualLeadAnswer> ({ leadId, isNew, canOpen } or, with
+ *                                                              onDuplicate "report", { duplicate: true, leadId|null, canOpen, closed, withdrawn })
  *   listLeads(viewer, filters?, { page?, pageSize? }?, now?) → LeadPage
  *   getLead(viewer, leadId, now?, { audit? }?)               → CrmResult<LeadDetail>          (audited view)
  *   updateLead(viewer, leadId, LeadPatch, now?)              → CrmResult<LeadDetail>
@@ -29,9 +30,10 @@ import "server-only";
  *   createTask(viewer, leadId, { title, dueAt, assigneeId? }, now?) → CrmResult<LeadTask>
  *   completeTask(viewer, taskId, now?)                       → CrmResult<LeadTask>
  *   myTasks(viewer, range?: TaskRange, now?)                 → MyTask[]
- *   funnelReport(viewer, { from, to })                       → FunnelReport
+ *   funnelReport(viewer, { from, to })                       → FunnelReport (incl. gateDaily)
+ *   gateDailyCounts(viewer, { from, to })                    → GateDayCount[] (lead-gate forms per IST day)
  *   exportLeadsCsv(viewer, filters?, now?)                   → CrmResult<{ csv, rows, filename }> (audited)
- *   eraseLead(viewer, leadId, now?)                          → CrmResult<{ leadId, erasedAt }>   (admin)
+ *   eraseLead(viewer, leadId, now?, { reason? }?)            → CrmResult<{ leadId, erasedAt }>   (admin)
  *   listStaff(viewer) / upsertStaff(viewer, userId, StaffInput, now?)
  *   getAssignmentRules(viewer) / setAssignmentRules(viewer, rules, now?)
  */
@@ -54,7 +56,7 @@ export {
   type LeadPatch,
 } from "./leads";
 export { completeTask, createTask, isTaskRange, myTasks, TASK_TITLE_MAX } from "./tasks";
-export { EXPORT_MAX_ROWS, exportLeadsCsv, funnelReport, reportRange } from "./reports";
+export { EXPORT_MAX_ROWS, exportLeadsCsv, funnelReport, gateDailyCounts, reportRange } from "./reports";
 export {
   eraseLead,
   getAssignmentRules,

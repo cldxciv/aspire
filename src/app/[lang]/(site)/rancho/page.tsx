@@ -42,14 +42,16 @@ const MOTION_ONCE = "[&_svg_*]:[animation-iteration-count:1] [&_svg_*]:[animatio
  * site-wide "Get the Rancho app" bar instead).
  *
  * The page is static; only the sign-in card reads the session, inside <Suspense>, so nothing
- * about a visitor is ever in the prerendered HTML.
+ * about a visitor is ever in the prerendered HTML. The chat's lead gate (contact details once per
+ * browser before Rancho's first answer) is client-only; its `leadGate` strings are passed in.
  */
 export default async function RanchoAppPage() {
-  const [locale, t, ask, auth] = await Promise.all([
+  const [locale, t, ask, auth, gate] = await Promise.all([
     getLocale(),
     getMessages("ranchoApp"),
     getMessages("ask"),
     getMessages("auth"),
+    getMessages("leadGate"),
   ]);
   const href = (path: string) => localePath(path, locale);
 
@@ -85,6 +87,7 @@ export default async function RanchoAppPage() {
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,340px)] lg:items-start">
             <AskAspire
               messages={ask}
+              gateMessages={gate}
               locale={locale}
               links={{
                 enquiry: href("/admissions#enquiry"),

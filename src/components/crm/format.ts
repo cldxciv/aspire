@@ -6,7 +6,14 @@ import type { Locale } from "@/i18n/config";
 import { htmlLang } from "@/i18n/config";
 import { format } from "@/i18n/format";
 import type { Messages } from "@/i18n/messages/types";
-import { isLeadStage, type LeadFilters, type LeadStage, type LeadSummary } from "@/lib/crm/types";
+import {
+  isGateConsentVersion,
+  isLeadStage,
+  type LeadActivity,
+  type LeadFilters,
+  type LeadStage,
+  type LeadSummary,
+} from "@/lib/crm/types";
 import type { LeadCard } from "./types";
 
 export type CrmMessages = Messages<"crm">;
@@ -33,6 +40,138 @@ export function toolLabel(t: CrmMessages, tool: string | null | undefined): stri
   if (!tool) return null;
   // Stored ids are slugs ("mocktest"); the enquiry contract spells it "mock-test".
   return pick(t.tools, tool === "mock-test" ? "mocktest" : tool, tool);
+}
+
+/** Exam id from a tool ("jee-main", "neet-ug") → its name; unknown ids are shown as they are. */
+export function examLabel(t: CrmMessages, exam: string | null | undefined): string | null {
+  if (!exam) return null;
+  return pick(t.exams, exam, exam);
+}
+
+/** "Student" / "Parent or guardian" for the lead gate's "I am the …" answer. */
+export function submitterLabel(t: CrmMessages, value: string | null | undefined): string | null {
+  if (value !== "student" && value !== "parent") return null;
+  return t.lead.gate.submittedBy[value];
+}
+
+const SCORE_BAND = /^(score|percentile)-(\d{1,4})-(\d{1,4})$/;
+const PERCENT_BAND = /^pct-(\d{1,3})-(\d{1,3})$/;
+
+/**
+ * A tool's result band as staff read it: predictor "score-180-189" → "score 180–189",
+ * "percentile-90-95" → "percentile 90–95"; mock test "pct-40-49" → "40–49 %", "pct-below-0" →
+ * "below 0 %". Anything else → null (never shown raw: it could be a value nobody vetted).
+ */
+export function bandLabel(t: CrmMessages, band: string | null | undefined): string | null {
+  if (!band) return null;
+  const u = t.lead.toolUse;
+  if (band === "pct-below-0") return u.belowZero;
+  const score = SCORE_BAND.exec(band);
+  if (score) return format(score[1] === "score" ? u.scoreBand : u.percentileBand, { from: score[2], to: score[3] });
+  const percent = PERCENT_BAND.exec(band);
+  if (percent) return format(u.percentBand, { from: percent[1], to: percent[2] });
+  return null;
+}
+
+type Meta = LeadActivity["meta"];
+
+function metaText(meta: Meta, key: string): string | null {
+  const value = meta[key];
+  return typeof value === "string" && value ? value : null;
+}
+
+/**
+ * One "Used a free tool" line (plan §3): "Rank predictor · JEE Main · score 180–189 · 3× today",
+ * "Mock tests · JEE Main · test jee-main-1 · 40–49 %", "Rancho", "Study planner · NEET". `at` is
+ * the entry's time; `now` decides "today" vs "that day" (one entry per tool + key + IST day).
+ */
+export function toolUseSummary(t: CrmMessages, meta: Meta, at: string | null, now?: number): string {
+  const u = t.lead.toolUse;
+  const tool = metaText(meta, "tool");
+  const parts: string[] = [toolLabel(t, tool) ?? u.unknownTool];
+  if (tool !== "ask") {
+    const exam = examLabel(t, metaText(meta, "exam"));
+    if (exam) parts.push(exam);
+    const testId = metaText(meta, "testId");
+    if (tool === "mock-test" && testId) parts.push(format(u.test, { id: testId }));
+    const band = bandLabel(t, metaText(meta, tool === "mock-test" ? "scoreBand" : "band"));
+    if (band) parts.push(band);
+  }
+  const uses = typeof meta.uses === "number" && Number.isFinite(meta.uses) ? Math.trunc(meta.uses) : 1;
+  if (uses > 1) {
+    const atMs = at ? Date.parse(at) : Number.NaN;
+    const today = now !== undefined && Number.isFinite(atMs) && istDayKey(atMs) === istDayKey(now);
+    parts.push(format(today ? u.usesToday : u.usesThatDay, { count: uses }));
+  }
+  return parts.join(" · ");
+}
+
+/** A submission made through the lead gate (contact details before a free tool's result). */
+export function isGateSubmission(activity: Pick<LeadActivity, "type" | "meta">): boolean {
+  return activity.type === "submission" && isGateConsentVersion(activity.meta?.consentTextVersion);
+}
+
+export type ConsentKind = "gate" | "enquiry" | "staff" | "withdrawn";
+
+/** One consent the family gave (or withdrew), for the lead page's consent list. */
+export interface ConsentEntry {
+  id: number;
+  at: string;
+  kind: ConsentKind;
+  /** Consent sentence id (`null` for staff entries and withdrawals). */
+  version: string | null;
+  /** Language and exact sentence shown (public forms only). */
+  locale: string | null;
+  text: string | null;
+  /** Staff entries: how the family agreed (CONSENT_METHODS). */
+  method: string | null;
+  /** Lead gate: who ticked it. */
+  submittedBy: string | null;
+}
+
+/**
+ * Every consent on the timeline, newest first (WP9: "list every consent with its date"): each
+ * public form's tick (lead gate or enquiry, with its sentence), each staff entry ("the family
+ * agreed", with how), and each "Stop Aspire contacting me".
+ */
+export function consentHistory(activities: readonly LeadActivity[]): ConsentEntry[] {
+  const entries: ConsentEntry[] = [];
+  for (const activity of activities) {
+    const meta = activity.meta ?? {};
+    const base = { id: activity.id, at: activity.at, version: null, locale: null, text: null, method: null, submittedBy: null };
+    if (activity.type === "submission") {
+      const version = metaText(meta, "consentTextVersion");
+      if (!version) continue;
+      entries.push({
+        ...base,
+        kind: isGateConsentVersion(version) ? "gate" : "enquiry",
+        version,
+        locale: metaText(meta, "consentLocale"),
+        text: metaText(meta, "consentText"),
+        submittedBy: metaText(meta, "submittedBy"),
+      });
+    } else if (activity.type === "created") {
+      entries.push({ ...base, kind: "staff", method: metaText(meta, "consentMethod") });
+    } else if (activity.type === "consent_withdrawn") {
+      entries.push({ ...base, kind: "withdrawn" });
+    }
+  }
+  return entries.sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || b.id - a.id);
+}
+
+/**
+ * WP9: the lead-gate form was filled in by a student and never by a parent or guardian — staff
+ * should confirm with a parent first (DPDP: the student may be a minor; plan critique 0.4).
+ */
+export function needsParentConfirmation(activities: readonly LeadActivity[]): boolean {
+  let student = false;
+  for (const activity of activities) {
+    if (activity.type !== "submission") continue;
+    const by = activity.meta?.submittedBy;
+    if (by === "parent") return false;
+    if (by === "student") student = true;
+  }
+  return student;
 }
 
 export function topicLabel(t: CrmMessages, topic: string | null | undefined): string | null {
@@ -258,6 +397,57 @@ export function toLeadFilters(filters: InboxFilters): LeadFilters {
 
 export function hasActiveFilters(filters: InboxFilters): boolean {
   return Boolean(filters.q || filters.stage || filters.centre || filters.program || filters.source || filters.assignee || filters.due);
+}
+
+// ---------------------------------------------------------------------------------------------
+// "Back" on a lead page (admin-console plan §2.2 / §8 Agent B): returns to the list the lead was
+// opened from. The `back` query parameter is untrusted, so only these LOCALE-FREE pages are
+// accepted, and their query is rebuilt from the parsed filters (no open redirect, no junk).
+
+export const BACK_PARAM = "back";
+
+/**
+ * `?add=1` on Enquiries opens the "Add enquiry" drawer (the console top bar links to `/crm?add=1`:
+ * portal/areas.ts ADD_ENQUIRY_PARAM). Kept here, not in the "use client" AddLeadForm module, so the
+ * server page reads the real string (a client module's exports are references on the server).
+ */
+export const ADD_LEAD_PARAM = "add";
+export type BackKind = "inbox" | "search" | "today" | "pipeline";
+export interface BackTarget {
+  /** LOCALE-FREE path + rebuilt query, e.g. `/crm?stage=new`. Localise with `localePath`. */
+  path: string;
+  kind: BackKind;
+}
+
+export const DEFAULT_BACK: BackTarget = { path: "/crm", kind: "inbox" };
+
+/** Untrusted `back` → an allow-listed CRM list page, or null. */
+export function parseBackParam(raw: unknown): BackTarget | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== "string" || value.length === 0 || value.length > 600) return null;
+  const mark = value.indexOf("?");
+  const path = mark === -1 ? value : value.slice(0, mark);
+  const query = mark === -1 ? "" : value.slice(mark + 1);
+  if (path === "/crm/today") return { path, kind: "today" };
+  if (path !== "/crm" && path !== "/crm/pipeline") return null;
+  let filters: InboxFilters;
+  try {
+    filters = parseInboxFilters(new URLSearchParams(query));
+  } catch {
+    filters = EMPTY_FILTERS;
+  }
+  if (path === "/crm/pipeline") return { path: `${path}${inboxQuery({ ...filters, stage: "", due: "", page: 1 })}`, kind: "pipeline" };
+  return { path: `${path}${inboxQuery(filters)}`, kind: filters.q ? "search" : "inbox" };
+}
+
+/** A lead href plus `?back=` (left off for the plain inbox, which is the default anyway). */
+export function withBack(href: string, back: string | null | undefined): string {
+  if (!back || back === DEFAULT_BACK.path) return href;
+  return `${href}${href.includes("?") ? "&" : "?"}${BACK_PARAM}=${encodeURIComponent(back)}`;
+}
+
+export function backLabel(t: CrmMessages, kind: BackKind): string {
+  return t.lead.backTo[kind];
 }
 
 export function leadCountLabel(t: CrmMessages, count: number): string {

@@ -48,7 +48,7 @@ function isOverForm(button: HTMLElement): boolean {
  * `RANCHO_OPEN_EVENT`, rancho-handoff.ts): the panel opens with the prompt prefilled and the tool's
  * context attached to the next question.
  */
-export function RanchoLauncher({ messages: t }: { messages: Messages<"rancho"> }) {
+export function RanchoLauncher({ messages: t, gateMessages }: { messages: Messages<"rancho">; gateMessages: Messages<"leadGate"> }) {
   const pathname = usePathname();
   const locale = useLocale();
   const panelId = useId();
@@ -162,6 +162,7 @@ export function RanchoLauncher({ messages: t }: { messages: Messages<"rancho"> }
             onClose={() => setOpen(false)}
             returnFocusRef={buttonRef}
             messages={t.panel}
+            gateMessages={gateMessages}
             locale={locale}
             links={links}
             handoff={handoff}

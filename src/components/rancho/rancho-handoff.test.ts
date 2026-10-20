@@ -70,6 +70,7 @@ describe("the chat after a handoff", () => {
         open: false,
         onClose: () => {},
         messages: messagesFor(locale, "rancho").panel,
+        gateMessages: messagesFor(locale, "leadGate"),
         locale,
         links: { ask: "/tools/ask", enquiry: "/admissions#enquiry", privacy: "/privacy", signIn: "/login" },
         handoff,
@@ -122,10 +123,16 @@ describe("the chat after a handoff", () => {
   it("the chat sends the chip's context and then clears it; the launcher and the page chat listen", () => {
     const dir = join(process.cwd(), "src", "components", "rancho");
     const chat = readFileSync(join(dir, "RanchoChat.tsx"), "utf8");
-    const send = chat.slice(chat.indexOf("async function send("), chat.indexOf("function stop()"));
-    expect(send).toContain("const context = toolContext;");
-    expect(send).toContain("toolContext: context }");
+    // The question (held for the lead gate when needed, rancho-gate.ts) carries the chip's context;
+    // the composer lets go of it; heldQuestionInput puts it in the POST body.
+    const send = chat.slice(chat.indexOf("async function send("), chat.indexOf("function holdQuestion("));
+    expect(send).toMatch(/const asked: RanchoHeldQuestion = \{[^}]*\btoolContext,/);
     expect(send).toContain("setToolContext(null);");
+    expect(send).toContain("await ask(asked);");
+    const ask = chat.slice(chat.indexOf("async function ask("), chat.indexOf("function stop()"));
+    expect(ask).toContain("askRancho(heldQuestionInput(asked),");
+    // A failed send gives the context back to the composer.
+    expect(ask).toContain("setToolContext((current) => current ?? context);");
     expect(chat).toContain("listenForRanchoOpen(setPageHandoff)");
     const launcher = readFileSync(join(dir, "RanchoLauncher.tsx"), "utf8");
     expect(launcher).toMatch(/if \(hidden\) return;\r?\n\s*return listenForRanchoOpen\(/);

@@ -32,13 +32,31 @@ export const ASK_MAX_BODY_BYTES = Math.ceil((ASK_MAX_IMAGE_BYTES * 4) / 3) + 64 
 /** Account kinds as reported by `GET /api/ask` (never the account id). */
 export type AskAccount = "guest" | "student" | "member";
 
+/**
+ * Whether this browser may get answers now (the lead gate, docs/lead-gate-plan.md §5.6), from the
+ * live `LEAD_GATE` mode on every request:
+ * - `open`: answers are shown (gate off, signed in, or contact details already shared here);
+ * - `gate_required`: `POST /api/ask` answers the gate 401 (`X-Lead-Gate: required`) until the
+ *   family shares contact details once (`<LeadGateForm enforced>`);
+ * - `gate_optional`: the form may be offered with "Continue without sharing"; the server answers anyway.
+ */
+export const ASK_ACCESS_STATES = ["open", "gate_required", "gate_optional"] as const;
+export type AskAccess = (typeof ASK_ACCESS_STATES)[number];
+
 /** `GET /api/ask` → `{ ok: true, data: AskStatus }`. */
 export interface AskStatus {
   /** False until ANTHROPIC_API_KEY is set on the server. */
   configured: boolean;
+  /**
+   * The lead gate for this browser (see AskAccess). Always sent by the server; optional in the
+   * type only so a response from an older server (before the lead gate) still parses: treat a
+   * missing value as `open` and rely on the POST's gate 401 (`isLeadGateResponse`).
+   */
+  access?: AskAccess;
   account: AskAccount;
   limit: number;
   used: number;
+  /** Questions left today; 0 also once the site-wide daily cap is reached (while `used` may be lower). */
   remaining: number;
   /** Seconds until the daily allowance resets (midnight India time). */
   resetsInSeconds: number;

@@ -29,6 +29,10 @@ Every response is JSON in the shared envelope, with a matching HTTP status:
 | GET | `/api/results` | List published results (`?year=&exam=`) |
 | GET | `/api/result-cards/[file]` | One result-card image (webp), same visibility rule as student names (D-031) |
 | GET | `/api/health` | Liveness + non-secret config state |
+| GET / POST / DELETE | `/api/lead-gate` | Lead gate: status, share contact details once (pass cookie), forget / withdraw ([below](#lead-gate-apilead-gate)) |
+| POST | `/api/lead-gate/usage` | Note one use of a browser-only tool on the family's lead |
+
+The Rancho route (`/api/ask`) enforces the lead gate; the mock-test score route (`/api/mocktest/score`) asks for it too, but guests keep attempts in the browser, so it is lead capture rather than access control: see [Lead gate on server-enforced tools](#lead-gate-on-server-enforced-tools).
 
 ---
 
@@ -84,7 +88,7 @@ Unknown keys are dropped. For `hero`, any `currentClass` / `programInterest` the
 
 | Status | Body | When |
 |---|---|---|
-| 201 | `{ ok: true, status: "received", reference: "ENQ-XXXXXXXXXX", message }` | Stored as a CRM lead and/or the webhook returned 2xx |
+| 201 | `{ ok: true, status: "received", reference: "ENQ-XXXXXXXXXX", message }` | Stored as a CRM lead and/or the webhook returned 2xx. After a **stored** lead (not honeypot, not capped, not a store failure) it also carries `Set-Cookie: aspire_tool_pass=…` unless the lead gate is off or the browser already holds a signed pass: the free tools then open in this browser without asking. That pass keeps the enquiry's consent version and never notes tool use. Body unchanged. |
 | 200 | `{ ok: true, status: "not_configured", message }` | Valid, but the store is off and no destination is configured — **nothing was sent or stored**. The UI must say so. |
 | 400 | `bad_request` | Malformed JSON, non-object body, invalid UTF-8, invalid `Content-Length` |
 | 403 | `forbidden` | Failed origin check |
@@ -284,6 +288,54 @@ Serves the result cards in `private/result-cards/` (D-031: a student's photo, co
 
 ---
 
+## Lead gate (`/api/lead-gate`)
+
+Contact details once per browser before a free tool's result (D-043; design and full contract: `docs/lead-gate-plan.md` §5). **Owner decision 21 Oct 2026: `LEAD_GATE=required` on the live site now, although it shows sample data**; the form says so (GET `sample`). Code: `src/lib/lead-gate/**` (contract `contract.ts`, client-safe), routes `src/app/api/lead-gate/**`, client kit `src/components/lead-gate/**`.
+
+Every response: D-007 envelope, `Cache-Control: no-store`, `X-Robots-Tag: noindex`. Every write is same-origin only (403). Logs carry fixed codes only: never the name, phone, IP, token, pass hash, lead id, context or body. Limiters are in memory (single instance) and key IPv6 addresses by /64.
+
+**Cookie `aspire_tool_pass`.** HttpOnly, SameSite=Lax, Path=/, Secure in production, Max-Age 180 days, fixed expiry. Value `lg1.<passId>.<expiresAtSeconds>.<sig>` (HMAC-SHA256 with `LEAD_GATE_SECRET`). The server stores only SHA-256(passId) in `crm_gate_passes`. A stolen cookie can only unlock tools and add tool-use notes to that lead; it reveals nothing. Cleared by "Not you?" (DELETE), withdrawal, sign-out (`/api/auth/logout`), erase, expiry, a retired consent version or a rotated secret.
+
+**Access order** (`resolveLeadGateAccess`, request time only): gate off → open (`via: "off"`); any verified session (student, parent, staff, admin) → open (`session`, nothing stored); live pass → open (`pass`); else locked. `required` degrades to `optional` while the flood breaker is tripped.
+
+### GET /api/lead-gate → 200
+
+`{ ok: true, data: { mode: "off" | "optional" | "required", unlocked, via: "off" | "session" | "pass" | null, recordsUse, expiresAt: ISO | null, sample } }`. `sample` = results currently come from sample data (the form then shows `leadGate.sampleData`). 429 at 600 / 10 min per IP bucket; 500. Re-issues a refreshed session cookie and clears a dead pass cookie.
+
+### POST /api/lead-gate (≤ 4 KB)
+
+Body: `{ studentName (2–80), phone (Indian mobile, implausible numbers refused), currentClass (class-6-8 … dropper), submittedBy: "student" | "parent", consent: true, consentVersion: "2026-10-21.gate.v1", tool: "predictor" | "mock-test" | "ask" | "planner", context?: { page, locale, utm_*, referrer, toolExam, toolBand }, website? }` (`website` = honeypot).
+
+| Status | When |
+|---|---|
+| 403 | Cross-origin |
+| 200 `{ unlocked: true, via: "off" \| "session" }` | Gate off or signed in: nothing stored, body not read |
+| 429 | 60 / 10 min per IP bucket; or the per-number cap (5 new submissions / 24 h) when that number has no lead yet (`X-Lead-Gate-Limit: phone`) |
+| 415 / 413 / 400 / 422 | Content type, size, JSON, schema (`fieldErrors`; a `consentVersion` error means a stale page) |
+| 201 | Honeypot: the normal body and a cookie that never works; nothing stored |
+| 503 `not_configured` | Flood breaker (`LEAD_GATE_MAX_NEW_LEADS_PER_HOUR`, default 300): "Sharing details is paused right now. Nothing was saved." The gate is optional meanwhile |
+| 201 `{ unlocked: true, via: "pass", recordsUse, expiresAt }` + `Set-Cookie` | Captured as a CRM lead (source `tool`, dedupe by number, consent text from the server registry) and a pass, in one transaction; this browser's previous pass revoked. Past the per-number cap the pass binds to the existing lead without a new submission. **Byte-identical for a new and an existing family; never names anyone** |
+| 500 | Store failure: "We couldn't save your details. Nothing was saved. Please try again." No cookie |
+
+An existing lead is never reopened, re-assigned or given a weaker consent by the gate (`docs/crm.md` §11).
+
+### DELETE /api/lead-gate[?withdraw=1] → 200 `{ forgotten: true, withdrawn }`
+
+Same-origin; 30 / 10 min per IP bucket; idempotent; always expires the cookie. `withdraw=1` ("Stop Aspire contacting me") with a live pass: every pass of the lead revoked, an open lead closed as lost / not interested (enrolled leads keep their stage), a `consent_withdrawn` timeline entry, audit `crm.gate_withdraw`.
+
+### POST /api/lead-gate/usage (≤ 1 KB) → 200 `{ recorded, reason? }`
+
+Body `{ tool: "predictor" | "planner", exam, band? (predictor only: "score-a-b" / "percentile-a-b"), page? }`. `ask` and `mock-test` → 422 (their own routes record them; a browser cannot spoof them). `reason`: `off` | `session` | `no_pass` | `not_recorded` (e.g. a pass from an enquiry, or `LEAD_GATE_RECORD_USE` excludes it). 429 at 600 / 10 min per IP bucket or 120 / hour per pass. One `tool_use` entry per lead + tool + key + India day (merged, `uses` counted); deleted after 90 days; never moves the lead's last activity. The client ignores failures.
+
+## Lead gate on server-enforced tools
+
+A locked browser gets **401** with header `X-Lead-Gate: required` and body `{ ok: false, error: "unauthenticated", message, gate: "lead" }` (`leadGateRequiredResponse`). Clients treat a response as the gate **only** when `isLeadGateResponse(response)` (status 401 + that header); any other 401 keeps its old meaning. Browser-only tools (predictor, homepage widget, planner) cannot be enforced: their tables ship to the page, so their gate is lead capture, not access control.
+
+- **`POST /api/ask` (Rancho):** after the same-origin and configuration checks and **before** the allowance check and the body (≤ 5.6 MB) is read: locked → the gate 401 (log outcome `gate_required`); nothing read, reserved or counted. A browser unlocked by a pass is charged per IP **and** per family (`scope: "lead"`, hashed with the day); a pass never raises an allowance and the global daily cap stays the real ceiling. On a counted answer only (`end_turn` / `max_tokens`) one note `{ tool: "ask", key: "rancho" }`: never the question, subject, topic, answer or a photo flag. Every response re-issues cookies via `applyLeadGateCookies`. `GET /api/ask` adds `access: "open" | "gate_required" | "gate_optional"` to `AskStatus`.
+- **`POST /api/mocktest/score`:** after the IP limit and before the body: locked and not grandfathered → the gate 401 ("Share a contact number once to see your score."); nothing scored (sample tests included). Grandfathered (never gated): an attempt that started before `LEAD_GATE_SINCE` (as implemented: the body's `startedAt`, the browser's own record), and an attempt the browser marks `seen: true` because its score is already stored on the device (scored without a pass, no tool-use note). The body (≤ 16 KB) is always read before the gate decides. Body gains `record?: true`, sent only for the first scoring of a local attempt; then, via a pass only, one note `{ tool: "mock-test", key: testId, testId, exam, scoreBand }` (10-point band, e.g. `pct-40-49`). Tests of 60 minutes or more ask in the runner before `/api/mocktest/start`. Signed-in flows unchanged.
+
+---
+
 ## Rendering and caching (Next.js 16, Cache Components)
 
 - The list routes read `request.nextUrl.searchParams`, so they render per request. The request is read first and outside any `try/catch` so Next.js can bail out of prerendering cleanly.
@@ -309,6 +361,12 @@ All of these are listed in `.env.example`. Only `NEXT_PUBLIC_SITE_URL` is public
 | `NEXT_PUBLIC_SITE_URL` | origin check | – | Its origin is also accepted as a same-site `Origin` |
 | `SHOW_PLACEHOLDER_CONTENT` | content routes (via `data.ts`), /api/health | dev on / prod off | D-005 |
 | `NODE_ENV` | webhook URL policy | – | Set by Next.js |
+| `LEAD_GATE` | `/api/lead-gate*`, `/api/ask`, `/api/mocktest/score`, `/api/enquiries` (pass cookie) | `off` | `off` / `optional` / `required` (live site: `required`, owner decision 21 Oct 2026). Forced off with `ENQUIRY_STORE=off` or no usable secret in production; sample data does not force it off. Read per request: change `.env` and recreate the container, no rebuild |
+| `LEAD_GATE_SECRET` | pass cookie | – | ≥ 32 chars, server-only. Required in production (dev: per-process fallback). Rotating it re-asks every browser |
+| `LEAD_GATE_RECORD_USE` | tool-use notes | `all` | `all` / `parent` / `off`; unknown → `off` |
+| `LEAD_GATE_ASSIGN` | new gate leads | `auto` | `auto` (same rules as enquiries) or `none` (Unassigned queue) |
+| `LEAD_GATE_MAX_NEW_LEADS_PER_HOUR` | flood breaker | `300` | Above it: 503 on new captures and the gate degrades to optional |
+| `LEAD_GATE_SINCE` | `/api/mocktest/score` | – | ISO date-time of switch-on; mock attempts started earlier are never gated |
 
 ## Known limitations
 
@@ -335,3 +393,7 @@ npx vitest run src/lib/contracts/enquiry.test.ts src/lib/server src/app/api/enqu
 | POST handler end to end (all sources), including a no-PII-in-logs assertion on every test | `src/app/api/enquiries/route.test.ts` |
 | GET routes and health | `src/app/api/content-routes.test.ts` |
 | No mockup placeholder strings (fake phone, centres, stats, names) in `src/components` / `src/app` | `src/test/mockup-strings.test.ts` |
+| Lead gate: token, contract, config, limits, consent registry, en/hi parity | `src/lib/lead-gate/lead-gate-lib.test.ts` |
+| Lead gate routes (GET / POST / DELETE / usage), enquiry pass cookie, sign-out, no-PII logs | `src/app/api/lead-gate/lead-gate-api.test.ts` |
+| Gate leads, passes, tool-use notes, withdrawal, erase | `src/lib/crm/gate.test.ts` |
+| `/api/ask` and `/api/mocktest/score` gate 401, per-family allowance, tool-use notes | `src/app/api/ask/ask-route.test.ts`, `src/app/api/mocktest/mocktest-api.test.ts` (tool owners) |

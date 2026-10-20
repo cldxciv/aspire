@@ -38,6 +38,9 @@ const profile = await import("./profile/route");
 const leaderboard = await import("./leaderboard/route");
 const verify = await import("./verify/[id]/route");
 const adminProfile = await import("@/app/api/admin/mocktest/profile/[userId]/route");
+const leadGate = await import("@/app/api/lead-gate/route");
+const { isLeadGateResponse } = await import("@/components/lead-gate/lead-gate-client");
+const { LEAD_GATE_CONSENT_VERSION } = await import("@/lib/lead-gate/contract");
 
 const PASSWORD = "mock-test-pass-2026";
 const QUESTION = new Map(MOCK_QUESTIONS.map((q) => [q.id, q]));
@@ -217,6 +220,165 @@ describe("POST /api/mocktest/score", () => {
     expect((await browser().send(score.POST, "/api/mocktest/score", { body: { testId: NEET.id, answers: neetAnswers(40) } })).status).toBe(404);
     expect((await browser().send(start.POST, "/api/mocktest/start", { body: { testId: WEEKLY.id } })).status).toBe(404);
     expect((await browser().send(leaderboard.GET, `/api/mocktest/leaderboard?test=${WEEKLY.id}`)).status).toBe(404);
+  });
+});
+
+describe("lead gate on POST /api/mocktest/score (docs/lead-gate-plan.md §5.7)", () => {
+  const SCORE = "/api/mocktest/score";
+  /** 09:30 IST on the test day: IN_WINDOW is half an hour later. */
+  const SINCE = "2026-10-21T04:00:00Z";
+  let phoneCounter = 0;
+
+  function gateOn(extra: Record<string, string> = {}) {
+    vi.stubEnv("LEAD_GATE", "required");
+    vi.stubEnv("LEAD_GATE_SECRET", "mocktest-gate-secret-0123456789abcdefghij");
+    // No sample-data setting: the demo's sample tests are gated too (owner decision 21 Oct 2026).
+    for (const [name, value] of Object.entries(extra)) vi.stubEnv(name, value);
+  }
+
+  /** Shares contact details once on this browser (POST /api/lead-gate) → pass cookie. */
+  async function unlock(b: Browser) {
+    phoneCounter += 1;
+    const response = await b.send(leadGate.POST, "/api/lead-gate", {
+      body: {
+        studentName: "Mock Gate Student",
+        phone: `98100 2${String(phoneCounter).padStart(4, "0")}`,
+        currentClass: "class-12",
+        submittedBy: "parent",
+        consent: true,
+        consentVersion: LEAD_GATE_CONSENT_VERSION,
+        tool: "mock-test",
+        website: "",
+      },
+    });
+    expect(response.status).toBe(201);
+    expect(b.jar.has("aspire_tool_pass")).toBe(true);
+  }
+
+  const neet = (extra: Record<string, unknown> = {}) => ({ testId: NEET.id, answers: neetAnswers(10, 5), timeSpentSec: NEET_IDS.map(() => 30), ...extra });
+
+  function toolUses(): Record<string, unknown>[] {
+    return getDb()
+      .prepare("SELECT meta FROM crm_activities WHERE type = 'tool_use' ORDER BY id")
+      .all()
+      .map((row) => JSON.parse(String(row.meta)) as Record<string, unknown>);
+  }
+
+  it("locked guest: the gate 401 and nothing scored, for sample and weekly tests alike", async () => {
+    gateOn();
+    for (const payload of [neet({ record: true }), { testId: WEEKLY.id, answers: weeklyAnswers(3) }]) {
+      const response = await browser().send(score.POST, SCORE, { body: payload });
+      expect(response.status).toBe(401);
+      expect(isLeadGateResponse(response)).toBe(true);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body).toMatchObject({ ok: false, error: "unauthenticated", gate: "lead" });
+      expect(body).not.toHaveProperty("data");
+    }
+    expect(toolUses()).toEqual([]);
+  });
+
+  it("a result this browser already showed (`seen`) is scored again without contact details, with or without LEAD_GATE_SINCE", async () => {
+    for (const extra of [{}, { LEAD_GATE_SINCE: SINCE }] as Record<string, string>[]) {
+      gateOn(extra);
+      const later = { startedAt: IN_WINDOW - 10 * MINUTE };
+      const seen = await browser().send(score.POST, SCORE, { body: neet({ ...later, seen: true }) });
+      expect(seen.status).toBe(200);
+      expect((await json<ScoredAttempt>(seen)).data.result.score).toBe(35);
+      // Not seen (no local score yet): the gate.
+      expect((await browser().send(score.POST, SCORE, { body: neet(later) })).status).toBe(401);
+      // A malformed flag is ignored, never a 422.
+      expect((await browser().send(score.POST, SCORE, { body: neet({ ...later, seen: "yes" }) })).status).toBe(401);
+      // Without a pass nothing is noted, even if a hand-made request adds `record`.
+      expect((await browser().send(score.POST, SCORE, { body: neet({ seen: true, record: true }) })).status).toBe(200);
+    }
+    expect(toolUses()).toEqual([]);
+  });
+
+  it("the body is read (JSON, at most 16 KB) before the gate decides; same-origin and the IP limit come first", async () => {
+    gateOn();
+    expect((await browser().send(score.POST, SCORE, { body: "x", contentType: "text/plain" })).status).toBe(415);
+    expect((await browser().send(score.POST, SCORE, { body: neet(), origin: "https://evil.example" })).status).toBe(403);
+    // Sample tests get the gate with nothing but LEAD_GATE=required and a secret.
+    expect(isLeadGateResponse(await browser().send(score.POST, SCORE, { body: neet() }))).toBe(true);
+  });
+
+  it("gate off or optional: scored exactly as before", async () => {
+    gateOn({ LEAD_GATE: "" });
+    expect((await browser().send(score.POST, SCORE, { body: neet() })).status).toBe(200);
+    gateOn({ LEAD_GATE: "optional" });
+    const response = await browser().send(score.POST, SCORE, { body: neet({ record: true }) });
+    expect(response.status).toBe(200);
+    expect((await json<ScoredAttempt>(response)).data.result.score).toBe(35);
+    expect(toolUses()).toEqual([]);
+  });
+
+  it("signed-in students and parents skip the gate, and nothing is noted for account holders", async () => {
+    gateOn();
+    for (const role of ["student", "parent"] as const) {
+      const { b } = await signedIn(role, `${role}.gate`);
+      expect((await b.send(score.POST, SCORE, { body: neet({ record: true }) })).status).toBe(200);
+    }
+    expect(toolUses()).toEqual([]);
+  });
+
+  it("earlier attempts are never gated: a start before LEAD_GATE_SINCE is scored; a later or unknown one is not", async () => {
+    gateOn({ LEAD_GATE_SINCE: SINCE });
+    const before = await browser().send(score.POST, SCORE, { body: neet({ startedAt: IN_WINDOW - 45 * MINUTE }) });
+    expect(before.status).toBe(200);
+    expect((await json<ScoredAttempt>(before)).data.result.score).toBe(35);
+    for (const startedAt of [IN_WINDOW - 10 * MINUTE, undefined, "yesterday", -5]) {
+      const response = await browser().send(score.POST, SCORE, { body: neet(startedAt === undefined ? {} : { startedAt }) });
+      expect(response.status, String(startedAt)).toBe(401);
+    }
+    // Malformed answers of an earlier attempt are still a validation error, not a gate.
+    expect((await browser().send(score.POST, SCORE, { body: neet({ startedAt: IN_WINDOW - 45 * MINUTE, answers: [0] }) })).status).toBe(422);
+  });
+
+  it("a pass unlocks; only a first scoring (record) notes the test, exam and a 10-point band — never the score", async () => {
+    gateOn();
+    const b = browser();
+    await unlock(b);
+    const first = await b.send(score.POST, SCORE, { body: neet({ record: true }) });
+    expect(first.status).toBe(200);
+    expect((await json<ScoredAttempt>(first)).data.result.score).toBe(35);
+    // Re-opening the result or printing it sends no `record`: nothing more is noted.
+    expect((await b.send(score.POST, SCORE, { body: neet() })).status).toBe(200);
+    let uses = toolUses();
+    expect(uses).toHaveLength(1);
+    expect(uses[0]).toEqual({
+      tool: "mock-test",
+      key: NEET.id,
+      exam: "neet",
+      testId: NEET.id,
+      scoreBand: "pct-20-29",
+      uses: 1,
+      lastAt: new Date(IN_WINDOW).toISOString(),
+    });
+    expect(JSON.stringify(uses)).not.toMatch(/"score"|answers|35/);
+    // Another first scoring the same day merges into the same entry.
+    await b.send(score.POST, SCORE, { body: neet({ record: true, answers: neetAnswers(40) }) });
+    uses = toolUses();
+    expect(uses).toHaveLength(1);
+    expect(uses[0]).toMatchObject({ uses: 2, scoreBand: "pct-90-100" });
+  });
+
+  it("LEAD_GATE_RECORD_USE=off: a pass still unlocks but nothing is noted", async () => {
+    gateOn({ LEAD_GATE_RECORD_USE: "off" });
+    const b = browser();
+    await unlock(b);
+    expect((await b.send(score.POST, SCORE, { body: neet({ record: true }) })).status).toBe(200);
+    expect(toolUses()).toEqual([]);
+  });
+
+  it("a dead pass cookie gets the gate and is cleared", async () => {
+    gateOn();
+    const b = browser();
+    b.jar.set("aspire_tool_pass", "lg1.not-a-real-pass.1999999999.c2ln");
+    const response = await b.send(score.POST, SCORE, { body: neet() });
+    expect(response.status).toBe(401);
+    expect(response.headers.getSetCookie().join("\n")).toMatch(/aspire_tool_pass=;.*Max-Age=0/i);
+    expect(b.jar.has("aspire_tool_pass")).toBe(false);
   });
 });
 

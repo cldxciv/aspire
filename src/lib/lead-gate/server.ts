@@ -80,6 +80,11 @@ export function clearLeadGateCookie(response: NextResponse): void {
 export interface LeadGateRuntime {
   getEnv: () => Env;
   now: () => number;
+  /**
+   * Sample (placeholder) data is shown site-wide: the same showPlaceholderContent() check the pages
+   * use (SHOW_PLACEHOLDER_CONTENT, build and run time). Reported by GET /api/lead-gate as `sample`
+   * so <LeadGateForm> can say so; it never switches the gate off (owner decision 21 Oct 2026).
+   */
   sampleData: () => boolean;
   limiters: () => LeadGateLimiters;
 }
@@ -93,7 +98,7 @@ export const defaultLeadGateRuntime: LeadGateRuntime = {
 
 /** The live configuration (config warnings logged once per process). */
 export function leadGateConfig(runtime: LeadGateRuntime = defaultLeadGateRuntime): LeadGateConfig {
-  const config = parseLeadGateConfig(runtime.getEnv(), { sampleData: runtime.sampleData() });
+  const config = parseLeadGateConfig(runtime.getEnv());
   for (const code of config.warnings) leadGateConfigWarning(code);
   return config;
 }
@@ -180,8 +185,11 @@ export async function resolveLeadGateAccess(runtime: LeadGateRuntime = defaultLe
   return { mode, unlocked, via, enforce: mode === "required" && !unlocked, session, pass, staleCookie, since: config.since };
 }
 
-/** The GET /api/lead-gate body for an access result. No lead field is ever included. */
-export function leadGateStatusData(access: LeadGateAccess): LeadGateStatusData {
+/**
+ * The GET /api/lead-gate body for an access result. No lead field is ever included. `sample`: sample
+ * data is shown site-wide (LeadGateRuntime.sampleData), reported in every mode.
+ */
+export function leadGateStatusData(access: LeadGateAccess, sample: boolean): LeadGateStatusData {
   const viaPass = access.via === "pass" && access.pass !== null;
   return {
     mode: access.mode,
@@ -189,6 +197,7 @@ export function leadGateStatusData(access: LeadGateAccess): LeadGateStatusData {
     via: access.via,
     recordsUse: viaPass ? (access.pass?.recordsUse ?? false) : false,
     expiresAt: viaPass && access.pass ? new Date(access.pass.expiresAt).toISOString() : null,
+    sample,
   };
 }
 

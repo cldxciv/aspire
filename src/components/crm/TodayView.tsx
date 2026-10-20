@@ -9,7 +9,7 @@ import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
 import type { LeadSummary, MyTask } from "@/lib/crm/types";
 import { DueLabel, MaskedPhone, RelativeTime, SourceBadges, StageBadge } from "./CrmBlocks";
-import { centreLabel, classProgramLabel, phoneLast4, type CrmMessages } from "./format";
+import { centreLabel, classProgramLabel, phoneLast4, withBack, type CrmMessages } from "./format";
 import { CompleteTaskButton, type LeadIslandMessages } from "./LeadActions";
 
 export type TodayData = {
@@ -21,8 +21,9 @@ export type TodayData = {
 
 const PAGE_PATH = "/crm/today";
 
+/** A lead link whose "Back" returns to Today's calls (the hash, if any, goes after the query). */
 function leadLink(id: string, locale: Locale, hash = "") {
-  return `${localePath(`/crm/leads/${encodeURIComponent(id)}`, locale)}${hash}`;
+  return `${withBack(localePath(`/crm/leads/${encodeURIComponent(id)}`, locale), PAGE_PATH)}${hash}`;
 }
 
 const quick =

@@ -6,7 +6,7 @@ import { getCentres } from "@/lib/data";
 import type { Locale } from "@/i18n/config";
 import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages } from "@/i18n/server";
-import { LEAD_PROGRAMS, PUBLIC_LEAD_SOURCES, MANUAL_LEAD_SOURCES, type CrmPermissions, type CrmViewer } from "@/lib/crm/types";
+import { LEAD_CLASSES, LEAD_PROGRAMS, PUBLIC_LEAD_SOURCES, MANUAL_LEAD_SOURCES, type CrmPermissions, type CrmViewer } from "@/lib/crm/types";
 import { requireCrmPage } from "@/lib/crm/page";
 import { CrmPageHeader, NotAllowed } from "./CrmBlocks";
 import type { CrmMessages } from "./format";
@@ -94,6 +94,15 @@ export function programOptions(t: CrmMessages): Option[] {
 
 export function sourceOptions(t: CrmMessages): Option[] {
   return [...PUBLIC_LEAD_SOURCES, ...MANUAL_LEAD_SOURCES].map((value) => ({ value, label: t.sources[value] }));
+}
+
+/** Sources staff can choose when adding an enquiry (walk-in, phone call, referral, other). */
+export function manualSourceOptions(t: CrmMessages): Option[] {
+  return MANUAL_LEAD_SOURCES.map((value) => ({ value, label: t.sources[value] }));
+}
+
+export function classOptions(t: CrmMessages): Option[] {
+  return LEAD_CLASSES.map((value) => ({ value, label: t.classes[value] }));
 }
 
 /**

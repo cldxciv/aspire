@@ -8,6 +8,7 @@ import {
   assignLead,
   changeStage,
   completeTask,
+  CONSENT_METHODS,
   CONTACT_CHANNELS,
   CONTACT_OUTCOMES,
   createManualLead,
@@ -44,7 +45,9 @@ import { defineTool, fail, READ_ONLY, type ToolContext, type ToolOutcome, type T
  *
  * Privacy: lists show phone numbers MASKED (last 4 digits only); `get_lead` is the full record
  * (its view is audited by the CRM as `crm.lead_view`) but never the consent sentence, only its
- * version and time. Nothing is ever sent to a family (D-041): `log_lead_contact` only records what
+ * version and time. Score bands never reach the assistant (`band`, `scoreBand` on lead gate tool
+ * notes, `toolBand` on submissions: results of a minor's test or prediction; lead-gate plan critique
+ * 0.13): only which tool, which exam / test and how often. Nothing is ever sent to a family (D-041): `log_lead_contact` only records what
  * a staff member did. Not exposed via MCP: CSV export, erase, staff / assignment-rule management.
  */
 
@@ -105,11 +108,17 @@ function leadListItem(lead: LeadSummary) {
   });
 }
 
-/** Activity meta without the consent sentence (only its version is shown). */
-function activityOut(activity: LeadActivity) {
-  const meta = Object.fromEntries(
-    Object.entries(activity.meta).filter(([key]) => key !== "consentText" && key !== "consentLocale"),
-  );
+/**
+ * Meta keys never handed to an AI assistant, on any activity type: the consent sentence (its
+ * version is shown) and its language, and every score band of a test / prediction (critique 0.13):
+ * `band` / `scoreBand` on `tool_use` notes and `toolBand` on submissions (the predictor's band that
+ * rides along with a contact form or enquiry sent from the predictor).
+ */
+const HIDDEN_META_KEYS = new Set(["consentText", "consentLocale", "band", "scoreBand", "toolBand"]);
+
+/** Activity meta without the consent sentence and without score bands. Exported for tests. */
+export function activityOut(activity: LeadActivity) {
+  const meta = Object.fromEntries(Object.entries(activity.meta).filter(([key]) => !HIDDEN_META_KEYS.has(key)));
   return { ...activity, meta };
 }
 
@@ -466,7 +475,8 @@ export const createWalkinLeadTool = defineTool({
   description:
     "WRITE (needs crm:write). Enters a lead that came in person, by phone or by referral (source: walk_in default, phone_call, referral, other). " +
     "Needs the student's or the parent's name and an Indian mobile number; optional email, currentClass (class-6-8, class-9, class-10, class-11, class-12, dropper), " +
-    "programInterest (jee, neet, foundation, integrated, not-sure), centreSlug and a first note. familyConsented must be true: only enter families who agreed to be contacted. " +
+    "programInterest (jee, neet, foundation, integrated, not-sure), centreSlug and a first note. familyConsented must be true: only enter families who agreed to be contacted; " +
+    `optional consentMethod (${CONSENT_METHODS.join(", ")}: how they agreed). ` +
     "A phone that already has a lead reuses it (isNew false). New leads are auto-assigned by the CRM rules. Audited.",
   scope: "write",
   inputSchema: z.object({
@@ -480,6 +490,7 @@ export const createWalkinLeadTool = defineTool({
     centreSlug: slug.optional(),
     note: z.string().trim().max(2000).optional(),
     familyConsented: z.literal(true, { error: "familyConsented must be true: the family agreed to be contacted." }),
+    consentMethod: z.enum(CONSENT_METHODS).optional().describe("How the family agreed: in_person, phone, written or message."),
   }),
   annotations: { ...WRITE, idempotentHint: false },
   run(args, ctx) {
@@ -498,6 +509,7 @@ export const createWalkinLeadTool = defineTool({
         centreSlug: args.centreSlug ?? null,
         note: args.note ?? null,
         consent: true,
+        consentMethod: args.consentMethod ?? null,
       },
       ctx.now,
     );

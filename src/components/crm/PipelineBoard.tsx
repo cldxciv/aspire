@@ -10,6 +10,7 @@ import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
 import { LEAD_STAGES, type LeadStage } from "@/lib/crm/types";
 import { ActionFeedback, fieldClasses, useCrmAction } from "./client-kit";
+import { withBack } from "./format";
 import { LostReasonDialog, type LeadIslandMessages } from "./LeadActions";
 import { needsLostReason, stageChangeRequest } from "./lead-forms";
 import type { LeadCard } from "./types";
@@ -112,6 +113,7 @@ export function PipelineBoard({
                       card={card}
                       t={t}
                       locale={locale}
+                      back={`${PAGE_PATH}${inboxQuery}`}
                       busy={action.pending}
                       dragging={dragging === card.id}
                       onMove={(stage) => move(card, stage)}
@@ -171,6 +173,7 @@ function PipelineCard({
   card,
   t,
   locale,
+  back,
   busy,
   dragging,
   onMove,
@@ -180,6 +183,8 @@ function PipelineCard({
   card: LeadCard;
   t: PipelineMessages;
   locale: ReturnType<typeof useLocale>;
+  /** LOCALE-FREE pipeline path + filters, so the lead's "Back" returns here. */
+  back: string;
   busy: boolean;
   dragging: boolean;
   onMove: (stage: LeadStage) => void;
@@ -202,7 +207,7 @@ function PipelineCard({
       className={cn("rounded-control border border-line bg-white p-3 shadow-soft", dragging && "opacity-60")}
     >
       <h3 className="break-words text-sm font-bold">
-        <Link href={localePath(`/crm/leads/${encodeURIComponent(card.id)}`, locale)} className="text-blue hover:underline">
+        <Link href={withBack(localePath(`/crm/leads/${encodeURIComponent(card.id)}`, locale), back)} className="text-blue hover:underline">
           {card.name}
         </Link>
       </h3>

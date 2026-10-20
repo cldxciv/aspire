@@ -10,7 +10,7 @@ const tools = {
   },
   hero: {
     title: "Free tools for JEE, NEET and BOH students",
-    lead: "Practise, plan and get unstuck — in English or Hindi. No sign-up needed to start; sign in to save your progress.",
+    lead: "Practise, plan and get unstuck — in English or Hindi. Share your contact details once to see results; sign in to save your progress.",
   },
   status: {
     sample: "Sample data",

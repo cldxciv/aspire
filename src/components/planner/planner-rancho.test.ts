@@ -166,7 +166,7 @@ describe("the planner is no longer the installed app", () => {
     for (const [file, source] of plannerSources()) {
       expect(source, file).not.toMatch(/beforeinstallprompt|appinstalled|BeforeInstallPromptEvent|display-mode: standalone/);
     }
-    const app = readFileSync(path.join(process.cwd(), "src/components/planner/PlannerApp.tsx"), "utf8");
+    const app = readFileSync(path.join(process.cwd(), "src/components/planner/PlannerClient.tsx"), "utf8");
     expect(app).toContain('const SW_URL = "/planner-sw.js"');
     expect(app).toMatch(/navigator\.serviceWorker\.register\(SW_URL, \{ scope \}\)/);
   });

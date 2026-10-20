@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   ArrowRightLeft,
+  BellOff,
   CheckCircle2,
   ClipboardList,
   Eraser,
@@ -9,6 +10,7 @@ import {
   MessageCircle,
   Pencil,
   Phone,
+  Sparkles,
   StickyNote,
   UserPlus,
   UserRoundCheck,
@@ -25,31 +27,47 @@ import { cn } from "@/lib/cn";
 import type { CrmPermissions, CrmViewer, LeadActivity, LeadDetail, LeadTask } from "@/lib/crm/types";
 import { CrmPageHeader, DueLabel, RelativeTime, SourceBadges, StageBadge } from "./CrmBlocks";
 import {
+  backLabel,
+  bandLabel,
   centreLabel,
   classLabel,
+  consentHistory,
+  DEFAULT_BACK,
   displayPhone,
+  examLabel,
   formatDate,
   formatDateTime,
+  isGateSubmission,
   isoOrUndefined,
   istDayKey,
   lostReasonLabel,
+  needsParentConfirmation,
   outcomeLabel,
   programLabel,
   sourceLabel,
   stageLabel,
+  submitterLabel,
   telHref,
   toolLabel,
+  toolUseSummary,
   topicLabel,
   whatsAppHref,
+  type BackTarget,
+  type ConsentEntry,
   type CrmMessages,
 } from "./format";
+import { detailValues } from "./lead-forms";
 import {
   AssigneeControl,
   CompleteTaskButton,
   ContactActions,
+  EditDetailsButton,
+  ErasedNotice,
+  EraseLeadPanel,
   NoteForm,
   StageControl,
   TaskForm,
+  type DetailOptions,
   type LeadIslandMessages,
 } from "./LeadActions";
 import type { Option } from "./types";
@@ -64,6 +82,10 @@ export type LeadDetailProps = {
   assigneeOptions: Option[];
   /** Staff user id → display name, for assignment entries on the timeline. */
   staffNames: Readonly<Record<string, string>>;
+  /** Where "Back" returns (the allow-listed list the lead was opened from); Enquiries by default. */
+  back?: BackTarget;
+  /** Labelled class / program / centre options for "Edit details" (no edit button without them). */
+  detailOptions?: DetailOptions;
   now: number;
   locale: Locale;
   t: CrmMessages;
@@ -76,11 +98,24 @@ export function leadName(t: CrmMessages, lead: Pick<LeadDetail, "displayName" | 
 
 /**
  * One lead (`/crm/leads/[id]`): header with stage + assignee controls, contact actions (tel: /
- * wa.me + "log this contact"), every captured field, follow-up tasks, notes and the timeline.
+ * wa.me + "log this contact"), every captured field (editable), every consent with its date,
+ * follow-up tasks, notes and the timeline (incl. free-tool use), and for admins "Erase".
  * Server-rendered from CRM-CORE's `LeadDetail`; the islands write through `/api/crm/**` and
- * refresh this view.
+ * refresh this view. "Back" returns to `back` (Enquiries, a search, Today's calls or Pipeline).
  */
-export function LeadDetailView({ lead, viewer, permissions, centres, assigneeOptions, staffNames, now, locale, t }: LeadDetailProps) {
+export function LeadDetailView({
+  lead,
+  viewer,
+  permissions,
+  centres,
+  assigneeOptions,
+  staffNames,
+  back = DEFAULT_BACK,
+  detailOptions,
+  now,
+  locale,
+  t,
+}: LeadDetailProps) {
   const pagePath = `/crm/leads/${lead.id}`;
   const name = leadName(t, lead);
   const island: LeadIslandMessages = { common: t.common, errors: t.errors, stages: t.stages, lostReasons: t.lostReasons, lead: t.lead };
@@ -91,11 +126,11 @@ export function LeadDetailView({ lead, viewer, permissions, centres, assigneeOpt
   return (
     <div className="space-y-5">
       <Link
-        href={localePath("/crm", locale)}
+        href={localePath(back.path, locale)}
         className="inline-flex min-h-11 items-center gap-1.5 text-sm font-bold text-blue hover:underline"
       >
         <ArrowLeft aria-hidden="true" className="size-4" />
-        {t.lead.back}
+        {backLabel(t, back.kind)}
       </Link>
 
       <CrmPageHeader
@@ -115,7 +150,13 @@ export function LeadDetailView({ lead, viewer, permissions, centres, assigneeOpt
       />
 
       {lead.erased && (
-        <Notice variant="warning">{format(t.lead.details.erasedNotice, { date: formatDate(lead.erasedAt, locale) ?? "" })}</Notice>
+        <ErasedNotice leadId={lead.id}>{format(t.lead.details.erasedNotice, { date: formatDate(lead.erasedAt, locale) ?? "" })}</ErasedNotice>
+      )}
+
+      {!lead.erased && needsParentConfirmation(lead.activities) && (
+        <Notice variant="warning" title={t.lead.parentFlag.title}>
+          {t.lead.parentFlag.body}
+        </Notice>
       )}
 
       {editable && (
@@ -198,7 +239,13 @@ export function LeadDetailView({ lead, viewer, permissions, centres, assigneeOpt
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-        <LeadDetailsPanel lead={lead} centres={centres} locale={locale} t={t} />
+        <LeadDetailsPanel
+          lead={lead}
+          centres={centres}
+          locale={locale}
+          t={t}
+          edit={editable && detailOptions ? { island, pagePath, options: detailOptions } : null}
+        />
         <div className="space-y-5">
           {editable && (
             <PortalPanel id="crm-lead-note" title={t.lead.notes.title}>
@@ -206,10 +253,16 @@ export function LeadDetailView({ lead, viewer, permissions, centres, assigneeOpt
             </PortalPanel>
           )}
           <PortalPanel id="crm-lead-timeline" title={t.lead.timeline.title} description={t.lead.timeline.description}>
-            <Timeline lead={lead} viewer={viewer} staffNames={staffNames} locale={locale} t={t} />
+            <Timeline lead={lead} viewer={viewer} staffNames={staffNames} now={now} locale={locale} t={t} />
           </PortalPanel>
         </div>
       </div>
+
+      {permissions.canErase && !lead.erased && (
+        <PortalPanel id="crm-lead-erase" title={t.lead.erase.title}>
+          <EraseLeadPanel leadId={lead.id} t={island} pagePath={pagePath} />
+        </PortalPanel>
+      )}
     </div>
   );
 }
@@ -289,11 +342,14 @@ function LeadDetailsPanel({
   centres,
   locale,
   t,
+  edit,
 }: {
   lead: LeadDetail;
   centres: Readonly<Record<string, string>>;
   locale: Locale;
   t: CrmMessages;
+  /** "Edit details" (not on erased leads). */
+  edit: { island: LeadIslandMessages; pagePath: string; options: DetailOptions } | null;
 }) {
   const d = t.lead.details;
   const value = (text: string | null | undefined) => (text && text.trim() ? text : <span className="text-muted">{t.common.noValue}</span>);
@@ -307,7 +363,22 @@ function LeadDetailsPanel({
   ].filter(([, v]) => v) as [string, string][];
 
   return (
-    <PortalPanel id="crm-lead-details" title={d.title}>
+    <PortalPanel
+      id="crm-lead-details"
+      title={d.title}
+      action={
+        edit ? (
+          <EditDetailsButton
+            leadId={lead.id}
+            initial={detailValues(lead)}
+            showContactName={Boolean(lead.contactName)}
+            options={edit.options}
+            t={edit.island}
+            pagePath={edit.pagePath}
+          />
+        ) : undefined
+      }
+    >
       <dl className="divide-y divide-line">
         <Row label={d.student}>{value(lead.studentName)}</Row>
         {lead.contactName && <Row label={d.contactName}>{lead.contactName}</Row>}
@@ -372,7 +443,68 @@ function LeadDetailsPanel({
           <Row label={d.consentVersion}>{d.noConsent}</Row>
         )}
       </dl>
+      <ConsentList entries={consentHistory(lead.activities)} locale={locale} t={t} />
     </PortalPanel>
+  );
+}
+
+/** WP9: every consent the family gave (or withdrew), with its date, newest first. */
+function ConsentList({ entries, locale, t }: { entries: ConsentEntry[]; locale: Locale; t: CrmMessages }) {
+  if (entries.length === 0) return null;
+  const d = t.lead.details;
+  const methods = t.add.consentMethods;
+  return (
+    <>
+      <p className="mt-4 text-sm font-bold text-navy">{d.consentHistory}</p>
+      <ol className="mt-2 space-y-2">
+        {entries.map((entry) => {
+          const method = entry.method && Object.hasOwn(methods, entry.method) ? methods[entry.method as keyof typeof methods] : entry.method;
+          const by = submitterLabel(t, entry.submittedBy);
+          const lang = entry.locale === "en" || entry.locale === "hi" ? entry.locale : undefined;
+          return (
+            <li key={entry.id} className="rounded-control border border-line p-3 text-sm">
+              <p className="flex flex-wrap items-baseline gap-x-2">
+                <strong className="text-navy">{d.consentKinds[entry.kind]}</strong>
+                <time dateTime={isoOrUndefined(entry.at)} className="text-xs text-muted">
+                  {formatDateTime(entry.at, locale)}
+                </time>
+              </p>
+              {entry.version && (
+                <p className="mt-1">
+                  <span className="text-muted">{d.consentVersion}:</span>{" "}
+                  <span lang="en" className="font-mono text-[13px]">
+                    {entry.version}
+                  </span>
+                </p>
+              )}
+              {method && (
+                <p className="mt-1">
+                  <span className="text-muted">{d.consentMethod}:</span> {method}
+                </p>
+              )}
+              {by && (
+                <p className="mt-1">
+                  <span className="text-muted">{d.submittedBy}:</span> {by}
+                </p>
+              )}
+              {lang && (
+                <p className="mt-1">
+                  <span className="text-muted">{d.consentLanguage}:</span> {localeNames[lang]}
+                </p>
+              )}
+              {entry.text && (
+                <details className="mt-1">
+                  <summary className="min-h-11 cursor-pointer py-2 font-semibold text-blue">{d.consentSentence}</summary>
+                  <p lang={lang} className="rounded-control bg-[#f8fafc] p-2 text-ink">
+                    {entry.text}
+                  </p>
+                </details>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </>
   );
 }
 
@@ -392,7 +524,9 @@ function LatestEnquiry({ activity, locale, t }: { activity: LeadActivity; locale
   const meta = activity.meta ?? {};
   const tool = toolLabel(t, metaString(meta, "tool"));
   const exam = metaString(meta, "toolExam");
-  const band = metaString(meta, "toolBand");
+  // Only a band in a vetted shape is shown (as toolUseSummary does); anything else is left out.
+  const band = bandLabel(t, metaString(meta, "toolBand"));
+  const by = submitterLabel(t, metaString(meta, "submittedBy"));
   const lang = metaString(meta, "locale");
   const topic = topicLabel(t, metaString(meta, "topic"));
   const page = metaString(meta, "page");
@@ -407,16 +541,9 @@ function LatestEnquiry({ activity, locale, t }: { activity: LeadActivity; locale
         </Row>
         {source && <Row label={d.source}>{sourceLabel(t, source)}</Row>}
         {tool && <Row label={d.tool}>{tool}</Row>}
-        {exam && (
-          <Row label={d.toolExam}>
-            <span lang="en">{exam}</span>
-          </Row>
-        )}
-        {band && (
-          <Row label={d.toolBand}>
-            <span lang="en">{band}</span>
-          </Row>
-        )}
+        {exam && <Row label={d.toolExam}>{examLabel(t, exam)}</Row>}
+        {band && <Row label={d.toolBand}>{band}</Row>}
+        {by && <Row label={d.submittedBy}>{by}</Row>}
         {lang && <Row label={d.formLanguage}>{lang === "en" || lang === "hi" ? localeNames[lang] : lang}</Row>}
         {topic && <Row label={d.topic}>{topic}</Row>}
         {page && (
@@ -451,6 +578,8 @@ const activityIcons: Record<string, LucideIcon> = {
   task_done: CheckCircle2,
   merge: ArrowRightLeft,
   erase: Eraser,
+  tool_use: Sparkles,
+  consent_withdrawn: BellOff,
 };
 
 function metaString(meta: LeadActivity["meta"], key: string): string | null {
@@ -468,7 +597,15 @@ function staffName(id: string | null, viewer: CrmViewer, staffNames: Readonly<Re
 /** The facts line under one timeline entry (structured meta only; staff text is shown separately). */
 export function activitySummary(
   activity: LeadActivity,
-  ctx: { t: CrmMessages; locale: Locale; viewer: CrmViewer; staffNames: Readonly<Record<string, string>>; tasks: LeadTask[] },
+  ctx: {
+    t: CrmMessages;
+    locale: Locale;
+    viewer: CrmViewer;
+    staffNames: Readonly<Record<string, string>>;
+    tasks: LeadTask[];
+    /** Request time: tool-use entries of today say "3× today". */
+    now?: number;
+  },
 ): string[] {
   const { t, locale } = ctx;
   const tl = t.lead.timeline;
@@ -479,8 +616,11 @@ export function activitySummary(
       const source = metaString(meta, "source");
       const tool = toolLabel(t, metaString(meta, "tool"));
       lines.push(format(tl.submissionFrom, { source: [sourceLabel(t, source), tool].filter(Boolean).join(" · ") }));
-      const toolFacts = [metaString(meta, "toolExam"), metaString(meta, "toolBand")].filter(Boolean);
+      const toolFacts = [examLabel(t, metaString(meta, "toolExam")), bandLabel(t, metaString(meta, "toolBand"))].filter(Boolean);
       if (toolFacts.length) lines.push(toolFacts.join(" · "));
+      const by = submitterLabel(t, metaString(meta, "submittedBy"));
+      if (by) lines.push(`${t.lead.details.submittedBy}: ${by}`);
+      if (meta.onLostLead === true) lines.push(t.lead.gate.onLostLead);
       const page = metaString(meta, "page");
       if (page) lines.push(format(tl.onPage, { page }));
       const reference = metaString(meta, "reference");
@@ -490,6 +630,25 @@ export function activitySummary(
     case "created": {
       const source = metaString(meta, "source");
       if (source) lines.push(format(tl.submissionFrom, { source: sourceLabel(t, source) }));
+      const method = metaString(meta, "consentMethod");
+      const methods = t.add.consentMethods;
+      if (method && Object.hasOwn(methods, method)) {
+        lines.push(`${t.lead.details.consentMethod}: ${methods[method as keyof typeof methods]}`);
+      }
+      break;
+    }
+    case "tool_use":
+      lines.push(toolUseSummary(t, meta, activity.at, ctx.now));
+      break;
+    case "consent_withdrawn": {
+      const browsers = meta.browsersForgotten;
+      if (typeof browsers === "number" && browsers > 0) lines.push(format(tl.browsersForgotten, { count: browsers }));
+      break;
+    }
+    case "erase": {
+      const reason = metaString(meta, "reason");
+      const reasons = t.lead.erase.reasons;
+      if (reason && Object.hasOwn(reasons, reason)) lines.push(format(tl.reason, { reason: reasons[reason as keyof typeof reasons] }));
       break;
     }
     case "call":
@@ -541,57 +700,68 @@ export function activityTypeLabel(t: CrmMessages, type: string): string {
   return Object.hasOwn(types, type) ? types[type as keyof typeof types] : types.other;
 }
 
+/** Timeline heading: a lead-gate submission reads "Shared contact details for a free tool". */
+export function activityHeading(t: CrmMessages, activity: Pick<LeadActivity, "type" | "meta">): string {
+  return isGateSubmission(activity) ? t.lead.timeline.gateSubmission : activityTypeLabel(t, activity.type);
+}
+
 function Timeline({
   lead,
   viewer,
   staffNames,
+  now,
   locale,
   t,
 }: {
   lead: LeadDetail;
   viewer: CrmViewer;
   staffNames: Readonly<Record<string, string>>;
+  now: number;
   locale: Locale;
   t: CrmMessages;
 }) {
   // Newest first (the service already sorts; keep it explicit for safety).
   const items = [...lead.activities].sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || b.id - a.id);
   if (items.length === 0) return <p className="text-sm text-muted">{t.lead.timeline.empty}</p>;
-  const ctx = { t, locale, viewer, staffNames, tasks: lead.tasks };
+  const ctx = { t, locale, viewer, staffNames, tasks: lead.tasks, now };
+  const toolUse = items.some((activity) => activity.type === "tool_use");
   return (
-    <ol className="relative space-y-4 border-l-2 border-line pl-5">
-      {items.map((activity) => {
-        const Icon = activityIcons[activity.type] ?? ArrowRightLeft;
-        const actor = activity.actorId === viewer.userId ? t.common.you : activity.actorName;
-        const lines = activitySummary(activity, ctx);
-        return (
-          <li key={activity.id} className="relative">
-            <span
-              aria-hidden="true"
-              className={cn(
-                "absolute -left-[31px] top-0 grid size-6 place-items-center rounded-full border-2 border-white bg-[#f3eeff] text-[#5b3cc4]",
-                activity.type === "stage_change" && "bg-blue-soft text-blue",
-                (activity.type === "call" || activity.type === "whatsapp") && "bg-success-soft text-success",
-              )}
-            >
-              <Icon className="size-3.5" />
-            </span>
-            <p className="flex flex-wrap items-baseline gap-x-2 text-sm">
-              <strong className="text-navy">{activityTypeLabel(t, activity.type)}</strong>
-              <time dateTime={isoOrUndefined(activity.at)} className="text-xs text-muted">
-                {formatDateTime(activity.at, locale)}
-              </time>
-              {actor && <span className="text-xs text-muted">{format(t.lead.timeline.by, { name: actor })}</span>}
-            </p>
-            {lines.map((line) => (
-              <p key={line} className="text-sm text-[#354b66]">
-                {line}
+    <>
+      {toolUse && <p className="mb-4 text-xs text-muted">{t.lead.toolUse.note}</p>}
+      <ol className="relative space-y-4 border-l-2 border-line pl-5">
+        {items.map((activity) => {
+          const Icon = activityIcons[activity.type] ?? ArrowRightLeft;
+          const actor = activity.actorId === viewer.userId ? t.common.you : activity.actorName;
+          const lines = activitySummary(activity, ctx);
+          return (
+            <li key={activity.id} className="relative">
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "absolute -left-[31px] top-0 grid size-6 place-items-center rounded-full border-2 border-white bg-[#f3eeff] text-[#5b3cc4]",
+                  activity.type === "stage_change" && "bg-blue-soft text-blue",
+                  (activity.type === "call" || activity.type === "whatsapp") && "bg-success-soft text-success",
+                )}
+              >
+                <Icon className="size-3.5" />
+              </span>
+              <p className="flex flex-wrap items-baseline gap-x-2 text-sm">
+                <strong className="text-navy">{activityHeading(t, activity)}</strong>
+                <time dateTime={isoOrUndefined(activity.at)} className="text-xs text-muted">
+                  {formatDateTime(activity.at, locale)}
+                </time>
+                {actor && <span className="text-xs text-muted">{format(t.lead.timeline.by, { name: actor })}</span>}
               </p>
-            ))}
-            {activity.body && <p className="mt-1 whitespace-pre-line break-words rounded-control bg-[#f8fafc] p-2 text-sm text-ink">{activity.body}</p>}
-          </li>
-        );
-      })}
-    </ol>
+              {lines.map((line) => (
+                <p key={line} className="text-sm text-[#354b66]">
+                  {line}
+                </p>
+              ))}
+              {activity.body && <p className="mt-1 whitespace-pre-line break-words rounded-control bg-[#f8fafc] p-2 text-sm text-ink">{activity.body}</p>}
+            </li>
+          );
+        })}
+      </ol>
+    </>
   );
 }

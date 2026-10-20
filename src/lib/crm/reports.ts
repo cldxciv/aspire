@@ -5,15 +5,17 @@ import { getDb } from "@/lib/db/connection";
 import { CRM_AUDIT, CRM_MESSAGES, crmAudit, fail, leadScopeFor, ok } from "./access";
 import { buildLeadQuery, leadDisplayName } from "./leads";
 import { canonicalTool, csvLine, DAY_MS, IST_OFFSET_MS, toIso } from "./pure";
-import { leadStats, queryLeads, type LeadStatRow } from "./repo/leads";
+import { gateSubmissionsByDay, leadStats, queryLeads, type LeadStatRow } from "./repo/leads";
 import {
   FUNNEL_STAGES,
+  GATE_CONSENT_VERSION_LIKE,
   LEAD_STAGES,
   stageOrdinal,
   type CrmResult,
   type CrmViewer,
   type FunnelCount,
   type FunnelReport,
+  type GateDayCount,
   type LeadFilters,
   type LeadStage,
 } from "./types";
@@ -51,9 +53,11 @@ const rate = (part: number, total: number) => (total === 0 ? 0 : Math.round((par
  * Funnel for leads created in [from, to): current stage counts, how many ever reached each stage,
  * breakdowns by source / centre / program / counsellor, lost reasons and conversion. Erased stubs
  * count (D-042). Keys `none` / `unassigned` stand for a missing centre / program / assignee.
+ * `gateDaily`: lead-gate forms per IST day in the same range (see `gateDailyCounts`).
  */
 export function funnelReport(viewer: CrmViewer, range: { from: number; to: number }): FunnelReport {
-  const rows = leadStats(getDb(), leadScopeFor(viewer), range.from, range.to);
+  const db = getDb();
+  const rows = leadStats(db, leadScopeFor(viewer), range.from, range.to);
   const byStage = Object.fromEntries(LEAD_STAGES.map((stage) => [stage, 0])) as Record<LeadStage, number>;
   const reached = Object.fromEntries(FUNNEL_STAGES.map((stage) => [stage, 0])) as FunnelReport["reached"];
   const lostReasons = new Map<string, number>();
@@ -92,7 +96,22 @@ export function funnelReport(viewer: CrmViewer, range: { from: number; to: numbe
       .map(([key, count]) => ({ key, count }))
       .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)),
     conversion: { contactedRate: rate(contacted, rows.length), enrolledRate: rate(byStage.enrolled, rows.length) },
+    gateDaily: gateDailyCounts(viewer, range),
   };
+}
+
+/**
+ * Lead gate (docs/lead-gate-plan.md §3, WP9): contact forms received before a free tool's result,
+ * per Asia/Kolkata day in [from, to), newest first; only days with forms. Scoped to the viewer.
+ * A form that created its lead counts as a new family, any other as a family already on file;
+ * a browser bound past the per-phone cap adds no form and is not counted.
+ */
+export function gateDailyCounts(viewer: CrmViewer, range: { from: number; to: number }): GateDayCount[] {
+  return gateSubmissionsByDay(getDb(), leadScopeFor(viewer), range.from, range.to, GATE_CONSENT_VERSION_LIKE, IST_OFFSET_MS).map((row) => ({
+    day: new Date(row.istDay * DAY_MS).toISOString().slice(0, 10),
+    newFamilies: row.newFamilies,
+    knownFamilies: row.knownFamilies,
+  }));
 }
 
 /** Report range from optional ISO bounds: default the last 30 days, at most ~3 years, from < to. */

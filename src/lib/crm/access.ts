@@ -108,6 +108,8 @@ export function ok<T>(data: T): CrmResult<T> {
 export const CRM_AUDIT = {
   leadCapture: "crm.lead_capture",
   leadCreate: "crm.lead_create",
+  /** "Add enquiry" asked whether a number is already on file (`onDuplicate: "report"`); nothing written. */
+  leadDuplicateCheck: "crm.lead_duplicate_check",
   leadView: "crm.lead_view",
   leadUpdate: "crm.lead_update",
   stageChange: "crm.stage_change",

@@ -7,7 +7,7 @@ import { getDb, withTransaction } from "@/lib/db/connection";
 import { assignableMember, canSeeLead, CRM_AUDIT, CRM_MESSAGES, crmAudit, fail, leadScopeFor, ok } from "./access";
 import { pickAssignee } from "./assignment";
 import { canonicalTool, cleanMultiline, cleanSlug, cleanText, istDayBounds, maskPhone, parseTime, phoneLastDigits, toIso } from "./pure";
-import { insertActivity, listActivities, type ActivityRow } from "./repo/activities";
+import { insertActivity, listActivities, listActivitiesOfTypes, type ActivityRow } from "./repo/activities";
 import { findLeadById, queryLeads, updateLead as updateLeadRow, type LeadQuery, type LeadRow, type LeadUpdate } from "./repo/leads";
 import { findDisplayNames } from "./repo/staff";
 import { listLeadTasks, type TaskRow } from "./repo/tasks";
@@ -111,8 +111,27 @@ export function toLeadTask(row: TaskRow, now: number): LeadTask {
   };
 }
 
+/** Timeline rows read for a lead page (newest first). */
+const TIMELINE_LIMIT = 200;
+/** Entries that carry a consent (or its withdrawal) or who filled a form in: always read in full. */
+const CONSENT_ACTIVITY_TYPES = ["submission", "created", "consent_withdrawn"] as const;
+
+/**
+ * The lead's timeline: the latest TIMELINE_LIMIT entries, plus — when that window is full — every
+ * older consent-bearing entry, so free-tool notes (one per tool per day, kept 90 days) can never
+ * push the first consent, its sentence or who submitted it out of the consent list / parent flag.
+ */
+function timelineRows(db: DatabaseSync, leadId: string): ActivityRow[] {
+  const rows = listActivities(db, leadId, TIMELINE_LIMIT);
+  if (rows.length < TIMELINE_LIMIT) return rows;
+  const seen = new Set(rows.map((activity) => activity.id));
+  const older = listActivitiesOfTypes(db, leadId, CONSENT_ACTIVITY_TYPES).filter((activity) => !seen.has(activity.id));
+  if (older.length === 0) return rows;
+  return [...rows, ...older].sort((a, b) => b.at - a.at || b.id - a.id);
+}
+
 function toLeadDetail(db: DatabaseSync, row: LeadRow, now: number): LeadDetail {
-  const activityRows = listActivities(db, row.id);
+  const activityRows = timelineRows(db, row.id);
   const ids = new Set<string>();
   for (const activity of activityRows) {
     for (const key of ["from", "to", "assigneeId"]) {

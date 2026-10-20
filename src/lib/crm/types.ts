@@ -76,7 +76,30 @@ export const GATE_LEAD_SOURCE = "tool";
 /** Who filled in the lead gate ("I am the student / parent or guardian"); kept on the submission activity. */
 export const GATE_SUBMITTERS = ["student", "parent"] as const;
 export type GateSubmitter = (typeof GATE_SUBMITTERS)[number];
+/**
+ * True for a lead-gate consent sentence id ("2026-10-21.gate.v1"; src/lib/lead-gate/contract.ts
+ * LEAD_GATE_CONSENT_VERSIONS). Matched by shape, not by the live list, so a retired gate version
+ * still reads as a gate capture on old leads. Client-safe (no zod import into CRM pages).
+ */
+export function isGateConsentVersion(version: unknown): boolean {
+  return typeof version === "string" && /^\d{4}-\d{2}-\d{2}\.gate\.v\d+$/.test(version);
+}
+/** SQL LIKE pattern for the same check (gate counts in reports). */
+export const GATE_CONSENT_VERSION_LIKE = "%.gate.v%";
 export const MANUAL_LEAD_SOURCES = ["walk_in", "phone_call", "referral", "other"] as const;
+/**
+ * How a family entered by staff agreed to be contacted (admin-console plan §8, Agent B): said yes
+ * in person, on the phone, signed a form, or agreed in a WhatsApp / SMS message. Kept on the
+ * `created` activity as proof of consent (survives erase: it is not personal data).
+ */
+export const CONSENT_METHODS = ["in_person", "phone", "written", "message"] as const;
+export type ConsentMethod = (typeof CONSENT_METHODS)[number];
+/** What staff do when the number they type already has a lead: add to it, or only report it. */
+export const MANUAL_DUPLICATE_MODES = ["append", "report"] as const;
+export type ManualDuplicateMode = (typeof MANUAL_DUPLICATE_MODES)[number];
+/** Why an admin erased a lead's personal data (kept on the erase entry and in the audit log). */
+export const ERASE_REASONS = ["family_request", "consent_withdrawn", "wrong_or_test", "no_longer_needed", "other"] as const;
+export type EraseReason = (typeof ERASE_REASONS)[number];
 export const KNOWN_LEAD_SOURCES = [...PUBLIC_LEAD_SOURCES, ...MANUAL_LEAD_SOURCES] as const;
 export type ManualLeadSource = (typeof MANUAL_LEAD_SOURCES)[number];
 export type KnownLeadSource = (typeof KNOWN_LEAD_SOURCES)[number];
@@ -143,7 +166,7 @@ export interface LeadActivity {
    * assignment { from: userId|null, to: userId|null, fromName?, toName?, auto?: boolean, via? } (who assigned = actorName;
    *   null actor = automatic) · task_created { taskId, dueAt, assigneeId, assigneeName? } ·
    * call/whatsapp { outcome } · field_update { fields: string[] } · task_created/task_done { taskId, dueAt? } ·
-   * created { source } ·
+   * created { source, consentMethod?, existing?: true, filled? } · erase { reason? } ·
    * lead gate (docs/lead-gate-plan.md): submission also { submittedBy?: "student" | "parent", onLostLead?: true } ·
    * tool_use { tool, key, exam?, band?, testId?, scoreBand?, page?, uses, lastAt } (never answers, questions,
    *   photos, exact scores, category, state, gender or dates; deleted on erase and after TOOL_USE_TTL_MS) ·
@@ -361,7 +384,42 @@ export interface ManualLeadInput {
   note?: string | null;
   /** The family agreed to be contacted (recorded by the staff member). Must be true. */
   consent: true;
+  /** How the family agreed (kept on the `created` activity). */
+  consentMethod?: ConsentMethod | null;
+  /**
+   * The phone already has a lead: `append` (default) adds this contact to it; `report` changes
+   * nothing and answers `duplicate: true` so the screen can offer "Open" / "Log a visit".
+   */
+  onDuplicate?: ManualDuplicateMode;
 }
+
+/** `createManualLead` / POST /api/crm/leads answer when something was written (a new lead, or this contact added to the family on file). */
+export interface ManualLeadResult {
+  leadId: string;
+  isNew: boolean;
+  duplicate?: false;
+  /** The viewer may open the lead (a counsellor may log a visit on a family assigned to someone else). */
+  canOpen: boolean;
+}
+
+/**
+ * `onDuplicate: "report"` found the family on file and changed nothing (the check itself is
+ * audited as `crm.lead_duplicate_check`, without phone or name).
+ */
+export interface ManualLeadDuplicate {
+  duplicate: true;
+  isNew: false;
+  /** The lead's id — `null` when the viewer may not open it (no ids outside their scope). */
+  leadId: string | null;
+  canOpen: boolean;
+  /** The family's lead is closed (`lost`): "Log a visit" reopens it. */
+  closed: boolean;
+  /** The family's latest word was "Stop Aspire contacting me": only log a visit if they agreed again. */
+  withdrawn: boolean;
+}
+
+/** Every answer of `createManualLead` / POST /api/crm/leads. */
+export type ManualLeadAnswer = ManualLeadResult | ManualLeadDuplicate;
 
 // ---------------------------------------------------------------------------
 // Staff, viewers, rules
@@ -482,6 +540,19 @@ export interface FunnelReport {
   lostReasons: { key: string; count: number }[];
   /** contacted / total and enrolled / total (0 when total is 0), rounded to 4 decimals. */
   conversion: { contactedRate: number; enrolledRate: number };
+  /**
+   * Lead gate (contact details before a free tool's result): forms received per IST day in the
+   * range, newest day first, days with none left out. `newFamilies` created a lead;
+   * `knownFamilies` were already on file. Counted by when the form arrived, not by lead creation.
+   */
+  gateDaily?: GateDayCount[];
+}
+
+export interface GateDayCount {
+  /** IST calendar day `YYYY-MM-DD`. */
+  day: string;
+  newFamilies: number;
+  knownFamilies: number;
 }
 
 /** Service result. `not_found` also covers leads the viewer may not see (no existence leak). */

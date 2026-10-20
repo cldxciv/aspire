@@ -2,7 +2,6 @@ import "server-only";
 
 import { randomBytes } from "node:crypto";
 
-import { showPlaceholderContent } from "@/lib/content-mode";
 import { parseEnquiryStore, type Env } from "@/lib/server/env";
 
 import type { LeadGateMode } from "./contract";
@@ -17,9 +16,13 @@ import type { LeadGateMode } from "./contract";
  *   LEAD_GATE_SECRET             ≥ 32 characters; signs the aspire_tool_pass cookie (required in production)
  *   LEAD_GATE_RECORD_USE         all (default) | parent | off: which passes note tool use
  *   LEAD_GATE_ASSIGN             auto (default) | none: auto-assign NEW gate leads, or leave them Unassigned
- *   LEAD_GATE_ALLOW_SAMPLE_DATA  true to allow the gate while placeholder/sample data is shown (staging QA only)
  *   LEAD_GATE_MAX_NEW_LEADS_PER_HOUR  circuit breaker (default 300): above it, new captures pause and the gate degrades to optional
  *   LEAD_GATE_SINCE              ISO date-time the gate was switched on (work started earlier is never gated)
+ *
+ * Sample data does NOT switch the gate off (owner decision 21 Oct 2026, "on now, with an honest
+ * note"): the live demo site asks for contact details too, and <LeadGateForm> says plainly that
+ * results currently use sample data (GET /api/lead-gate `sample`). LEAD_GATE_ALLOW_SAMPLE_DATA is
+ * gone: there is nothing left for it to allow.
  */
 
 export const MIN_LEAD_GATE_SECRET_LENGTH = 32;
@@ -28,7 +31,7 @@ export const DEFAULT_MAX_NEW_LEADS_PER_HOUR = 300;
 export type LeadGateRecordUse = "all" | "parent" | "off";
 
 /** Why the effective mode is `off` although something else may have been asked for. Fixed codes, safe to log. */
-export type LeadGateOffReason = "unset" | "store_off" | "sample_data" | "no_secret";
+export type LeadGateOffReason = "unset" | "store_off" | "no_secret";
 
 export interface LeadGateConfig {
   /** Effective mode. */
@@ -97,12 +100,12 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
 }
 
 /**
- * The effective configuration. Off unless LEAD_GATE says otherwise, and forced off when:
- * ENQUIRY_STORE=off (nothing honest to unlock with), placeholder/sample data is shown (real
- * families must never trade contact details for a made-up result: critique 0.0, D-032) unless
- * LEAD_GATE_ALLOW_SAMPLE_DATA=true, or there is no usable secret in production.
+ * The effective configuration. Off unless LEAD_GATE says otherwise, and forced off only when
+ * ENQUIRY_STORE=off (nothing honest to unlock with) or there is no usable secret in production.
+ * Placeholder/sample data no longer forces it off (owner decision 21 Oct 2026, overriding plan
+ * critique 0.0): the form discloses sample data instead.
  */
-export function parseLeadGateConfig(env: Env, options: { sampleData: boolean }): LeadGateConfig {
+export function parseLeadGateConfig(env: Env): LeadGateConfig {
   const warnings: LeadGateConfigWarning[] = [];
   const requested = parseMode(env.LEAD_GATE, warnings) ?? "off";
 
@@ -126,7 +129,6 @@ export function parseLeadGateConfig(env: Env, options: { sampleData: boolean }):
   let offReason: LeadGateOffReason | null = null;
   if (requested === "off") offReason = "unset";
   else if (parseEnquiryStore(env).mode === "off") offReason = "store_off";
-  else if (options.sampleData && (env.LEAD_GATE_ALLOW_SAMPLE_DATA ?? "").trim().toLowerCase() !== "true") offReason = "sample_data";
   else if (!secret) offReason = "no_secret";
 
   const sinceRaw = (env.LEAD_GATE_SINCE ?? "").trim();
@@ -147,5 +149,5 @@ export function parseLeadGateConfig(env: Env, options: { sampleData: boolean }):
 
 /** The live configuration for this request. */
 export function getLeadGateConfig(env: Env = process.env): LeadGateConfig {
-  return parseLeadGateConfig(env, { sampleData: showPlaceholderContent() });
+  return parseLeadGateConfig(env);
 }

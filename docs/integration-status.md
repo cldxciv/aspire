@@ -23,6 +23,38 @@ Owner: Orchestrator. Updated after each merge. Only commands actually run are li
 | Mobile menu (browser, dev) | Escape closes from toggle and from panel; focus returns to toggle |
 | Images (browser, dev) at 360 / 768 / 1280 on `/`, `/about`, `/programs`, `/programs/iit-jee`, `/resources`, article, `/admissions`, `/contact` | all load, no broken images, no horizontal overflow; hero served via `/_next/image` (~235 KB at 1920w) |
 
+## Next release — lead gate: contact details before free tools' results (in progress 2026-10-21)
+Base: release `806a938` (being deployed 2026-10-21). Everything below is **uncommitted in the working tree**: not yet type-checked as a whole, built, committed or deployed. Plan: `docs/lead-gate-plan.md` (D-043) · owner and counsel questions: `docs/aspire-approval-checklist.md` §17 (TG-1–TG-9, LG-2) · public routes: `docs/api.md` → "Lead gate" · CRM: `docs/crm.md` §11 · MCP: `docs/mcp.md`.
+
+Owner request: *"every tool should be a data collection point before showing the result of any tool collect the contact information of the submitee."* **Owner decision (21 Oct 2026): on now, with an honest note** — `LEAD_GATE=required` on the live (demo) site although it runs on sample data; the form says plainly that results currently use sample data and that Aspire will contact the family.
+
+| Workstream | Owner | Status | Notes |
+|---|---|---|---|
+| Core: contract, config, pass token/cookie, limits + flood breaker, `/api/lead-gate` (+ `/usage`), client kit (`useLeadGate`, `LeadGateForm`, `LeadGateNote`, `LeadGateIdentity`), `leadGate` messages, CRM passes + `tool_use`, enquiry pass cookie, sign-out | GATE-CORE / CORE | built; sample-data override in progress | Sample data no longer forces the gate off; `LeadGateForm` shows `leadGate.sampleData`; `LEAD_GATE_ALLOW_SAMPLE_DATA` removed |
+| Predictor (full page) §8.1 | PREDICTOR (WP2) | in progress | |
+| Homepage widget predictor §8.2 (planner countdown not gated §8.3) | HOME (WP3) | in progress | |
+| Mock tests: ≥ 60 min ask at the start, shorter at the result; `/api/mocktest/score` 401 §5.7 | MOCKTEST (WP4) | in progress | |
+| Study planner: first guest plan only §8.5 | PLANNER (WP5) | in progress | |
+| `/api/ask` gate 401, per-family allowance, "Rancho used" note §5.6 | ASK-API (WP6) | in progress | |
+| Rancho UIs (Ask page, `/rancho`, floating chat) §8.6 | RANCHO-UI (WP7 + WP8) | in progress | |
+| CRM UI: tool-use / withdrawal labels, consent list, "confirm with a parent first", daily gate-lead count, MCP strips score bands; admin-console "CRM basics" | CRM (WP9) | in progress | |
+| Privacy notice (en + hi): new section, cookie, tools column and items; checklist §17; docs; Hindi register | LEGAL (WP10) | complete | `src/i18n/messages/{en,hi}/legal.ts`, privacy page + `privacy-page.test.ts` |
+
+| Check | Result |
+|---|---|
+| Per-package vitest (`--maxWorkers=1`) + eslint on touched files | run by each package (LEGAL: privacy, i18n, legal, PAGES-B and Rancho-page suites pass; eslint clean) |
+| `tsc` / full test suite / `next build` / production smoke | **not run yet**; due in the Integrate stage (machine limits: one heavy run at a time) |
+
+### Lead-gate release conditions
+- **Server settings at deploy** (`/opt/aspire-web/.env`, then `docker compose up -d`; no rebuild): `LEAD_GATE=required`, `LEAD_GATE_SECRET` (≥ 32 random chars; without it production forces the gate off), `LEAD_GATE_SINCE` = the switch-on time. Keep `LEAD_GATE_RECORD_USE` / `LEAD_GATE_ASSIGN` at their defaults until Aspire answers TG-9.
+- **Rollback:** `LEAD_GATE=optional` (skip button) or `off` in `.env`, then `docker compose up -d`. Pages need no change: the up-front note reads the live mode, and the privacy notice says the tools "may ask". The notice's sample-data paragraph follows `SHOW_PLACEHOLDER_CONTENT` (build time), like the form's sample line.
+- **`LEAD_GATE_SINCE` is required, not optional:** without it every guest mock-test attempt is gated, including ones started before switch-on, and the privacy notice says those stay open. Not built (MOCKTEST): the plan's exemption for an attempt that already has a score on the device, so a score already seen asks again once the browser loses its pass (checklist TG-3).
+- **Switched on before the plan's §10 preconditions** (owner decision): counsel has not answered TG-1 (required vs optional), TG-2 (verifiable parental consent for under-18s, DPDP s.9 — highest risk) or TG-4; the privacy notice still has 11 "to be confirmed" items; the retention purge (CRM-3) is not built. The sample-data line in the form and notice must be removed when official data replaces the samples.
+- `/`, `/tools/predictor` and `/tools/planner` must stay static in the `next build` route table (the gate reads the mode at run time only).
+- Copy that became untrue (plan §11.4) must change in the same release and **has no owner yet** (assign at Integrate): `tools.ts` `hero.lead` "No sign-up needed to start" and the hub `note` (en + hi), `docs/ask-aspire.md` guests line ("nothing is stored except a hashed per-day question counter"); "Free" meta titles and `isAccessibleForFree` → TG-7. Checklist §17 / TG-7 lists the /tools lead as not yet changed.
+- CORE: `LeadGateForm`'s consent link should open `/privacy#tool-contact-details` (the section the tick covers), not the top of the notice.
+- Hindi: every new or changed string of this release is a machine draft (`docs/hindi-review-register.md` → LEAD-GATE); the consent sentence and the privacy section also need legal review.
+
 ## Next release — Rancho, homepage student tools, carousels always on (in progress 2026-10-20)
 Base: live release `828ec27` (M7: CRM lead engine, MCP per-service permissions, tablet fixes). Everything below is **uncommitted in the working tree**: not yet built, committed or deployed. Owner questions: `docs/aspire-approval-checklist.md` §16 (RA-1–RA-6, HT-1–HT-3, CA-1–CA-2) · Rancho: `docs/ask-aspire.md`, `docs/rancho.md` (being written).
 
@@ -148,6 +180,7 @@ Full report: `docs/homepage-implementation-report.md` · QA: `docs/visual-qa-rep
 | Approved photography + brand files | Final visuals | Aspire |
 | Rancho official artwork: head / avatar ≥ 512 × 512 and waving / half-body ≥ 1024 px tall, transparent PNG / WebP / SVG, with confirmation of ownership | Replacing the temporary mascot stand-in | Aspire to send the files (checklist RA-2) |
 | Hosting / domain / deployment target | Launch | Aspire — no deployment without approval |
+| Legal counsel's answers on the lead gate: verifiable parental consent (DPDP s.9), "required" vs "optional" (s.6), DND calling, notice gaps | Keeping the contact step lawful while it is live | Aspire's legal adviser (checklist §17: TG-2, TG-1, TG-4, TG-8) |
 
 ## Deferred technical items
 - Content-Security-Policy with nonces.
@@ -158,3 +191,4 @@ Full report: `docs/homepage-implementation-report.md` · QA: `docs/visual-qa-rep
 - Analytics: none installed; event plan needs owner + privacy approval.
 - Admin MCP tool descriptions (`src/lib/mcp/tools/status.ts`, `progress.ts`) still say "Ask Aspire"; rename to Rancho in a later release (checklist RA-6).
 - No git repository yet (owner hasn't requested one).
+- Lead gate: retention purge for unconverted leads (CRM-3), a do-not-contact list that survives erase, a one-tap "Request a call back" for pass holders; limiters and the flood breaker are in memory (single instance) — `docs/lead-gate-plan.md` §9.

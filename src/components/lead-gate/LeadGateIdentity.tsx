@@ -30,7 +30,10 @@ export function LeadGateIdentity({
   const gate = useLeadGateState(store);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<"forgotten" | "withdrawn" | "failed" | null>(null);
+  // The outcome plus the store's unlockSeq when it happened: a later unlock (this host, another tool
+  // or tab) hides it, so "no longer has your details" never sits beside "shared" in hosts that keep
+  // this line mounted (keying it by unlockSeq is no longer required).
+  const [done, setDone] = useState<{ kind: "forgotten" | "withdrawn" | "failed"; seq: number } | null>(null);
 
   async function forget(withdraw: boolean) {
     if (busy) return;
@@ -38,15 +41,18 @@ export function LeadGateIdentity({
     const result = await store.forget({ withdraw });
     setBusy(false);
     setConfirming(false);
+    const seq = store.getSnapshot().unlockSeq;
     if (!result) {
-      setDone("failed");
+      setDone({ kind: "failed", seq });
       return;
     }
-    setDone(result.withdrawn ? "withdrawn" : "forgotten");
+    setDone({ kind: result.withdrawn ? "withdrawn" : "forgotten", seq });
     onForgotten?.(result.withdrawn);
   }
 
-  const message = done === "failed" ? t.identity.failed : done === "withdrawn" ? t.identity.withdrawn : done === "forgotten" ? t.identity.forgotten : "";
+  const outcome = done && done.seq === gate.unlockSeq ? done.kind : null;
+  const message =
+    outcome === "failed" ? t.identity.failed : outcome === "withdrawn" ? t.identity.withdrawn : outcome === "forgotten" ? t.identity.forgotten : "";
   if (gate.via !== "pass" && !message) return null;
 
   const linkButton =

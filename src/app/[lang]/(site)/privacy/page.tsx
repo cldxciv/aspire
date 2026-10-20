@@ -8,6 +8,7 @@ import { siteConfig } from "@/config/site";
 import { stockImages } from "@/content/images";
 import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
+import { showPlaceholderContent } from "@/lib/content-mode";
 import { localizeImage } from "@/lib/data";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -24,6 +25,7 @@ export default async function PrivacyPage() {
   const p = t.privacy;
   const { sticky } = LEGAL_PAGE_PHOTOS.privacy;
   const tbc = <ToBeConfirmed label={t.tbc} />;
+  const showSamples = showPlaceholderContent();
   const link = (href: string, label: string) => (
     <Link href={localePath(href, locale)} className="text-blue underline">
       {label}
@@ -52,8 +54,10 @@ export default async function PrivacyPage() {
       body: (
         <>
           <p>{p.collect.intro}</p>
-          {/* Rows mirror src/lib/contracts/enquiry.ts exactly (D-021, D-021a) — see the `legal` messages. */}
-          <div className="overflow-x-auto rounded-control border border-line">
+          {/* Rows mirror src/lib/contracts/enquiry.ts exactly (D-021, D-021a), and the last column the
+              lead-gate contract (src/lib/lead-gate/contract.ts) — see the `legal` messages. */}
+          {/* Four columns scroll sideways on phones: the scroller is focusable so keyboard users can reach them. */}
+          <div role="region" aria-label={p.collect.caption} tabIndex={0} className="overflow-x-auto rounded-control border border-line">
             <table className="w-full border-collapse text-left text-sm">
               <caption className="sr-only">{p.collect.caption}</caption>
               <thead className="bg-surface text-[#40536b]">
@@ -67,6 +71,9 @@ export default async function PrivacyPage() {
                   <th scope="col" className="px-3 py-2.5 font-bold">
                     {p.collect.columnRequired}
                   </th>
+                  <th scope="col" className="px-3 py-2.5 font-bold">
+                    {p.collect.columnTools}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -77,6 +84,7 @@ export default async function PrivacyPage() {
                     </th>
                     <td className="px-3 py-2.5 text-muted">{row.forms}</td>
                     <td className="px-3 py-2.5 text-muted">{row.required}</td>
+                    <td className="px-3 py-2.5 text-muted">{row.tools}</td>
                   </tr>
                 ))}
               </tbody>
@@ -145,7 +153,27 @@ export default async function PrivacyPage() {
       ),
     },
     {
-      // Mirrors the M6 tools (predictor, mock tests, planner, Ask Aspire) — see the `legal` messages.
+      // The lead gate (docs/lead-gate-plan.md §11.1): contact details once before a free tool's result.
+      // Static copy, so it must not depend on the live LEAD_GATE mode (critique 0.5) — see the `legal` messages.
+      // The sample-data paragraph follows the same build-time switch as the form's own sample line
+      // (showPlaceholderContent(), D-005; LeadGateRuntime.sampleData in src/lib/lead-gate/server.ts).
+      id: "tool-contact-details",
+      title: p.toolContact.title,
+      body: (
+        <>
+          <p>{p.toolContact.p1}</p>
+          {showSamples && <p>{p.toolContact.sample}</p>}
+          <p>{p.toolContact.p2}</p>
+          <p>{p.toolContact.p3}</p>
+          <p>{p.toolContact.p4}</p>
+          <p>{p.toolContact.p5}</p>
+          <p>{p.toolContact.p6}</p>
+          <p>{richText(p.toolContact.p7, { tbc })}</p>
+        </>
+      ),
+    },
+    {
+      // Mirrors the M6 tools (predictor, mock tests, planner, Rancho) — see the `legal` messages.
       id: "student-tools",
       title: p.tools.title,
       body: (
@@ -182,6 +210,7 @@ export default async function PrivacyPage() {
         <>
           <p>{p.cookies.p1}</p>
           <p>{p.cookies.p2}</p>
+          <p>{p.cookies.p3}</p>
         </>
       ),
     },

@@ -71,6 +71,13 @@ describe("Rancho page (/tools/ask)", () => {
     expect(html).toContain(`href="${prefix}/privacy"`);
     // The page never claims to use Aspire's notes, and never ships the API key.
     expect(html).not.toMatch(/ANTHROPIC_API_KEY|sk-ant-/);
+    // The lead gate (contact details once before Rancho's first answer) is client-only: the static
+    // page has no form, note or "Not you?" line, and nothing about a visitor (docs/lead-gate-plan.md §8.6).
+    const gate = messagesFor(lang, "leadGate");
+    expect(html).not.toContain("data-lead-gate");
+    expect(html).not.toContain("data-rancho-gate");
+    expect(html).not.toContain(escape(gate.note.required));
+    expect(html).not.toContain(escape(gate.identity.notYou));
   });
 
   it("has localised metadata with alternates", async () => {

@@ -33,6 +33,8 @@ const statusBody = z.object({
     via: via.nullable(),
     recordsUse: z.boolean(),
     expiresAt: z.string().nullable(),
+    /** Absent from a server older than this page (deploy overlap) → false: never claim sample data unasked. */
+    sample: z.boolean().optional(),
   }),
 });
 
@@ -93,7 +95,7 @@ export async function fetchLeadGateStatus(fetchImpl: FetchLike = fetch): Promise
   const result = await request(fetchImpl, LEAD_GATE_ENDPOINT, { method: "GET" }, STATUS_TIMEOUT_MS);
   if (!result || !result.response.ok) return { kind: "failed" };
   const parsed = statusBody.safeParse(result.body);
-  return parsed.success ? { kind: "ok", data: parsed.data.data } : { kind: "failed" };
+  return parsed.success ? { kind: "ok", data: { ...parsed.data.data, sample: parsed.data.data.sample ?? false } } : { kind: "failed" };
 }
 
 export type LeadGateSubmitOutcome =

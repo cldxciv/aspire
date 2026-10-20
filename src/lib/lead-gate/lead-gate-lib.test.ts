@@ -167,55 +167,60 @@ describe("configuration (runtime env only)", () => {
   const ON = { LEAD_GATE: "required", LEAD_GATE_SECRET: SECRET, NODE_ENV: "production" };
 
   it("is off unless LEAD_GATE asks for it", () => {
-    expect(parseLeadGateConfig({}, { sampleData: false })).toMatchObject({ mode: "off", offReason: "unset" });
-    expect(parseLeadGateConfig({ LEAD_GATE: "loud" }, { sampleData: false })).toMatchObject({
+    expect(parseLeadGateConfig({})).toMatchObject({ mode: "off", offReason: "unset" });
+    expect(parseLeadGateConfig({ LEAD_GATE: "loud" })).toMatchObject({
       mode: "off",
       warnings: ["lead_gate_mode_unknown"],
     });
-    expect(parseLeadGateConfig(ON, { sampleData: false })).toMatchObject({ mode: "required", offReason: null, recordUse: "all", assignNew: true });
-    expect(parseLeadGateConfig({ ...ON, LEAD_GATE: "optional" }, { sampleData: false }).mode).toBe("optional");
+    expect(parseLeadGateConfig(ON)).toMatchObject({ mode: "required", offReason: null, recordUse: "all", assignNew: true });
+    expect(parseLeadGateConfig({ ...ON, LEAD_GATE: "optional" }).mode).toBe("optional");
   });
 
-  it("is forced off while sample data is shown (unless explicitly allowed), with no lead store, or with no secret in production", () => {
-    expect(parseLeadGateConfig(ON, { sampleData: true })).toMatchObject({ mode: "off", offReason: "sample_data" });
-    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_ALLOW_SAMPLE_DATA: "true" }, { sampleData: true }).mode).toBe("required");
-    expect(parseLeadGateConfig({ ...ON, ENQUIRY_STORE: "off" }, { sampleData: false })).toMatchObject({ mode: "off", offReason: "store_off" });
-    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_SECRET: "" }, { sampleData: false })).toMatchObject({
+  it("is forced off only with no lead store or with no secret in production", () => {
+    expect(parseLeadGateConfig({ ...ON, ENQUIRY_STORE: "off" })).toMatchObject({ mode: "off", offReason: "store_off" });
+    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_SECRET: "" })).toMatchObject({
       mode: "off",
       offReason: "no_secret",
       secret: null,
       warnings: ["lead_gate_secret_missing"],
     });
-    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_SECRET: "short" }, { sampleData: false })).toMatchObject({
+    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_SECRET: "short" })).toMatchObject({
       mode: "off",
       warnings: ["lead_gate_secret_too_short"],
     });
   });
 
+  it("sample data never switches it off (owner decision 21 Oct 2026: on now, with an honest note)", () => {
+    // GET /api/lead-gate reports sample data as `sample` for the form's note; the mode ignores it.
+    expect(parseLeadGateConfig({ ...ON, SHOW_PLACEHOLDER_CONTENT: "true" })).toMatchObject({ mode: "required", offReason: null, warnings: [] });
+    expect(parseLeadGateConfig({ ...ON, LEAD_GATE: "optional", SHOW_PLACEHOLDER_CONTENT: "true" }).mode).toBe("optional");
+    expect(parseLeadGateConfig({ LEAD_GATE: "required", NODE_ENV: "development" }).mode).toBe("required"); // dev shows sample data by default
+  });
+
   it("outside production a missing secret falls back to a per-process key (local QA), with a warning", () => {
-    const config = parseLeadGateConfig({ LEAD_GATE: "required", NODE_ENV: "development" }, { sampleData: false });
+    const config = parseLeadGateConfig({ LEAD_GATE: "required", NODE_ENV: "development" });
     expect(config.mode).toBe("required");
     expect(config.secret).toMatch(/^[0-9a-f]{64}$/);
     expect(config.warnings).toEqual(["lead_gate_secret_dev_fallback"]);
-    expect(parseLeadGateConfig({ LEAD_GATE: "required", NODE_ENV: "development" }, { sampleData: false }).secret).toBe(config.secret);
+    expect(parseLeadGateConfig({ LEAD_GATE: "required", NODE_ENV: "development" }).secret).toBe(config.secret);
   });
 
   it("keeps the secret when off (so old passes can still be forgotten) and parses the other switches", () => {
-    expect(parseLeadGateConfig({ LEAD_GATE_SECRET: SECRET }, { sampleData: false })).toMatchObject({ mode: "off", secret: SECRET, warnings: [] });
-    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_RECORD_USE: "parent" }, { sampleData: false }).recordUse).toBe("parent");
-    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_RECORD_USE: "off" }, { sampleData: false }).recordUse).toBe("off");
-    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_RECORD_USE: "everything" }, { sampleData: false })).toMatchObject({
+    expect(parseLeadGateConfig({ LEAD_GATE_SECRET: SECRET })).toMatchObject({ mode: "off", secret: SECRET, warnings: [] });
+    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_RECORD_USE: "parent" }).recordUse).toBe("parent");
+    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_RECORD_USE: "off" }).recordUse).toBe("off");
+    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_RECORD_USE: "everything" })).toMatchObject({
       recordUse: "off",
       warnings: ["lead_gate_record_use_unknown"],
     });
-    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_ASSIGN: "none" }, { sampleData: false }).assignNew).toBe(false);
-    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_MAX_NEW_LEADS_PER_HOUR: "25" }, { sampleData: false }).maxNewLeadsPerHour).toBe(25);
-    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_MAX_NEW_LEADS_PER_HOUR: "-1" }, { sampleData: false }).maxNewLeadsPerHour).toBe(300);
-    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_SINCE: "2026-11-01T00:00:00+05:30" }, { sampleData: false }).since).toBe(
+    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_ASSIGN: "none" }).assignNew).toBe(false);
+    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_MAX_NEW_LEADS_PER_HOUR: "25" }).maxNewLeadsPerHour).toBe(25);
+    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_MAX_NEW_LEADS_PER_HOUR: "-1" }).maxNewLeadsPerHour).toBe(300);
+    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_SINCE: "2026-11-01T00:00:00+05:30" }).since).toBe(
       Date.UTC(2026, 9, 31, 18, 30, 0),
     );
-    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_SINCE: "soon" }, { sampleData: false }).since).toBeNull();
-    expect(parseLeadGateConfig(ON, { sampleData: false }).since).toBeNull();
+    expect(parseLeadGateConfig({ ...ON, LEAD_GATE_SINCE: "soon" }).since).toBeNull();
+    expect(parseLeadGateConfig(ON).since).toBeNull();
   });
 });
 
@@ -295,6 +300,17 @@ describe("consent registry (D-039) and the leadGate messages", () => {
       expect(placeholders(value), key).toEqual(placeholders(en.get(key)));
     }
     expect(messagesFor("hi", "leadGate").heading).toMatch(/[ऀ-ॿ]/);
+  });
+
+  it("the sample-data line says plainly that results use sample data, that sharing does not unlock official data, and that Aspire will contact the family", () => {
+    const en = messagesFor("en", "leadGate").sampleData;
+    expect(en).toMatch(/currently use sample data/);
+    expect(en).toMatch(/does not unlock official data/);
+    expect(en).toMatch(/Aspire will contact you/);
+    const hi = messagesFor("hi", "leadGate").sampleData;
+    expect(hi).toMatch(/सैंपल डेटा/);
+    expect(hi).toMatch(/आधिकारिक डेटा नहीं खुलता/);
+    expect(hi).toMatch(/Aspire आपसे संपर्क करेगा/);
   });
 
   it("never promises verification, never says an OTP is sent, and names the doubt solver Rancho", () => {

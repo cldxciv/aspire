@@ -113,16 +113,39 @@ describe("GET /api/lead-gate", () => {
     expect(response.headers.get("x-robots-tag")).toMatch(/noindex/);
     expect(await response.json()).toEqual({
       ok: true,
-      data: { mode: "required", unlocked: false, via: null, recordsUse: false, expiresAt: null },
+      data: { mode: "required", unlocked: false, via: null, recordsUse: false, expiresAt: null, sample: false },
     });
   });
 
-  it("open as `off` when LEAD_GATE is unset, and while sample data is shown", async () => {
+  it("open as `off` when LEAD_GATE is unset (still reporting sample data)", async () => {
     vi.stubEnv("LEAD_GATE", "");
-    expect((await (await status(browser())).json()).data).toMatchObject({ mode: "off", unlocked: true, via: "off" });
-    vi.stubEnv("LEAD_GATE", "required");
+    expect((await (await status(browser())).json()).data).toMatchObject({ mode: "off", unlocked: true, via: "off", sample: false });
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
-    expect((await (await status(browser())).json()).data).toMatchObject({ mode: "off", unlocked: true, via: "off" });
+    expect((await (await status(browser())).json()).data).toMatchObject({ mode: "off", unlocked: true, via: "off", sample: true });
+  });
+
+  it("sample data does not open the gate (owner decision 21 Oct 2026): still locked, `sample: true` for the form's note", async () => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
+    expect((await (await status(browser())).json()).data).toEqual({
+      mode: "required",
+      unlocked: false,
+      via: null,
+      recordsUse: false,
+      expiresAt: null,
+      sample: true,
+    });
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", ""); // development without the flag shows sample data too
+    vi.stubEnv("NODE_ENV", "development");
+    expect((await (await status(browser())).json()).data).toMatchObject({ mode: "required", unlocked: false, sample: true });
+    vi.stubEnv("NODE_ENV", "production");
+    expect((await (await status(browser())).json()).data).toMatchObject({ mode: "required", unlocked: false, sample: false });
+  });
+
+  it("the sample flag follows the runtime's check (the same one the pages use)", async () => {
+    setup({ sampleData: () => true });
+    expect((await (await status(browser())).json()).data).toMatchObject({ mode: "required", sample: true });
+    setup({ sampleData: () => false });
+    expect((await (await status(browser())).json()).data).toMatchObject({ mode: "required", sample: false });
   });
 
   it.each([
@@ -131,7 +154,7 @@ describe("GET /api/lead-gate", () => {
     ["student", { mustChangePassword: true }],
   ] as const)("a signed-in %s (%o) skips the gate", async (role, options) => {
     const b = await signedIn(role, options);
-    expect((await (await status(b)).json()).data).toEqual({ mode: "required", unlocked: true, via: "session", recordsUse: false, expiresAt: null });
+    expect((await (await status(b)).json()).data).toEqual({ mode: "required", unlocked: true, via: "session", recordsUse: false, expiresAt: null, sample: false });
   });
 
   it("re-throws a prerender bail-out untouched and logs nothing", async () => {
@@ -176,7 +199,17 @@ describe("POST /api/lead-gate", () => {
     const passId = b.jar.get(LEAD_GATE_COOKIE)?.split(".")[1] ?? "missing";
     expect(JSON.stringify(getDb().prepare("SELECT * FROM crm_gate_passes").all())).not.toContain(passId);
 
-    expect((await (await status(b)).json()).data).toEqual({ mode: "required", unlocked: true, via: "pass", recordsUse: true, expiresAt });
+    expect((await (await status(b)).json()).data).toEqual({ mode: "required", unlocked: true, via: "pass", recordsUse: true, expiresAt, sample: false });
+  });
+
+  it("while sample data is shown: captures the family and unlocks exactly as with real data", async () => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
+    const b = browser();
+    const response = await submit(b);
+    expect(response.status).toBe(201);
+    expect(b.jar.get(LEAD_GATE_COOKIE)).toBeDefined();
+    expect(count("SELECT COUNT(*) AS n FROM crm_leads WHERE source = 'tool'")).toBe(1);
+    expect((await (await status(b)).json()).data).toMatchObject({ mode: "required", unlocked: true, via: "pass", sample: true });
   });
 
   it("marks the cookie Secure in production", async () => {
@@ -425,6 +458,13 @@ describe("server helpers for the tool owners' routes", () => {
     expect(await response.json()).toMatchObject({ ok: false, error: "unauthenticated", gate: "lead" });
     expect(isLeadGateResponse(response)).toBe(true);
     expect(isLeadGateResponse(new Response(null, { status: 401 }))).toBe(false);
+  });
+
+  it("server-enforced tools stay enforced while sample data is shown", async () => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
+    cookieState.jar = new Map();
+    const access = await resolveLeadGateAccess({ ...defaultLeadGateRuntime, now: () => clock.now, limiters: () => limiters });
+    expect(access).toMatchObject({ mode: "required", unlocked: false, via: null, enforce: true });
   });
 
   it("resolveLeadGateAccess + recordLeadGateToolUse: a pass records a mock-test band; a session or no pass records nothing", async () => {

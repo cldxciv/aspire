@@ -62,8 +62,12 @@ const ask = {
       scope: "Rancho only helps with Physics, Chemistry, Maths and Biology for Class 9–12, JEE and NEET.",
       sources: "It is not connected to Aspire's notes, lectures or DPPs. Chapter suggestions are general NCERT references.",
       exams: "Please don't use it during a live exam or test.",
+      /**
+       * Mode-agnostic about the lead gate (docs/lead-gate-plan.md §11.4: "you may be asked"; the live
+       * mode shows in the chat's own note). Tool-use notes for Rancho record only that it was used.
+       */
       privacy:
-        "Photos and questions aren't stored. If you're signed in as an Aspire student, only the subject and topic of each doubt are saved, to show your weak areas.",
+        "Photos and questions aren't stored. If you're signed in as an Aspire student, only the subject and topic of each doubt are saved, to show your weak areas. Before your first answer on a browser you may be asked once for a contact number (not if you're signed in); Aspire may then note that Rancho was used, never your questions, photos or answers.",
     },
   },
 };

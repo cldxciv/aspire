@@ -28,8 +28,12 @@ const predictor = {
   },
   form: {
     title: "Your details",
+    /**
+     * Mode-agnostic (the lead gate's mode is read at run time, docs/lead-gate-plan.md §11.4): true
+     * whether or not contact details are asked before the result.
+     */
     privacy:
-      "What you enter stays in this browser and is not saved on our servers — unless you choose to send an enquiry or ask Rancho about your result, which then includes your exam and score range.",
+      "Your result is worked out in this browser; your exact score, category, home state and gender are never saved. If you share contact details to see your result, the exam and score range are kept with them. Sending an enquiry or asking Rancho about your result also shares your exam and score range.",
     exam: "Exam",
     exams: {
       "jee-main": "JEE Main",
@@ -69,6 +73,8 @@ const predictor = {
     genderHint: "Female candidates can also get JoSAA's female-only seats.",
     bohNote: "Category, PwD, home-state and gender rules do not apply to BOH.",
     submit: "Predict my rank band",
+    /** Submit button while the lead gate is asked whether the result may be shown. */
+    checking: "One moment…",
     errorValue: "Enter a number from {min} to {max}.",
     errorMode: "Percentile is not available for this exam. Enter your score.",
   },

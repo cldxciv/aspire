@@ -10,7 +10,7 @@ const planner = {
   },
   hero: {
     title: "Smart study planner",
-    lead: "A day-by-day plan to your exam date, spaced revision, formula flashcards, streaks and XP. Free, works offline and comes with the Rancho app for your phone.",
+    lead: "A day-by-day plan to your exam date, spaced revision, formula flashcards, streaks and XP. Free, works offline and comes with the Rancho app for your phone. You may be asked for a contact number once before your first plan (not if you are signed in).",
     crumb: "Study planner",
   },
   sample: {
@@ -36,7 +36,8 @@ const planner = {
     honest: {
       suggestion: "The plan is a suggestion built from the public syllabus. Follow your teachers’ schedule where it differs.",
       reminders: "Aspire does not send SMS, WhatsApp or email reminders. Use the calendar file or on-device reminders in Settings.",
-      privacy: "Guests’ plans stay in their browser. Signed-in students’ plans are saved to their Aspire account.",
+      privacy:
+        "Guests’ plans stay in their browser. Signed-in students’ plans are saved to their Aspire account. Guests may be asked once for a contact number before their first plan. If you share one, the exam from your plan may be noted with it; your dates and progress stay in this browser.",
     },
   },
   status: {
@@ -98,7 +99,8 @@ const planner = {
   },
   form: {
     title: "Build your plan",
-    intro: "Tell us your exam and how much time you have. Guests: your plan stays in this browser. Signed-in students: it is also saved to your Aspire account.",
+    intro:
+      "Tell us your exam and how much time you have. Guests: your plan stays in this browser, and you may be asked once for a contact number before your first plan. Signed-in students: it is also saved to your Aspire account.",
     editTitle: "Your plan",
     exam: "Exam",
     examDate: "Exam date",
@@ -110,6 +112,8 @@ const planner = {
     weakHint: "Weak topics get twice the study sessions and are revised twice as often near the exam.",
     weakCount: "{count} selected",
     submit: "Build my plan",
+    /** On the submit button while the lead gate's status is checked before a guest's first plan. */
+    checking: "One moment…",
     update: "Update my plan",
     updateNote: "Updating builds a new plan starting today. XP and streaks you have earned stay.",
     saved: "Plan updated.",
@@ -304,7 +308,7 @@ const planner = {
     importPrompt: "This browser has a plan you made as a guest. Save it to your Aspire account?",
     importButton: "Save it to my account",
     importSkip: "No, start fresh",
-    privacy: "What is stored: exam, exam date, class, study hours, weak topics, ticked blocks, review progress and XP. Guests: only in this browser. Signed-in students: also in your Aspire account; parents linked to your account can see your streak, XP and how many days you studied — not your plan or answers.",
+    privacy: "What is stored: exam, exam date, class, study hours, weak topics, ticked blocks, review progress and XP. Guests: only in this browser (if you shared contact details to make a plan, Aspire may also note the exam with them). Signed-in students: also in your Aspire account; parents linked to your account can see your streak, XP and how many days you studied — not your plan or answers.",
     resetTitle: "Start over",
     resetGuest: "Delete my planner data in this browser",
     resetAccount: "Delete my planner data (this device and my account)",

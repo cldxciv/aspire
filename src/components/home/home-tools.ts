@@ -1,11 +1,15 @@
+import { predictorBand } from "@/components/forms/enquiry-context";
 import { format } from "@/i18n/format";
 import { clampToolSummary, type RanchoOpenDetail } from "@/lib/ask/cards";
 import { addDays, diffDays, istDateKey, istInstant, isDateKey, type DateKey } from "@/lib/planner/dates";
 import { PLAN_LIMITS } from "@/lib/planner/plan";
 import {
+  bucketRange,
   predictRankBand,
   scoreTableFor,
+  shareBucketFor,
   valueRange,
+  type ExamScoreTable,
   type InputMode,
   type PredictorData,
   type PredictorExam,
@@ -14,8 +18,8 @@ import {
 
 /**
  * Pure, client-safe helpers for the homepage "Student tools" widget (HomeTools): tab keyboard
- * rules, the mini rank estimate and the exam countdown. Nothing here reads the clock or storage;
- * callers pass "today" (read in the browser only).
+ * rules, the mini rank estimate and its lead-gate steps, and the exam countdown. Nothing here
+ * reads the clock or storage; callers pass "today" (read in the browser only).
  */
 
 export const HOME_TOOL_KEYS = ["predictor", "mockTests", "ask", "planner"] as const;
@@ -82,6 +86,90 @@ export function miniEstimate(exam: PredictorExam, mode: InputMode, raw: string, 
   if (result.status === "not-loaded") return { status: "not-loaded" };
   const range = valueRange(table, effectiveMode);
   return { status: "invalid", min: range.low, max: range.high };
+}
+
+// ── Lead gate (docs/lead-gate-plan.md §8.2): contact details once before the mini predictor's band ──
+// miniGateSummary mirrors WP2's predictorSummary (predictor-gate.ts), which takes a college-match
+// result instead of a rank band; merge them into one helper once both packages have settled.
+
+/**
+ * What the gate keeps with a mini-predictor result: the exam and the score / percentile band of the
+ * share card ("score-180-189", the same bucket as the full predictor's counsellor link), never the
+ * exact value. No band when the bucket can't be expressed (e.g. negative marks).
+ */
+export function miniGateSummary(band: RankBandPrediction, table: ExamScoreTable): { exam: PredictorExam; band?: string } {
+  const bucket = shareBucketFor(band.input, table);
+  const range = bucketRange(bucket, table);
+  const key = predictorBand(bucket.mode, Math.floor(range.low), Math.floor(range.high));
+  return key ? { exam: band.exam, band: key } : { exam: band.exam };
+}
+
+/** What an explicit "Predict" led to: fix the value, show the band, or the contact form first. */
+export type MiniReveal = "invalid" | "shown" | "gated";
+
+/**
+ * One explicit "Predict". The input is validated FIRST (critique 1.10): an invalid value never
+ * asks for contact details. A valid one asks the gate (`useLeadGate().requestAccess`), which
+ * answers true at once when the browser is unlocked, signed in, the gate is off, or the server
+ * can't be reached (browser-only tools fail open). Results from SAMPLE tables are gated too (owner
+ * decision, 21 Oct 2026: the form itself says the results use sample data).
+ */
+export async function revealMiniResult(outcome: MiniEstimate, requestAccess: () => Promise<boolean>): Promise<MiniReveal> {
+  if (outcome.status !== "ok") return "invalid";
+  return (await requestAccess()) ? "shown" : "gated";
+}
+
+/** What the widget does after a gate step (miniGateStep). */
+export interface MiniGateEffect {
+  /** The band may show (until "Not you?"). */
+  reveal: boolean;
+  /** The one tool-use note for this step (exam + score band, never the exact value), or null. */
+  note: { exam: PredictorExam; band?: string } | null;
+  /**
+   * Where focus goes: the band's first line, the value field, or nowhere (it stays on "Predict",
+   * or the contact form takes it).
+   */
+  focus: "result" | "value" | null;
+}
+
+/**
+ * The widget's gate steps (plan §13.1 "per-host pure gate reducers"); `outcome` is the CURRENT
+ * estimate and `table` its exam's score table.
+ * - `predict`: an explicit "Predict", after `revealMiniResult`. Invalid → back to the value field;
+ *   gated → nothing yet (the contact form takes the slot and focuses its own heading); shown →
+ *   the band and one note.
+ * - `unlocked`: useLeadGate's `onUnlocked` while this widget waited (its own form, another tool on
+ *   the page or another tab). The band for the current input (it may have been edited while the
+ *   form was open) and one note when that input gives a band; so every "Predict" that ends in a
+ *   band is noted exactly once. Focus moves only when this widget's own form unlocked (it held
+ *   focus and is about to go): to the band, or to the value field when the input gives none.
+ */
+export function miniGateStep(
+  event: { kind: "predict"; decision: MiniReveal } | { kind: "unlocked"; byThisHost: boolean },
+  outcome: MiniEstimate,
+  table: ExamScoreTable | undefined,
+): MiniGateEffect {
+  const ok = outcome.status === "ok";
+  const note = outcome.status === "ok" && table ? miniGateSummary(outcome.band, table) : null;
+  if (event.kind === "predict") {
+    if (event.decision === "invalid") return { reveal: false, note: null, focus: "value" };
+    if (event.decision === "gated") return { reveal: false, note: null, focus: null };
+    return { reveal: true, note, focus: null };
+  }
+  return { reveal: true, note, focus: event.byThisHost ? (ok ? "result" : "value") : null };
+}
+
+/** What the widget's result slot shows: the placeholder, the compact contact form, or the band. */
+export type MiniResultSlot = "empty" | "gate" | "result";
+
+/**
+ * The result slot. The form wins while it is open (the visitor may still be editing the score;
+ * the form keeps what they typed). The band shows only after this widget was unlocked and while
+ * the current input is valid; "Not you?" puts the widget back to the placeholder.
+ */
+export function miniResultSlot(state: { outcome: MiniEstimate | null; revealed: boolean; gateOpen: boolean }): MiniResultSlot {
+  if (state.gateOpen) return "gate";
+  return state.revealed && state.outcome?.status === "ok" ? "result" : "empty";
 }
 
 export type ExamCountdown =

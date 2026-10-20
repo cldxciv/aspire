@@ -15,6 +15,7 @@ import {
   inboxQuery,
   leadCountLabel,
   phoneLast4,
+  withBack,
   type CrmMessages,
   type InboxFilters,
 } from "./format";
@@ -186,6 +187,11 @@ export type InboxRowContext = {
   now: number;
   locale: Locale;
   t: CrmMessages;
+  /**
+   * LOCALE-FREE path + query of this list (e.g. `/crm?stage=new&page=2`), carried to each lead as
+   * `?back=` so its "Back" returns here (admin-console plan §2.2).
+   */
+  back?: string;
 };
 
 function displayName(t: CrmMessages, lead: LeadSummary): string {
@@ -270,8 +276,8 @@ export function LeadList({ page, filters, ctx }: { page: LeadPage; filters: Inbo
   );
 }
 
-function leadHref(id: string, locale: Locale) {
-  return localePath(`/crm/leads/${encodeURIComponent(id)}`, locale);
+function leadHref(id: string, ctx: Pick<InboxRowContext, "locale" | "back">) {
+  return withBack(localePath(`/crm/leads/${encodeURIComponent(id)}`, ctx.locale), ctx.back);
 }
 
 function InboxRow({ lead, ctx }: { lead: LeadSummary; ctx: InboxRowContext }) {
@@ -280,7 +286,7 @@ function InboxRow({ lead, ctx }: { lead: LeadSummary; ctx: InboxRowContext }) {
   return (
     <tr className={cn("align-top hover:bg-[#f8fbff]", lead.overdue && "bg-[#fffaf0]")}>
       <th scope="row" className="px-3 py-3 font-semibold">
-        <Link href={leadHref(lead.id, locale)} className="text-blue hover:underline" aria-label={format(t.common.openLead, { name })}>
+        <Link href={leadHref(lead.id, ctx)} className="text-blue hover:underline" aria-label={format(t.common.openLead, { name })}>
           {name}
         </Link>
       </th>
@@ -317,7 +323,7 @@ function InboxCard({ lead, ctx }: { lead: LeadSummary; ctx: InboxRowContext }) {
     <li className={cn("rounded-control border border-line bg-white p-4", lead.overdue && "border-l-4 border-l-[#e9b431]")}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <h3 className="min-w-0 break-words font-bold">
-          <Link href={leadHref(lead.id, locale)} className="text-blue hover:underline">
+          <Link href={leadHref(lead.id, ctx)} className="text-blue hover:underline">
             {name}
           </Link>
         </h3>

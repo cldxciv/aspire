@@ -10,10 +10,17 @@ import {
 import { unstable_rethrow } from "next/navigation";
 import { NextResponse } from "next/server";
 
-import { resolveAsker, type Asker } from "@/lib/ask/asker";
+import { askerUsageKeys, resolveAsker, type Asker } from "@/lib/ask/asker";
 import { createAskClient, startAskConversation, type AskConversationResult, type AskLoopEvent, type AskModelInput } from "@/lib/ask/claude";
 import { getAskConfig, type AskConfig } from "@/lib/ask/config";
-import { ASK_MAX_BODY_BYTES, ASK_MAX_IMAGE_BYTES, type AskAnswerMeta, type AskStatus, type AskStreamEvent } from "@/lib/ask/constants";
+import {
+  ASK_MAX_BODY_BYTES,
+  ASK_MAX_IMAGE_BYTES,
+  type AskAccess,
+  type AskAnswerMeta,
+  type AskStatus,
+  type AskStreamEvent,
+} from "@/lib/ask/constants";
 import { checkImage } from "@/lib/ask/image";
 import { askExceptionCode, askLog, type AskLogEntry, type AskLogReason } from "@/lib/ask/log";
 import { ASK_PROMPT_VERSION } from "@/lib/ask/prompt";
@@ -21,20 +28,31 @@ import { ASK_FIELD_MESSAGES, askFieldErrors, askRequestSchema, cleanQuestion, cl
 import { createTrailerFilter } from "@/lib/ask/trailer";
 import { exhaustedAllowance, reserveQuestion, secondsUntilNextIstDay, usageStatus, type Reservation } from "@/lib/ask/usage";
 import { recordDoubtTopic } from "@/lib/ask/weak-topics";
-import { setSessionCookie } from "@/lib/auth/cookie";
 import { parseJsonBody, rejectCrossOrigin } from "@/lib/auth/request";
 import { portalApiError, portalApiItem, privateApiHeaders } from "@/lib/auth/responses";
-import { getCurrentSession, type CurrentSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/connection";
+import {
+  applyLeadGateCookies,
+  leadGateRequiredResponse,
+  recordLeadGateToolUse,
+  resolveLeadGateAccess,
+  type LeadGateAccess,
+} from "@/lib/lead-gate/server";
 
 /**
  * Rancho — the AI doubt solver, formerly "Ask Aspire" (D-035; docs/ask-aspire.md). Node runtime (the default).
  *
- * GET /api/ask → `{ ok, data: AskStatus }`: whether it is connected, and today's allowance.
+ * GET /api/ask → `{ ok, data: AskStatus }`: whether it is connected, the lead gate for this
+ * browser (`access`: open | gate_required | gate_optional) and today's allowance (`remaining` is 0
+ * once the site-wide daily cap is reached as well).
  *
  * POST /api/ask — JSON ≤ ~5.6 MB: `{ question?, subject?, language, image?: { mediaType, data },
- * photoConsent?, toolContext?: { tool, summary } }`. Order: same-origin (403) → configured (503 `not_configured`) → allowance
- * already used up (429, checked before the body is read) → JSON body (415 / 413 / 400 / 422) →
+ * photoConsent?, toolContext?: { tool, summary } }`. Order: same-origin (403) → configured (503 `not_configured`) →
+ * lead gate (docs/lead-gate-plan.md §5.6: with LEAD_GATE=required, a guest browser that has not
+ * shared contact details yet gets the gate 401 — code `unauthenticated`, header
+ * `X-Lead-Gate: required`, body `gate: "lead"` — before anything is read, reserved or counted;
+ * signed-in accounts and browsers with a pass go on) → allowance already used up (429, checked
+ * before the body is read; a pass holder is charged per IP AND per family) → JSON body (415 / 413 / 400 / 422) →
  * photo re-checked by magic bytes, ≤ 4 MB (413 / 422) → daily allowance reserved (429 +
  * Retry-After) → Claude. Upstream failures before the answer starts: 503 (busy, or
  * `not_configured` for a rejected key) / 502, and the question is not counted. Otherwise 200 with
@@ -45,12 +63,19 @@ import { getDb } from "@/lib/db/connection";
  * summed over all turns (on a failure part-way: over the turns that finished). The trailer is
  * stripped per model turn, so one written before a tool call cannot hide the later answer.
  *
+ * Rancho's in-chat tools (predict_rank, find_mock_tests, …) run only inside an answered POST, so
+ * the gate covers their cards too.
+ *
  * Privacy: the photo lives in memory for this request only; nothing of the question, photo or
  * answer is stored or logged. Signed-in students get (subject, topic) counters for weak-topic
- * tracking; guests get nothing stored beyond a hashed per-day counter.
+ * tracking. Guests get a hashed per-day counter; a browser whose family shared contact details
+ * (a lead-gate pass that records use) also gets ONE note per day on the family's admission record
+ * that Rancho was used — never the question, its subject or topic, the answer or a photo flag.
  */
 
 const BUSY_MESSAGE = "Rancho is busy right now. Please try again in a minute.";
+/** The gate 401's English `message` (the UI shows its own localised `leadGate` copy). */
+const GATE_MESSAGE = "Share a contact number once to get answers from Rancho.";
 const NOT_CONFIGURED_MESSAGE = "Rancho isn't connected yet.";
 const UPSTREAM_MESSAGE = "We couldn't answer this question. If you added a photo, try a clearer JPG or PNG.";
 const SERVER_ERROR_MESSAGE = "Something went wrong. Please try again.";
@@ -63,9 +88,15 @@ function limitMessage(reservation: Extract<Reservation, { allowed: false }>, ask
     : `You've used today's ${reservation.limit} questions. Please come back tomorrow.`;
 }
 
-function withSessionCookie<T extends NextResponse>(response: T, current: CurrentSession | null): T {
-  if (current?.refreshed) setSessionCookie(response, current.token, current.expiresAt);
-  return response;
+/** The lead gate as the Rancho UIs see it (plan §5.6). */
+function askAccess(gate: LeadGateAccess): AskAccess {
+  if (gate.unlocked) return "open";
+  return gate.mode === "required" ? "gate_required" : "gate_optional";
+}
+
+/** Who is asking on this request; a pass holder is also charged to the family (critique 1.3). */
+function askerFor(gate: LeadGateAccess, request: Request, config: AskConfig): Asker {
+  return resolveAsker(gate.session, request.headers, config, gate.via === "pass" ? gate.pass : null);
 }
 
 function unexpected(error: unknown, entry: Omit<AskLogEntry, "outcome">) {
@@ -75,16 +106,20 @@ function unexpected(error: unknown, entry: Omit<AskLogEntry, "outcome">) {
 }
 
 export async function GET(request: Request) {
+  let gate: LeadGateAccess | null = null;
   try {
     const config = getAskConfig();
-    const current = await getCurrentSession();
-    const asker = resolveAsker(current, request.headers, config);
+    gate = await resolveLeadGateAccess();
+    const asker = askerFor(gate, request, config);
     const now = Date.now();
+    // `remaining` is 0 once the site-wide cap is reached too, so the chat shows "that's all for
+    // today" instead of asking a family for contact details before a question that would be refused.
     const usage = config.configured
-      ? usageStatus(getDb(), { key: asker.key, limit: asker.limit, now })
+      ? usageStatus(getDb(), { ...askerUsageKeys(asker), limit: asker.limit, globalLimit: config.globalDaily, now })
       : { used: 0, remaining: asker.limit, resetsInSeconds: secondsUntilNextIstDay(now) };
     const status: AskStatus = {
       configured: config.configured,
+      access: askAccess(gate),
       account: asker.account,
       limit: asker.limit,
       used: usage.used,
@@ -92,9 +127,10 @@ export async function GET(request: Request) {
       resetsInSeconds: usage.resetsInSeconds,
       maxImageBytes: ASK_MAX_IMAGE_BYTES,
     };
-    return withSessionCookie(portalApiItem(status), current);
+    return applyLeadGateCookies(portalApiItem(status), gate);
   } catch (error) {
-    return unexpected(error, {});
+    const response = unexpected(error, {});
+    return gate ? applyLeadGateCookies(response, gate) : response;
   }
 }
 
@@ -132,6 +168,10 @@ export async function POST(request: Request) {
   const startedAt = Date.now();
   const logBase: Omit<AskLogEntry, "outcome"> = { promptVersion: ASK_PROMPT_VERSION };
   let reservation: Extract<Reservation, { allowed: true }> | null = null;
+  // Set once the lead gate is resolved: every later response re-issues a refreshed session cookie
+  // and clears a dead pass cookie (plan §5.6 step 8).
+  let gate: LeadGateAccess | null = null;
+  const respond = <T extends NextResponse>(response: T): T => (gate ? applyLeadGateCookies(response, gate) : response);
   try {
     const crossOrigin = rejectCrossOrigin(request);
     if (crossOrigin) {
@@ -146,25 +186,34 @@ export async function POST(request: Request) {
     }
     logBase.model = config.model;
 
+    // Lead gate (plan §5.6), BEFORE the allowance and the body: a browser that must share contact
+    // details first gets the gate 401 without its (up to ~5.6 MB) body being read and without
+    // anything being reserved or counted. It also resolves the session (one lookup per request).
+    const access = await resolveLeadGateAccess();
+    gate = access;
+    if (access.enforce) {
+      askLog({ ...logBase, outcome: "gate_required", account: "guest" });
+      return respond(leadGateRequiredResponse(GATE_MESSAGE));
+    }
+
     // Who is asking, and a cheap read-only allowance check BEFORE reading a body of up to ~5.6 MB
-    // (QA-SEC-M6): an IP / account (or the site) with nothing left today is refused without
-    // buffering and decoding a photo. reserveQuestion() below still decides atomically.
-    const current = await getCurrentSession();
-    const asker = resolveAsker(current, request.headers, config);
+    // (QA-SEC-M6): an IP / account / family (or the site) with nothing left today is refused
+    // without buffering and decoding a photo. reserveQuestion() below still decides atomically.
+    const asker = askerFor(access, request, config);
+    const usageKeys = askerUsageKeys(asker);
     logBase.account = asker.account;
     const exhausted = exhaustedAllowance(getDb(), {
-      key: asker.key,
+      ...usageKeys,
       limit: asker.limit,
       globalLimit: config.globalDaily,
       now: Date.now(),
     });
     if (exhausted) {
       askLog({ ...logBase, outcome: "rate_limited", reason: exhausted.limit === 0 ? "disabled" : exhausted.reason });
-      return withSessionCookie(
+      return respond(
         portalApiError("rate_limited", limitMessage(exhausted, asker), {
           headers: { "Retry-After": String(exhausted.retryAfterSeconds) },
         }),
-        current,
       );
     }
 
@@ -175,7 +224,7 @@ export async function POST(request: Request) {
         outcome: parsed.outcome === "validation_failed" ? "validation_failed" : "bad_request",
         reason: parsed.reason as AskLogReason | undefined,
       });
-      return parsed.response;
+      return respond(parsed.response);
     }
     const body = parsed.data;
     const question = cleanQuestion(body.question);
@@ -187,7 +236,7 @@ export async function POST(request: Request) {
     const fieldErrors = askFieldErrors(body, question);
     if (fieldErrors) {
       askLog({ ...logBase, outcome: "validation_failed", reason: fieldErrors.photoConsent ? "consent_missing" : "empty_question" });
-      return portalApiError("validation", "Please check the highlighted fields.", { fieldErrors });
+      return respond(portalApiError("validation", "Please check the highlighted fields.", { fieldErrors }));
     }
 
     let image: AskModelInput["image"] = null;
@@ -195,26 +244,27 @@ export async function POST(request: Request) {
       const checked = checkImage(body.image.mediaType, body.image.data);
       if (!checked.ok) {
         askLog({ ...logBase, outcome: checked.reason === "image_too_large" ? "bad_request" : "validation_failed", reason: checked.reason });
-        return checked.reason === "image_too_large"
-          ? portalApiError("bad_request", ASK_FIELD_MESSAGES.imageTooLarge, { status: 413 })
-          : portalApiError("validation", ASK_FIELD_MESSAGES.imageInvalid, { fieldErrors: { image: [ASK_FIELD_MESSAGES.imageInvalid] } });
+        return respond(
+          checked.reason === "image_too_large"
+            ? portalApiError("bad_request", ASK_FIELD_MESSAGES.imageTooLarge, { status: 413 })
+            : portalApiError("validation", ASK_FIELD_MESSAGES.imageInvalid, { fieldErrors: { image: [ASK_FIELD_MESSAGES.imageInvalid] } }),
+        );
       }
       image = { mediaType: checked.mediaType, base64: checked.base64 };
     }
 
     const reserved = reserveQuestion(getDb(), {
-      key: asker.key,
+      ...usageKeys,
       limit: asker.limit,
       globalLimit: config.globalDaily,
       now: Date.now(),
     });
     if (!reserved.allowed) {
       askLog({ ...logBase, outcome: "rate_limited", reason: reserved.limit === 0 ? "disabled" : reserved.reason });
-      return withSessionCookie(
+      return respond(
         portalApiError("rate_limited", limitMessage(reserved, asker), {
           headers: { "Retry-After": String(reserved.retryAfterSeconds) },
         }),
-        current,
       );
     }
     reservation = reserved;
@@ -245,7 +295,7 @@ export async function POST(request: Request) {
         reason: failure.reason,
         durationMs: Date.now() - startedAt,
       });
-      return failure.response;
+      return respond(failure.response);
     }
 
     const held = reservation;
@@ -307,10 +357,22 @@ export async function POST(request: Request) {
         const stop = mapStop(final.stop);
         send({ t: "done", stop, meta: stop === "refusal" ? null : meta });
 
-        if (asker.studentId && (stop === "end_turn" || stop === "max_tokens")) {
+        if (stop === "end_turn" || stop === "max_tokens") {
+          if (asker.studentId) {
+            try {
+              recordDoubtTopic(asker.studentId, meta);
+            } catch (error) {
+              askLog({ ...logBase, outcome: "error", reason: askExceptionCode(error) });
+            }
+          }
+          // Lead gate (plan §5.6 step 7): on a counted answer, note on the family's record ONLY that
+          // Rancho was used (merged per day). Nothing for sessions, the gate off, or a pass that does
+          // not record use; never the question, subject, topic, answer or a photo flag. Refusals,
+          // upstream errors and aborts never get here.
           try {
-            recordDoubtTopic(asker.studentId, meta);
+            recordLeadGateToolUse(access, { tool: "ask", key: "rancho" });
           } catch (error) {
+            // It logs and swallows database errors itself; this only guards the finished stream.
             askLog({ ...logBase, outcome: "error", reason: askExceptionCode(error) });
           }
         }
@@ -366,10 +428,10 @@ export async function POST(request: Request) {
       "X-Accel-Buffering": "no",
     });
     headers.set("Cache-Control", "no-store, no-transform");
-    return withSessionCookie(new NextResponse(responseBody, { status: 200, headers }), current);
+    return respond(new NextResponse(responseBody, { status: 200, headers }));
   } catch (error) {
     // Unexpected failure before the stream started: give the question back.
     reservation?.release();
-    return unexpected(error, logBase);
+    return respond(unexpected(error, logBase));
   }
 }

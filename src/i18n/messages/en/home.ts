@@ -59,9 +59,13 @@ const home = {
     eyebrow: "Free student tools",
     title: "Practise, predict and plan",
     lead: "Estimate a rank band, take an exam-style mock test, get help with a doubt or count the days to your exam — free, in English or Hindi.",
+    /**
+     * Mode-agnostic since the lead gate (docs/lead-gate-plan.md §11.4): true whether the gate is
+     * off, optional or required, and never "no sign-up needed".
+     */
     points: {
-      free: "Free to try — no sign-up needed to start",
-      private: "What you type in this box stays in your browser",
+      free: "Free. You may be asked for a contact number once before results",
+      private: "Scores and dates you type here are worked out in your browser; the exact values are never sent",
       languages: "In English and Hindi",
     },
     seeAll: "See all tools",

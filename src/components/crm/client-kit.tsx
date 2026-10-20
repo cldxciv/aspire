@@ -14,19 +14,24 @@ import type { CrmMessages } from "./format";
  * refreshes the server-rendered data after a successful write.
  */
 
-/** Native modal `<dialog>`: focus trap, Esc to close (→ `onClose`), inert background. No `confirm()`. */
+/**
+ * Native modal `<dialog>`: focus trap, Esc to close (→ `onClose`), inert background. No `confirm()`.
+ * `drawer`: full-height panel on the right (the "Add enquiry" form); full width on phones.
+ */
 export function CrmDialog({
   open,
   titleId,
   onClose,
   children,
   wide = false,
+  drawer = false,
 }: {
   open: boolean;
   titleId: string;
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  drawer?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -52,8 +57,10 @@ export function CrmDialog({
       }}
       data-surface="light"
       className={
-        "m-auto max-h-[90vh] overflow-y-auto rounded-card border border-line bg-white p-0 text-ink shadow-card backdrop:bg-navy/60 " +
-        (wide ? "w-[min(94vw,44rem)]" : "w-[min(92vw,32rem)]")
+        drawer
+          ? "my-0 mr-0 ml-auto h-dvh max-h-dvh w-full max-w-full overflow-y-auto border-l border-line bg-white p-0 text-ink shadow-card backdrop:bg-navy/60 sm:w-[min(100vw,34rem)]"
+          : "m-auto max-h-[90vh] overflow-y-auto rounded-card border border-line bg-white p-0 text-ink shadow-card backdrop:bg-navy/60 " +
+            (wide ? "w-[min(94vw,44rem)]" : "w-[min(92vw,32rem)]")
       }
     >
       {open && children}

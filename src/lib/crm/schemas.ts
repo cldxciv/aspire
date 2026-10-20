@@ -1,12 +1,15 @@
 import { z } from "zod";
 
 import {
+  CONSENT_METHODS,
   CONTACT_CHANNELS,
   CONTACT_OUTCOMES,
   CRM_ROLES,
   EDITABLE_LEAD_FIELDS,
+  ERASE_REASONS,
   LEAD_STAGES,
   LOST_REASONS,
+  MANUAL_DUPLICATE_MODES,
   MANUAL_LEAD_SOURCES,
 } from "./types";
 
@@ -53,6 +56,8 @@ export const manualLeadSchema = z
     centreSlug: nullableText(60),
     note: nullableText(2000),
     consent: z.literal(true, { error: "Confirm the family agreed to be contacted." }),
+    consentMethod: z.enum(CONSENT_METHODS, { error: "Choose how the family agreed." }).nullable().optional(),
+    onDuplicate: z.enum(MANUAL_DUPLICATE_MODES, { error: "onDuplicate must be append or report." }).optional(),
   })
   .strict();
 export type ManualLeadBody = z.infer<typeof manualLeadSchema>;
@@ -77,7 +82,12 @@ export const taskSchema = z
 
 export const taskPatchSchema = z.object({ done: z.literal(true, { error: "Send done: true." }) }).strict();
 
-export const eraseSchema = z.object({ confirm: z.literal(true, { error: "Send confirm: true." }) }).strict();
+export const eraseSchema = z
+  .object({
+    confirm: z.literal(true, { error: "Send confirm: true." }),
+    reason: z.enum(ERASE_REASONS, { error: "Choose why the data is erased." }).optional(),
+  })
+  .strict();
 
 export const staffSchema = z
   .object({

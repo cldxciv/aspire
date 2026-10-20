@@ -26,7 +26,8 @@ export type LeadGateRole = (typeof LEAD_GATE_ROLES)[number];
 
 /**
  * `LEAD_GATE` (server env, read per request — never at build time):
- *  - off: no gate (the default when unset; also forced while sample data is shown, with no lead store, or with no secret in production);
+ *  - off: no gate (the default when unset; also forced with no lead store, or with no secret in production;
+ *    sample data does NOT force it off since the owner decision of 21 Oct 2026: the form discloses it instead);
  *  - optional: the form is shown with "Continue without sharing"; the server does not enforce;
  *  - required: results need contact details once per browser; /api/ask and /api/mocktest/score enforce it.
  */
@@ -155,6 +156,14 @@ export interface LeadGateStatusData {
   recordsUse: boolean;
   /** When this browser's pass ends (pass only). */
   expiresAt: string | null;
+  /**
+   * Results on this site currently come from sample (placeholder) data: the site-wide
+   * showPlaceholderContent() check the pages use. <LeadGateForm> then says so plainly, up front
+   * before its fields. Reported in every mode; it never changes the mode. Site-wide on purpose for
+   * now (every tool's data is sample); once some official tables load while demo mode stays on, it
+   * over-claims and needs a per-result flag from the host (e.g. the predictor's hasSampleData).
+   */
+  sample: boolean;
 }
 
 /** POST /api/lead-gate (201 for a pass; 200 for `session` / `off`, where nothing is stored). Identical for a new and an existing family. */

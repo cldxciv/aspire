@@ -130,7 +130,7 @@ const DETAIL: LeadDetail = {
   furthestStage: "new",
   erasedAt: null,
   activities: [
-    { id: 1, type: "submission", body: null, meta: { source: "tool", tool: "predictor", toolExam: "jee-main", toolBand: "90-95", locale: "hi", topic: "scholarship", page: "/tools/rank-predictor", reference: "ENQ-1" }, actorId: null, actorName: null, at: "2026-10-18T05:00:00.000Z" },
+    { id: 1, type: "submission", body: null, meta: { source: "tool", tool: "predictor", toolExam: "jee-main", toolBand: "percentile-90-95", locale: "hi", topic: "scholarship", page: "/tools/rank-predictor", reference: "ENQ-1" }, actorId: null, actorName: null, at: "2026-10-18T05:00:00.000Z" },
     { id: 2, type: "assignment", body: null, meta: { from: null, to: "u-counsellor", auto: true }, actorId: null, actorName: null, at: "2026-10-18T05:00:01.000Z" },
     { id: 3, type: "call", body: "Asked for fee details", meta: { outcome: "connected" }, actorId: "u-counsellor", actorName: "Counsellor One", at: "2026-10-19T05:00:00.000Z" },
     { id: 4, type: "stage_change", body: null, meta: { from: "new", to: "contacted" }, actorId: "u-counsellor", actorName: "Counsellor One", at: "2026-10-19T05:01:00.000Z" },
@@ -411,8 +411,8 @@ describe.each(LOCALES)("pages render (%s)", (locale) => {
       CENTRES.shimla,
       // Latest enquiry attribution (CRM-CAPTURE context on the submission activity).
       t.lead.details.latestTitle,
-      "jee-main",
-      "90-95",
+      t.exams["jee-main"],
+      t.lead.toolUse.percentileBand.replace("{from}", "90").replace("{to}", "95"),
       "हिन्दी",
       t.lead.details.topics.scholarship,
       "ENQ-1",

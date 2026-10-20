@@ -1,4 +1,5 @@
 import { createNdjsonDecoder, failureFromResponse, type AskClientEvent, type AskFailure } from "@/components/ask/ask-client";
+import { isLeadGateResponse } from "@/components/lead-gate/lead-gate-client";
 import { stripLocale } from "@/i18n/paths";
 import { clampToolSummary, type RanchoToolCard, type RanchoToolContext } from "@/lib/ask/cards";
 import {
@@ -118,6 +119,9 @@ export async function askRancho(input: RanchoQuestion, options: AskRanchoOptions
   }
 
   if (!response.ok || !response.body) {
+    // The lead gate (docs/lead-gate-plan.md §5.6): nothing was read or counted; the chat holds the
+    // question and shows the contact form. Only the gate's own 401 (header), never any other 401.
+    if (isLeadGateResponse(response)) return { text: "", stop: null, meta: null, failure: { kind: "gate" }, cards: [] };
     const body: unknown = await response.json().catch(() => null);
     return {
       text: "",

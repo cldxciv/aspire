@@ -45,11 +45,12 @@ export async function generateMetadata(): Promise<Metadata> {
  * objects only, because result cards with student names can appear on this page.
  */
 export default async function PredictorPage() {
-  const [locale, t, tc, tTools] = await Promise.all([
+  const [locale, t, tc, tTools, tGate] = await Promise.all([
     getLocale(),
     getMessages("predictor"),
     getMessages("common"),
     getMessages("tools"),
+    getMessages("leadGate"),
   ]);
   const data = getPredictorData();
   const sample = hasSampleData(data);
@@ -122,6 +123,7 @@ export default async function PredictorPage() {
               data={data}
               pageUrl={pageUrl}
               messages={{ form: t.form, result: t.result, whatIf: t.whatIf, share: t.share }}
+              leadGate={tGate}
             />
           </div>
         ) : (

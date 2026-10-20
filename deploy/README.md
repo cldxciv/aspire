@@ -72,20 +72,23 @@ fi
 docker builder prune -f   # always: frees 1-2 GB of build cache
 ```
 
-### Temporary nginx manifest hotfix
+### Temporary nginx manifest hotfix (removed)
 
-Since 2026-10-21 the nginx server block has a `location = /manifest.webmanifest { … }` block marked `# manifest-hotfix`. It serves `/var/www/aspire-hotfix/manifest.webmanifest` (Rancho name, `id` `/rancho`, `start_url` `/tools/ask`) instead of the deployed app's older planner manifest. The config from before the hotfix is in `/opt/aspire-web/nginx-backup/aspire.thechunkmedia.com.pre-manifest-hotfix`.
+From 20 to 21 October 2026 nginx served a hand-written Rancho manifest from `/var/www/aspire-hotfix/`. It was removed when release 806a938 shipped its own `src/app/manifest.ts` (config backups in `/opt/aspire-web/nginx-backup/`). `/var/www/aspire-hotfix` can be deleted.
 
-**It must be removed when the Rancho PWA release ships** (that release has its own `src/app/manifest.ts`); otherwise nginx keeps hiding the app's manifest. In that release, after `docker compose up -d`:
+## Contact form before tool results (lead gate)
+
+The form is built in and reads its settings from `.env` on every request (no rebuild). Owner decision (21 Oct 2026): **on now, required, with the honest sample-data note**. Settings:
 
 ```sh
-cp /etc/nginx/sites-available/aspire.thechunkmedia.com /opt/aspire-web/nginx-backup/aspire.thechunkmedia.com.pre-hotfix-removal
-nano /etc/nginx/sites-available/aspire.thechunkmedia.com    # delete the whole "# manifest-hotfix" location block
-grep -n manifest-hotfix /etc/nginx/sites-available/aspire.thechunkmedia.com   # must print nothing
-nginx -t && systemctl reload nginx
-curl -s https://aspire.thechunkmedia.com/manifest.webmanifest | grep -o '"start_url": *"[^"]*"'   # the app's "/rancho", not "/tools/ask"
-rm -rf /var/www/aspire-hotfix                               # once the check passes
+LEAD_GATE=required                       # off | optional | required
+LEAD_GATE_SECRET=<openssl rand -hex 32>  # >= 32 chars; without it production keeps the gate OFF; changing it re-asks every browser
+LEAD_GATE_SINCE=<ISO switch-on time, e.g. 2026-10-21T18:00:00+05:30>   # mock attempts started earlier are never gated
+# keep ENQUIRY_STORE empty or crm (off forces the gate off); keep SHOW_PLACEHOLDER_CONTENT=true while sample data shows (the form then says so)
+# optional, defaults shown: LEAD_GATE_RECORD_USE=all  LEAD_GATE_ASSIGN=auto  LEAD_GATE_MAX_NEW_LEADS_PER_HOUR=300
 ```
+
+Apply: `cd /opt/aspire-web && docker compose up -d` (recreate). Check: `curl -s https://aspire.thechunkmedia.com/api/lead-gate` returns `"mode":"required"` and `"sample":true`. Roll back: set `LEAD_GATE=off` (or `optional`) and recreate. Never print the secret; it lives only in the root-only `.env`.
 
 ## First admin (once)
 

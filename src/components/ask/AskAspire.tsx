@@ -25,16 +25,20 @@ function saveFeedback(value: "yes" | "no") {
  * voice typing and Send, tool cards in answers, Listen / Copy / 👍👎 under each answer, an
  * answer-language select, and "Ask Rancho about this" handoffs from the student tools. Strings come
  * from `ask.chat` (= the `rancho.panel` strings), so the page and the panel always say the same.
+ * `gateMessages` (namespace `leadGate`): the contact form shown under a question before Rancho's
+ * first answer on this browser (docs/lead-gate-plan.md §8.6), loaded by the server page.
  * `className` replaces the card's default size (up to 720px tall, within the viewport), e.g.
  * "h-full min-h-0" for a full-height layout inside a sized flex parent.
  */
 export function AskAspire({
   messages: t,
+  gateMessages,
   locale,
   links,
   className,
 }: {
   messages: Messages<"ask">;
+  gateMessages: Messages<"leadGate">;
   locale: Locale;
   links: { enquiry: string; signIn: string; privacy: string; ask?: string };
   className?: string;
@@ -43,6 +47,7 @@ export function AskAspire({
     <RanchoChat
       variant="page"
       messages={t.chat}
+      gateMessages={gateMessages}
       locale={locale}
       links={{ ask: links.ask ?? localePath("/tools/ask", locale), enquiry: links.enquiry, signIn: links.signIn, privacy: links.privacy }}
       onFeedback={saveFeedback}

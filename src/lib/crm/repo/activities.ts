@@ -61,6 +61,20 @@ export function listActivities(db: DatabaseSync, leadId: string, limit = 200): A
 }
 
 /**
+ * Every activity of the given types for a lead, newest first, with NO row limit. Used for the
+ * consent-bearing entries (submissions, staff `created` entries, withdrawals), so the lead page's
+ * consent list and parent flag never lose the first consent behind a busy timeline.
+ */
+export function listActivitiesOfTypes(db: DatabaseSync, leadId: string, types: readonly ActivityType[]): ActivityRow[] {
+  if (types.length === 0) return [];
+  const marks = types.map(() => "?").join(", ");
+  return db
+    .prepare(`${SELECT} WHERE a.lead_id = ? AND a.type IN (${marks}) ORDER BY a.at DESC, a.id DESC`)
+    .all(leadId, ...types)
+    .map(mapActivity);
+}
+
+/**
  * Lead gate (docs/lead-gate-plan.md §3): one `tool_use` entry per lead + tool + key per day
  * ([dayStart, dayEnd), Asia/Kolkata). A repeat use that day adds 1 to `uses`, takes the latest
  * facts and moves the entry's time to `now`; otherwise a new entry starts at `uses: 1`.

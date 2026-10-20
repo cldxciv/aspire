@@ -24,6 +24,23 @@ export const scoreBodySchema = z.object({
 });
 export type ScoreBody = z.infer<typeof scoreBodySchema>;
 
+/**
+ * POST /api/mocktest/score (lead gate, docs/lead-gate-plan.md §5.7). On top of the answers:
+ * - `startedAt`: when this browser started the attempt (epoch ms). An attempt started before
+ *   LEAD_GATE_SINCE is never gated. A malformed value is ignored, never an error.
+ * - `record`: sent only with the FIRST scoring of an attempt (the result page has no score for it
+ *   yet), so re-opening a result or printing it never adds a tool-use note.
+ * - `seen`: this browser already showed the attempt's result (it keeps a local score). Such a
+ *   result is never gated again (data the family already has). A malformed value is ignored.
+ * Both `startedAt` and `seen` are the browser's word: the gate on /score is lead capture.
+ */
+export const scoreRequestSchema = scoreBodySchema.extend({
+  startedAt: z.number().int().positive().optional().catch(undefined),
+  record: z.literal(true).optional().catch(undefined),
+  seen: z.literal(true).optional().catch(undefined),
+});
+export type ScoreRequest = z.infer<typeof scoreRequestSchema>;
+
 /** Opaque start token from POST /api/mocktest/start (base64url). */
 export const START_TOKEN = /^[A-Za-z0-9_-]{20,64}$/;
 

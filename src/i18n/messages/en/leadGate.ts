@@ -8,7 +8,9 @@
  *
  * Honesty rules (plan §6): say up front that a number is needed; never say "verify" or "OTP
  * sent"; never pre-tick; never claim "saved" unless the server stored it; "Continue without
- * sharing" only in optional mode, with the same weight as the submit button.
+ * sharing" only in optional mode, with the same weight as the submit button; while the site shows
+ * sample data, say so up front, before any field (`sampleData`), and that sharing does not unlock
+ * official data (the privacy notice says the same: legal.privacy.toolContact.sample).
  */
 const leadGate = {
   heading: "One quick step to see your result",
@@ -50,6 +52,12 @@ const leadGate = {
   consentLink: "privacy notice",
   smallPrint:
     "No OTP is sent, so please use a number your family really uses. Aspire never records your answers, questions or photos.",
+  /**
+   * Shown under `lead`, before the fields, while the site shows sample data (GET /api/lead-gate
+   * `sample`; owner decision 21 Oct 2026: gate now, with an honest note). Tools add no copy of their own.
+   */
+  sampleData:
+    "Results on this site currently use sample data while Aspire adds its official data. Sharing your details does not unlock official data: Aspire will contact you with real guidance.",
   /** `{link}` is the sign-in link (text: signInLink). */
   signIn: "Have an Aspire student or parent account? {link}",
   signInLink: "Sign in instead",

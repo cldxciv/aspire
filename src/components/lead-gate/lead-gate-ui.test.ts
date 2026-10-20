@@ -7,22 +7,38 @@ import type { Locale } from "@/i18n/config";
 import { messagesFor } from "@/i18n/messages";
 import { LEAD_GATE_CONSENT_VERSION, LEAD_GATE_ERRORS, type LeadGateStatusData } from "@/lib/lead-gate/contract";
 
-import { fetchLeadGateStatus, forgetLeadGate, sendLeadGateUsage, submitLeadGate } from "./lead-gate-client";
+import { fetchLeadGateStatus, forgetLeadGate, sendLeadGateUsage, submitLeadGate, type LeadGateStatusOutcome } from "./lead-gate-client";
 import {
   buildLeadGatePayload,
   leadGateContextFrom,
   localizeLeadGateError,
   validateLeadGatePayload,
 } from "./lead-gate-form-model";
-import { HINT_KEY, HINT_MAX_AGE_MS, LeadGateStore, SKIP_KEY, type LeadGateState, type LeadGateStoreDeps } from "./lead-gate-store";
+import {
+  HINT_KEY,
+  HINT_MAX_AGE_MS,
+  LeadGateStore,
+  SAMPLE_MAX_REQUESTS,
+  SAMPLE_RETRY_MS,
+  SKIP_KEY,
+  type LeadGateState,
+  type LeadGateStoreDeps,
+} from "./lead-gate-store";
 import { LeadGateForm } from "./LeadGateForm";
 import { LeadGateIdentity } from "./LeadGateIdentity";
 import { LeadGateNote } from "./LeadGateNote";
 import { useLeadGate } from "./use-lead-gate";
 
 const NOW = Date.UTC(2026, 9, 21, 6, 0, 0);
-const LOCKED: LeadGateStatusData = { mode: "required", unlocked: false, via: null, recordsUse: false, expiresAt: null };
-const PASS: LeadGateStatusData = { mode: "required", unlocked: true, via: "pass", recordsUse: true, expiresAt: new Date(NOW + 180 * 864e5).toISOString() };
+const LOCKED: LeadGateStatusData = { mode: "required", unlocked: false, via: null, recordsUse: false, expiresAt: null, sample: false };
+const PASS: LeadGateStatusData = {
+  mode: "required",
+  unlocked: true,
+  via: "pass",
+  recordsUse: true,
+  expiresAt: new Date(NOW + 180 * 864e5).toISOString(),
+  sample: false,
+};
 
 function fakeDeps(overrides: Partial<LeadGateStoreDeps> = {}) {
   const map = new Map<string, string>();
@@ -153,6 +169,88 @@ describe("LeadGateStore", () => {
     expect(map.has(HINT_KEY)).toBe(false);
   });
 
+  it("keeps the server's `sample` flag (sample data still locks: owner decision 21 Oct 2026)", async () => {
+    const { deps } = fakeDeps({ fetchStatus: vi.fn(async () => ({ kind: "ok" as const, data: { ...LOCKED, sample: true } })) });
+    const store = new LeadGateStore(deps);
+    expect(store.getSnapshot().sample).toBeNull();
+    expect(await store.ensure()).toBe(false);
+    expect(store.getSnapshot()).toMatchObject({ status: "locked", mode: "required", sample: true });
+    store.markRequired();
+    expect(store.getSnapshot().sample).toBe(true);
+    await store.forget();
+    expect(store.getSnapshot().sample).toBe(true); // a site-wide fact, not this browser's
+
+    const open = new LeadGateStore(fakeDeps({ fetchStatus: vi.fn(async () => ({ kind: "ok" as const, data: { ...PASS, sample: true } })) }).deps);
+    await open.ensure();
+    expect(open.getSnapshot()).toMatchObject({ status: "open", sample: true });
+  });
+
+  it("loadSample: one status request when unknown (hint, then the gate 401); keeps only `sample`, never reopens", async () => {
+    const { deps, map } = fakeDeps({ fetchStatus: vi.fn(async () => ({ kind: "ok" as const, data: { ...PASS, sample: true } })) });
+    map.set(HINT_KEY, JSON.stringify({ until: NOW + 1000, recordsUse: true, mode: "required" }));
+    const store = new LeadGateStore(deps);
+    expect(await store.ensure()).toBe(true);
+    expect(deps.fetchStatus).not.toHaveBeenCalled();
+    store.markRequired();
+    expect(store.getSnapshot()).toMatchObject({ status: "locked", sample: null });
+    store.loadSample();
+    store.loadSample();
+    await flush();
+    expect(deps.fetchStatus).toHaveBeenCalledTimes(1);
+    expect(store.getSnapshot()).toMatchObject({ status: "locked", via: null, sample: true, unlockSeq: 1 });
+    store.loadSample();
+    expect(deps.fetchStatus).toHaveBeenCalledTimes(1);
+
+    const never = new LeadGateStore(fakeDeps({ fetchStatus: vi.fn(async () => ({ kind: "failed" as const })), schedule: () => undefined }).deps);
+    never.markRequired();
+    never.loadSample();
+    await flush();
+    expect(never.getSnapshot()).toMatchObject({ status: "locked", sample: null });
+  });
+
+  it("loadSample: a failed answer (429, 5xx, timeout) is retried with backoff, then on the form's next ask, capped per page", async () => {
+    const timers: { run: () => void; ms: number }[] = [];
+    const schedule = vi.fn((run: () => void, ms: number) => void timers.push({ run, ms }));
+    const outcomes: LeadGateStatusOutcome[] = [{ kind: "failed" }, { kind: "failed" }, { kind: "ok", data: { ...LOCKED, sample: true } }];
+    const fetchStatus = vi.fn(async () => outcomes.shift() ?? ({ kind: "failed" } as const));
+    const store = new LeadGateStore(fakeDeps({ fetchStatus, schedule }).deps);
+    store.markRequired();
+    store.loadSample();
+    await flush();
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
+    expect(timers.map((timer) => timer.ms)).toEqual([SAMPLE_RETRY_MS[0]]);
+    store.loadSample(); // a retry is waiting: no second request
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
+    timers.shift()!.run();
+    await flush();
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+    expect(timers.map((timer) => timer.ms)).toEqual([SAMPLE_RETRY_MS[1]]);
+    timers.shift()!.run();
+    await flush();
+    expect(fetchStatus).toHaveBeenCalledTimes(3);
+    expect(store.getSnapshot()).toMatchObject({ status: "locked", via: null, sample: true });
+    expect(timers).toHaveLength(0);
+
+    // Every answer fails: the automatic retries run out, the form's focus asks again, never past the cap.
+    const down = vi.fn(async () => ({ kind: "failed" as const }));
+    const capped = new LeadGateStore(fakeDeps({ fetchStatus: down, schedule }).deps);
+    capped.markRequired();
+    capped.loadSample();
+    for (let step = 0; step < SAMPLE_RETRY_MS.length; step += 1) {
+      await flush();
+      timers.shift()!.run();
+    }
+    await flush();
+    expect(down).toHaveBeenCalledTimes(SAMPLE_RETRY_MS.length + 1);
+    expect(timers).toHaveLength(0);
+    for (let ask = 0; ask < SAMPLE_MAX_REQUESTS + 3; ask += 1) {
+      capped.loadSample();
+      await flush();
+    }
+    expect(down).toHaveBeenCalledTimes(SAMPLE_MAX_REQUESTS);
+    expect(capped.getSnapshot()).toMatchObject({ status: "locked", sample: null });
+  });
+
   it("skip works only in optional mode and is remembered (no nagging)", async () => {
     const required = new LeadGateStore(fakeDeps().deps);
     await required.ensure();
@@ -218,6 +316,9 @@ describe("transport", () => {
 
   it("parses the status defensively", async () => {
     expect(await fetchLeadGateStatus(json(200, { ok: true, data: PASS }))).toEqual({ kind: "ok", data: PASS });
+    expect(await fetchLeadGateStatus(json(200, { ok: true, data: { ...LOCKED, sample: true } }))).toEqual({ kind: "ok", data: { ...LOCKED, sample: true } });
+    const older = { mode: "required", unlocked: false, via: null, recordsUse: false, expiresAt: null }; // a server from before `sample`: never claim sample data
+    expect(await fetchLeadGateStatus(json(200, { ok: true, data: older }))).toEqual({ kind: "ok", data: { ...LOCKED, sample: false } });
     expect(await fetchLeadGateStatus(json(200, { ok: true, data: { mode: "loud" } }))).toEqual({ kind: "failed" });
     expect(await fetchLeadGateStatus(json(429, { ok: false, error: "rate_limited", message: "x" }))).toEqual({ kind: "failed" });
     expect(await fetchLeadGateStatus(vi.fn(async () => Promise.reject(new TypeError("offline"))))).toEqual({ kind: "failed" });
@@ -356,6 +457,30 @@ describe("components (static render)", () => {
     expect(html).not.toContain(esc(t.continueWithoutSaving));
   });
 
+  it.each(["en", "hi"] as const)("%s: while the site shows sample data, an honest line sits up front (after the lead, before any field) and describes the submit button", (locale) => {
+    const t = messagesFor(locale, "leadGate");
+    const html = render(locale, createElement(LeadGateForm, { tool: "mock-test", messages: t, store: storeWith({ mode: "required", status: "locked", sample: true }), focusOnMount: false }));
+    const note = html.indexOf(esc(t.sampleData));
+    expect(note).toBeGreaterThan(-1);
+    expect(note).toBeGreaterThan(html.indexOf(esc(t.lead)));
+    expect(note).toBeLessThan(html.indexOf("<form"));
+    expect(note).toBeLessThan(html.indexOf('name="studentName"'));
+    const submitAt = html.indexOf('type="submit"');
+    expect(submitAt).toBeGreaterThan(note);
+    const noteId = html.match(/<p id="([^"]*-sample)"/)?.[1] ?? "missing";
+    const noteAt = html.indexOf(`<p id="${noteId}"`);
+    expect(noteAt).toBeGreaterThan(-1);
+    expect(noteAt).toBeLessThan(note);
+    expect(html).toMatch(new RegExp(`<button type="submit"[^>]*aria-describedby="${noteId.replace(/[^\w-]/g, ".")}"`));
+    expect(html.slice(note - 400, note)).not.toMatch(/aria-live/); // not announced as a status change
+
+    for (const sample of [false, null]) {
+      const plain = render(locale, createElement(LeadGateForm, { tool: "mock-test", messages: t, store: storeWith({ mode: "required", status: "locked", sample }), focusOnMount: false }));
+      expect(plain).not.toContain(esc(t.sampleData));
+      expect(plain).not.toMatch(/<button type="submit"[^>]*aria-describedby=/);
+    }
+  });
+
   it("offers “Continue without sharing” only in optional mode", () => {
     const t = messagesFor("en", "leadGate");
     const html = render("en", createElement(LeadGateForm, { tool: "ask", messages: t, store: storeWith({ mode: "optional" }), headingLevel: 3, variant: "compact" }));
@@ -394,7 +519,7 @@ describe("components (static render)", () => {
       return null;
     }
     render("en", createElement(Host));
-    expect(captured).toMatchObject({ status: "unknown", gateOpen: false, formProps: { tool: "planner", enforced: false, store } });
+    expect(captured).toMatchObject({ status: "unknown", sample: null, gateOpen: false, formProps: { tool: "planner", enforced: false, store } });
     expect(typeof (captured as unknown as ReturnType<typeof useLeadGate>).formProps.hostId).toBe("string");
   });
 });

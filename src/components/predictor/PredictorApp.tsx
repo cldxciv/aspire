@@ -1,9 +1,14 @@
 "use client";
 
-import { Calculator } from "lucide-react";
-import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { predictorBand, toolEnquiryHref } from "@/components/forms/enquiry-context";
+import { Calculator, LoaderCircle } from "lucide-react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { toolEnquiryHref } from "@/components/forms/enquiry-context";
 import { AskRanchoLink } from "@/components/home/HomeToolsAskRancho";
+import { LeadGateForm } from "@/components/lead-gate/LeadGateForm";
+import { LeadGateIdentity } from "@/components/lead-gate/LeadGateIdentity";
+import { LeadGateNote } from "@/components/lead-gate/LeadGateNote";
+import { useLeadGate } from "@/components/lead-gate/use-lead-gate";
+import type { LeadGateStore } from "@/components/lead-gate/lead-gate-store";
 import { Badge, Button, ButtonLink } from "@/components/ui";
 import { useLocale } from "@/i18n/client";
 import type { Locale } from "@/i18n/config";
@@ -15,12 +20,10 @@ import {
   GENDERS,
   HOME_STATES,
   PREDICTOR_CATEGORIES,
-  bucketRange,
   hasSampleData,
   loadedExams,
   matchColleges,
   scoreTableFor,
-  shareBucketFor,
   valueRange,
   type CollegeMatchPrediction,
   type ExamScoreTable,
@@ -34,6 +37,13 @@ import {
 } from "@/lib/predictor/engine";
 import { formatNumber, formatPercentileRange, formatRankRange } from "./format";
 import { OptionList } from "./OptionList";
+import {
+  INITIAL_PREDICTOR_GATE,
+  PredictorGateController,
+  predictorSummary,
+  type PredictorGateState,
+  type PredictorSummary,
+} from "./predictor-gate";
 import { predictorRanchoDetail } from "./rancho";
 import { SharePanel } from "./SharePanel";
 import { WhatIfPanel } from "./WhatIfPanel";
@@ -78,17 +88,29 @@ function parseValue(raw: string): number {
 /**
  * Rank & college predictor (client). Runs the pure engine in the browser on the tables the
  * server decided may be shown (`data`; null → nothing renders here, the page shows "coming soon").
- * Nothing the student enters leaves the browser; the share card URL carries only exam + bucket.
+ *
+ * Lead gate (D-043, docs/lead-gate-plan.md §8.1; ./predictor-gate.ts): an explicit submit is
+ * validated first; an ok result is shown only once this browser is unlocked (contact details
+ * shared, signed in, gate off, or the gate failing open). Sample tables are gated too (owner
+ * decision, 21 Oct 2026); the form says so itself. The exact score, category, PwD, home state and
+ * gender never leave the browser: the gate and the usage note carry only the exam and the share
+ * card's score band. The share card URL carries only exam + bucket.
  */
 export function PredictorApp({
   data,
   messages,
+  leadGate,
   pageUrl,
+  gateStore,
 }: {
   data: PredictorData | null;
   messages: PredictorAppMessages;
+  /** Namespace `leadGate`, loaded by the server parent (D-028). */
+  leadGate: Messages<"leadGate">;
   /** Absolute URL of this page in the current locale (for share text). */
   pageUrl: string;
+  /** Tests only: a lead-gate store with fake dependencies. */
+  gateStore?: LeadGateStore;
 }) {
   const locale = useLocale();
   const t = messages;
@@ -102,8 +124,20 @@ export function PredictorApp({
   const [homeState, setHomeState] = useState<HomeState>("HP");
   const [gender, setGender] = useState<Gender>("other");
   const [submitted, setSubmitted] = useState(false);
+  const [gateState, setGateState] = useState<PredictorGateState>(INITIAL_PREDICTOR_GATE);
+  /** Exam + score band of the last ok submit (fallback when the live input no longer gives a result). */
+  const [pending, setPending] = useState<PredictorSummary | null>(null);
+  // The gate's steps and effects (./predictor-gate.ts); bound to this render's values below.
+  const [controller] = useState(() => new PredictorGateController());
+  const resultSection = useRef<HTMLElement>(null);
   const resultHeading = useRef<HTMLHeadingElement>(null);
   const valueInput = useRef<HTMLInputElement>(null);
+
+  const gate = useLeadGate({
+    tool: "predictor",
+    store: gateStore,
+    onUnlocked: ({ byThisHost }) => controller.unlocked(byThisHost),
+  });
 
   const table = exam ? scoreTableFor(exam, data) : undefined;
   const supports = table?.supports;
@@ -115,25 +149,51 @@ export function PredictorApp({
     : null;
   // Live after the first submit: every change re-runs the engine (cheap, pure, in the browser).
   const outcome = submitted && input ? matchColleges(input, data) : null;
-  const result: CollegeMatchPrediction | null = outcome?.status === "ok" ? outcome : null;
+  const shown = gateState.phase === "shown";
+  // Computed live, but shown only once this page is unlocked.
+  const result: CollegeMatchPrediction | null = shown && outcome?.status === "ok" ? outcome : null;
+  const checking = gateState.phase === "checking";
+  const gateFormOpen = (gateState.phase === "gated" || checking) && gate.gateOpen;
   const valueError =
     outcome?.status === "invalid" && outcome.issues.some((issue) => issue.field === "value")
       ? format(t.form.errorValue, { min: formatNumber(range.low, locale), max: formatNumber(range.high, locale) })
       : undefined;
+  // What the lead (the form's attribution) and the usage note carry: the exam + band of the result
+  // that will be shown, i.e. the live one (inputs edited while the contact form is open count),
+  // else the last ok submit.
+  const liveSummary = outcome?.status === "ok" ? predictorSummary(outcome, table) : null;
+
+  const { requestAccess, recordUse } = gate;
+  const store = gate.formProps.store;
+  useEffect(() => {
+    controller.connect({
+      requestAccess,
+      storeOpen: () => store.getSnapshot().status === "open",
+      summary: () => liveSummary,
+      recordUse: (usage) => recordUse({ ...usage, page: window.location.pathname }),
+      focusInResult: () => !!resultSection.current?.contains(document.activeElement),
+      // Let the new state render first (screen readers and small screens).
+      focusResult: () => requestAnimationFrame(() => resultHeading.current?.focus()),
+      render: setGateState,
+    });
+  }, [controller, requestAccess, recordUse, store, liveSummary]);
 
   if (!exam || !table || !supports) return null;
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+    event.preventDefault(); // synchronously, before the gate is asked
     setSubmitted(true);
     if (!input) return;
+    // Validate the tool's own input FIRST: an invalid value never opens the contact form.
     const check = matchColleges(input, data);
-    if (check.status === "ok") {
-      // Let the results render, then move focus to them (screen readers and small screens).
-      requestAnimationFrame(() => resultHeading.current?.focus());
-    } else {
+    if (check.status !== "ok") {
+      controller.submitInvalid();
       valueInput.current?.focus();
+      return;
     }
+    const summary = predictorSummary(check, table);
+    setPending(summary);
+    controller.submitOk(summary);
   }
 
   const sample = result ? result.band.sample || !!result.cutoffs?.sample : hasSampleData(data);
@@ -295,14 +355,24 @@ export function PredictorApp({
           </div>
         )}
 
-        <Button type="submit" className="w-full sm:w-auto sm:self-start">
-          <Calculator aria-hidden="true" className="size-4" />
-          {t.form.submit}
+        <LeadGateNote messages={leadGate} store={gateStore} />
+
+        <Button
+          type="submit"
+          aria-disabled={checking || undefined}
+          className="w-full aria-disabled:cursor-wait aria-disabled:opacity-70 sm:w-auto sm:self-start"
+        >
+          {checking ? (
+            <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
+          ) : (
+            <Calculator aria-hidden="true" className="size-4" />
+          )}
+          {checking ? t.form.checking : t.form.submit}
         </Button>
       </form>
 
       <div className="flex min-w-0 flex-col gap-6 lg:col-span-7">
-        <section aria-labelledby={`${ids}-result-title`} className="rounded-card border border-line bg-white p-4 shadow-soft sm:p-6">
+        <section ref={resultSection} aria-labelledby={`${ids}-result-title`} className="rounded-card border border-line bg-white p-4 shadow-soft sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2
               id={`${ids}-result-title`}
@@ -314,6 +384,17 @@ export function PredictorApp({
             </h2>
             {sample && <Badge variant="demo">{t.result.sample}</Badge>}
           </div>
+          {gateState.everShown && (
+            // Keyed by the store's unlock count: a fresh line each time this browser is unlocked
+            // again, so an earlier "no longer has your details" status never sits beside "shared".
+            <LeadGateIdentity
+              key={gate.unlockSeq}
+              messages={leadGate}
+              store={gateStore}
+              onForgotten={() => controller.forgotten()}
+              className="mt-1"
+            />
+          )}
           <div role="status" aria-live="polite" className="sr-only">
             {result
               ? `${t.result.crl[result.band.exam]}: ${formatRankRange(result.band.crl, locale, t.result.range)}. ${format(t.whatIf.counts, {
@@ -325,6 +406,15 @@ export function PredictorApp({
           </div>
           {result ? (
             <ResultBody result={result} messages={t} sample={sample} table={table} />
+          ) : gateFormOpen ? (
+            // Its own <form>, outside the predictor's input form; never inside the live region above.
+            <LeadGateForm
+              {...gate.formProps}
+              messages={leadGate}
+              summary={liveSummary ?? pending ?? undefined}
+              headingLevel={3}
+              className="mt-4"
+            />
           ) : (
             <p className="mt-3 text-sm text-muted">{t.result.empty}</p>
           )}
@@ -351,13 +441,7 @@ export function PredictorApp({
  * state, gender or anything personal. The form tells the visitor these are added to the enquiry.
  */
 export function predictorEnquiryHref(result: CollegeMatchPrediction, table: ExamScoreTable | undefined, locale: Locale): string {
-  if (!table) return toolEnquiryHref("predictor", locale, { exam: result.band.exam });
-  const bucket = shareBucketFor(result.band.input, table);
-  const range = bucketRange(bucket, table);
-  return toolEnquiryHref("predictor", locale, {
-    exam: result.band.exam,
-    band: predictorBand(bucket.mode, Math.floor(range.low), Math.floor(range.high)),
-  });
+  return toolEnquiryHref("predictor", locale, predictorSummary(result, table));
 }
 
 /**
@@ -458,8 +542,8 @@ export function ResultBody({
         )}
       </div>
 
-      {/* Lead capture = the enquiry form (D-033, D-039): the link carries only the exam + score band, which
-          the form discloses; nothing leaves the browser unless the visitor sends an enquiry. */}
+      {/* "Talk to a counsellor" = the enquiry form (D-039): the link carries only the exam + score band, which
+          the form discloses. Contact details before results come from the lead gate (D-043, PredictorApp). */}
       <div className="flex flex-col gap-3 rounded-control bg-gold-soft p-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm font-semibold text-[#5c4a12]">{t.result.ctaText}</p>
         <ButtonLink href={predictorEnquiryHref(result, table, locale)} size="sm" className="shrink-0">

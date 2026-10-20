@@ -17,6 +17,12 @@ export type AskFailureKind =
   | "validation"
   | "blocked"
   | "interrupted"
+  /**
+   * The lead gate's 401 (`X-Lead-Gate: required`, docs/lead-gate-plan.md §5.6): share contact
+   * details once before Rancho answers. Only from `isLeadGateResponse(response)`, never from a
+   * status code alone (any other 401 is not the gate). The chat holds the question and shows the form.
+   */
+  | "gate"
   | "generic";
 
 export interface AskFailure {

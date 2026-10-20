@@ -9,7 +9,7 @@ import { htmlLang } from "@/i18n/config";
 import { format } from "@/i18n/format";
 import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
-import { FUNNEL_STAGES, LEAD_STAGES, type CrmPermissions, type FunnelCount, type FunnelReport } from "@/lib/crm/types";
+import { FUNNEL_STAGES, LEAD_STAGES, type CrmPermissions, type FunnelCount, type FunnelReport, type GateDayCount } from "@/lib/crm/types";
 import { exportHref } from "./api";
 import {
   centreLabel,
@@ -177,6 +177,82 @@ function CountTable({
         </tbody>
       </table>
     </TableFrame>
+  );
+}
+
+/** Days shown in the per-day table (newest first); the totals row always covers the whole range. */
+const GATE_DAYS_SHOWN = 92;
+
+/**
+ * Lead gate (WP9, plan §3 "daily count of gate leads"): free-tool contact forms per IST day, split
+ * into new families and families already on file, with a totals row.
+ */
+export function GateDailyTable({ days, locale, t }: { days: GateDayCount[]; locale: Locale; t: CrmMessages }) {
+  const r = t.reports;
+  const c = r.gateColumns;
+  if (days.length === 0) return <p className="text-sm text-muted">{r.gateEmpty}</p>;
+  const totals = days.reduce((sum, day) => ({ newFamilies: sum.newFamilies + day.newFamilies, knownFamilies: sum.knownFamilies + day.knownFamilies }), {
+    newFamilies: 0,
+    knownFamilies: 0,
+  });
+  const shown = days.slice(0, GATE_DAYS_SHOWN);
+  const max = Math.max(...shown.map((day) => day.newFamilies + day.knownFamilies), 0);
+  return (
+    <>
+      {days.length > shown.length && (
+        <p className="mb-3 text-sm text-muted">{format(r.gateTruncated, { shown: count(shown.length, locale), all: count(days.length, locale) })}</p>
+      )}
+      <TableFrame labelledBy="crm-report-gate">
+        <table className="w-full min-w-[30rem] border-collapse text-sm">
+          <thead className="bg-[#f4f7fb]">
+            <tr>
+              <th scope="col" className={th}>
+                {c.day}
+              </th>
+              <th scope="col" className={cn(th, "w-2/5")}>
+                {c.total}
+              </th>
+              <th scope="col" className={cn(th, "text-right")}>
+                {c.newFamilies}
+              </th>
+              <th scope="col" className={cn(th, "text-right")}>
+                {c.knownFamilies}
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {shown.map((day) => {
+              const total = day.newFamilies + day.knownFamilies;
+              return (
+                <tr key={day.day}>
+                  <th scope="row" className={cn(td, "text-left font-semibold text-ink")}>
+                    <time dateTime={day.day}>{dayLabel(day.day, locale)}</time>
+                  </th>
+                  <td className={td}>
+                    <span className="flex items-center gap-2">
+                      <Bar value={total} max={max} />
+                      <span className="w-10 shrink-0 text-right font-bold tabular-nums">{count(total, locale)}</span>
+                    </span>
+                  </td>
+                  <td className={cn(td, "text-right tabular-nums")}>{count(day.newFamilies, locale)}</td>
+                  <td className={cn(td, "text-right tabular-nums")}>{count(day.knownFamilies, locale)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot className="border-t-2 border-line bg-[#f8fafc]">
+            <tr>
+              <th scope="row" className={cn(td, "text-left font-extrabold text-navy")}>
+                {r.gateTotal}
+              </th>
+              <td className={cn(td, "font-extrabold tabular-nums")}>{count(totals.newFamilies + totals.knownFamilies, locale)}</td>
+              <td className={cn(td, "text-right font-extrabold tabular-nums")}>{count(totals.newFamilies, locale)}</td>
+              <td className={cn(td, "text-right font-extrabold tabular-nums")}>{count(totals.knownFamilies, locale)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </TableFrame>
+    </>
   );
 }
 
@@ -368,6 +444,12 @@ export function ReportsView({
             </PortalPanel>
           )}
         </>
+      )}
+
+      {report.gateDaily && (
+        <PortalPanel id="crm-report-gate" title={r.gateTitle} description={r.gateDescription}>
+          <GateDailyTable days={report.gateDaily} locale={locale} t={t} />
+        </PortalPanel>
       )}
 
       <PortalPanel id="crm-report-export" title={r.exportTitle}>

@@ -7,6 +7,7 @@ import { getLocale, getMessages } from "@/i18n/server";
 import { getAllMockTestIds, getVisibleMockTest, runnerPayload } from "@/lib/mocktest/catalog";
 import type { RunnerTest } from "@/lib/mocktest/types";
 import type { MocktestMessages } from "./format";
+import { MocktestLeadGateMessages } from "./lead-gate";
 
 /**
  * Shared server shell of the per-attempt pages (result, certificate, report): breadcrumbs + the
@@ -45,7 +46,13 @@ export async function AttemptPage({
   kind: AttemptPageKind;
   render: (test: RunnerTest, t: MocktestMessages) => ReactNode;
 }) {
-  const [locale, t, tc, tTools] = await Promise.all([getLocale(), getMessages("mocktest"), getMessages("common"), getMessages("tools")]);
+  const [locale, t, tc, tTools, tGate] = await Promise.all([
+    getLocale(),
+    getMessages("mocktest"),
+    getMessages("common"),
+    getMessages("tools"),
+    getMessages("leadGate"),
+  ]);
   const test = getVisibleMockTest(testId);
   if (!test) notFound();
   const payload = runnerPayload(test);
@@ -73,7 +80,10 @@ export async function AttemptPage({
         />
       </div>
       <Container className="py-8 md:py-10">
-        <Suspense fallback={<p className="py-10 text-center text-muted">{t.common.loading}</p>}>{render(payload, t)}</Suspense>
+        <Suspense fallback={<p className="py-10 text-center text-muted">{t.common.loading}</p>}>
+          {/* The result view may ask for contact details before the score (lead gate, plan §8.4). */}
+          <MocktestLeadGateMessages messages={tGate}>{render(payload, t)}</MocktestLeadGateMessages>
+        </Suspense>
       </Container>
     </>
   );

@@ -1,8 +1,25 @@
 # Lead gate: contact details once before free tools' results
 
-Status (21 Oct 2026): **core implemented by GATE-CORE, switched OFF by default.** Tool integrations (WP2–WP9) and the
-privacy/legal work (WP10) are pending. Proposed decision **D-043** (supersedes D-033 "lead capture = link to the
-enquiry form" and partly D-034 "guests' data stays in their browser").
+Status (21 Oct 2026): **core implemented by GATE-CORE; tool integrations (WP2–WP9) and the privacy/legal work (WP10)
+being built for one release.** `LEAD_GATE` still defaults to `off` in code; the deployment sets it. Decision **D-043**
+(supersedes D-033 "lead capture = link to the enquiry form" and partly D-034 "guests' data stays in their browser").
+
+> **Owner decision, 21 Oct 2026 — "On now, with an honest note."** Asked whether to wait for official data, the owner
+> chose to switch the gate on now on the live (demo) site, which runs on sample data. Binding overrides of this plan:
+> 1. **Sample data does NOT skip the gate.** Wherever this plan says "gate only when the data is not sample" or
+>    `if (isSample || await gate.requestAccess())` (critique 0.0, §8, §8.1), the host gates anyway. `<LeadGateForm>`
+>    itself shows the honest line (`leadGate.sampleData`: "Results on this site currently use sample data while Aspire
+>    adds its official data. Sharing your details does not unlock official data: Aspire will contact you with real
+>    guidance.") while GET /api/lead-gate reports `sample`;
+>    tools add no copy of their own. `LEAD_GATE_ALLOW_SAMPLE_DATA` is gone.
+> 2. **Mode at launch: `required`** (§15 Q1 answered), with the flood breaker's degrade-to-`optional` kept.
+> 3. Plan defaults kept: pass 180 days; mock tests ≥ 60 min ask at the start, shorter ones at the result; the homepage
+>    planner countdown is not gated; data the family already has is never gated; signed-in users skip; Rancho notes
+>    record only "used".
+>
+> The §10 preconditions were therefore NOT all met at switch-on (privacy `{tbc}` items, counsel on TG-1/TG-2/TG-4,
+> retention purge CRM-3). The risks are flagged for counsel in docs/aspire-approval-checklist.md §17 (TG-1–TG-9,
+> LG-2), TG-2 (verifiable parental consent) first.
 
 Owner request (verbatim): *"every tool should be a data collection point before showing the result of any tool collect
 the contact information of the submitee."*
@@ -19,7 +36,7 @@ Lead's binding defaults, and where this plan deviates (each deviation is flagged
 | Reuse capture/dedupe/assignment pipeline | Kept (`captureLead`), ⚑ with gate rules: an existing lead is never reopened, re-assigned or given a weaker consent. `LEAD_GATE_ASSIGN=none` offers an Unassigned queue. |
 | Rate limits that don't block a family using several tools | Kept: one unlock per browser; generous status/usage limits; IPv6 per /64; a per-phone cap that never locks a family out. |
 | Privacy notice + DPDP parental-consent risk flagged | §11 (en + hi drafts), §12 (checklist section 17). |
-| (implicit) on now | ⚑ **Off by default and forced off while sample data is shown** (the live site runs on placeholder data: a real family must never trade a phone number for a made-up rank, D-032). |
+| (implicit) on now | ~~⚑ Off by default and forced off while sample data is shown~~ — **overridden by the owner (21 Oct 2026): on now, `required`, with the honest sample-data line in the form** (see the box above). |
 
 ---
 
@@ -47,7 +64,7 @@ Critique 0 = privacy/legal lens, critique 1 = abuse/UX/engineering lens.
 
 | # | Finding (severity) | Decision | What changed / why |
 |---|---|---|---|
-| 0.0 | Demo site would trade real numbers for SAMPLE results (blocker) | **Accepted** | `LEAD_GATE` defaults to `off`; forced `off` while `showPlaceholderContent()` (unless `LEAD_GATE_ALLOW_SAMPLE_DATA=true`, staging QA only); hosts also skip the gate when their result comes from sample data (predictor `hasSampleData`, sample mock tests). Turning it on is an explicit `.env` change after the §10 preconditions. |
+| 0.0 | Demo site would trade real numbers for SAMPLE results (blocker) | **Overridden by the owner (21 Oct 2026)** | Was: forced `off` while `showPlaceholderContent()` and hosts skip the gate on sample data. Now: sample data never switches the gate off or skips it; the form says plainly that results use sample data and that Aspire will contact the family (`leadGate.sampleData`); the privacy notice says the same and that sharing details does not unlock official data (`legal.privacy.toolContact.sample`). Risk recorded for counsel as TG-3 (bait and switch). `LEAD_GATE` still defaults to `off` in code; switching on is an explicit `.env` change. |
 | 0.1 | Tool-use log tracks children for marketing (major) | **Partly** | Recording stays (binding default) but: own switch `LEAD_GATE_RECORD_USE=all|parent|off` (counsel can stop or limit it without code); Rancho records only that it was used (no subject, no photo flag); mock tests record only the first scoring of an attempt (never re-scores or print views); 90-day TTL; never bumps `last_activity_at`. **Rejected:** default-off recording, because the lead made recording a binding default; flagged as TG-2. |
 | 0.2 | One tick, three purposes; lead consent overwritten (major) | **Partly** | Accepted: each pass stores its `consent_version`; a pass whose version is no longer accepted is dead (re-ask); a gate capture never overwrites an existing lead's consent fields (the submission activity keeps the gate sentence); lead detail shows the sentence matching the lead's version; tests prove each endpoint rejects the other's version. Rejected for v1: a second optional "note my tool use" tick (binding default is one tick; the switch covers "no recording"; `record_use` per pass already allows an opt-in tick later without a schema change). |
 | 0.3 | Unlocks reopen lost leads; no do-not-contact (major) | **Partly** | Accepted: gate captures never reopen or re-assign (submission gets `onLostLead`); "Stop Aspire contacting me" closes the lead as `not_interested`, which the gate never reopens; TG-4 reworded as a question. Deferred (§9): a do-not-contact list that survives erase (needs an HMAC phone key, a secret and staff UI). Until then an erased number that comes back starts a new lead (tested, documented). |
@@ -56,7 +73,7 @@ Critique 0 = privacy/legal lens, critique 1 = abuse/UX/engineering lens.
 | 0.6 | Shared computers: 365-day pass, first child's name (major) | **Mostly** | No name anywhere (also fixes 1.0); lifetime 180 days; "Not you?" + sign-out clear it; kiosk guidance for centre machines (gate off on kiosks or "Not you?" after each use). Rejected: session-only pass / "remember me" tick and a same-day usage window — they contradict "asked once per browser". |
 | 0.7 | Privacy notice `{tbc}`; no withdrawal (major) | **Accepted** | Filling `about.p2`, `rights.p1/p2`, `retention.p1`, `tools.p2`, `access.p2` is a hard precondition (§10). Self-service withdrawal built (`DELETE /api/lead-gate?withdraw=1`). Notice drafts include attribution data (§11). The inline form itemises data, purpose, "no OTP", how long and how to stop. |
 | 0.8 | Tool use restarts retention; no purge job (major) | **Accepted** | `recordToolUse` never touches `last_activity_at`; `tool_use` rows expire after 90 days (hourly sweep). The retention purge for unconverted `source=tool` leads (CRM-3) is a precondition, owned by CRM-CORE. |
-| 0.9 / 1.16 | Gating data the family already has (major) | **Accepted as a rule** | Never gate existing data: stored guest plans and plan edits stay open (only creating the first plan is gated); mock attempts started before `LEAD_GATE_SINCE` or with a local score stay open; the homepage countdown is not gated. |
+| 0.9 / 1.16 | Gating data the family already has (major) | **Accepted as a rule** | Never gate existing data: stored guest plans and plan edits stay open (only creating the first plan is gated); mock attempts started before `LEAD_GATE_SINCE` or with a local score stay open; the homepage countdown is not gated. **21 Oct 2026: the "local score" exemption is built** (the result page sends `seen: true` for an attempt that already has a score on the device; the route scores it without a pass and records no tool use). The privacy notice still promises only plans and pre-switch-on attempts; it may now also promise scores already seen (owner's choice). |
 | 0.10 | Optional-mode nagging (minor) | **Accepted** | "Continue without sharing" remembered 30 days (`aspire.leadgate.skip.v1`, cleared by sign-out); same-size button as submit. |
 | 0.11 | No "Sign in instead" (minor) | **Accepted** | Every form links to `/login`. Limitation: `/login?next=` only accepts portal paths, so the visitor lands in the portal, not back on the tool (auth owner's call). |
 | 0.12 | Copy list incomplete; HT-1/HT-2 contradict (minor) | **Accepted** | Full list in §11.4; the "won't be asked again" line now says "in this browser for up to 6 months, unless you clear cookies, sign out or choose 'Not you?'"; the cookie is described as not essential. |
@@ -128,11 +145,11 @@ entries render with the generic "other" label.
 
 | Variable | Values | Effect |
 |---|---|---|
-| `LEAD_GATE` | `off` (default) · `optional` · `required` | Forced `off` with `ENQUIRY_STORE=off`, while sample data is shown, or without a secret in production. Unknown value → off + warning. |
+| `LEAD_GATE` | `off` (default) · `optional` · `required` | Forced `off` with `ENQUIRY_STORE=off` or without a secret in production (NOT while sample data is shown: owner decision 21 Oct 2026). Unknown value → off + warning. Live site: `required`. |
 | `LEAD_GATE_SECRET` | ≥ 32 chars | HMAC key for the cookie. Required in production (dev: per-process fallback). Rotating it re-asks every browser. |
 | `LEAD_GATE_RECORD_USE` | `all` (default) · `parent` · `off` | Which passes note tool use. Unknown → `off`. |
 | `LEAD_GATE_ASSIGN` | `auto` (default) · `none` | Auto-assign new gate leads, or leave them Unassigned. |
-| `LEAD_GATE_ALLOW_SAMPLE_DATA` | `true` | Staging QA only. |
+| ~~`LEAD_GATE_ALLOW_SAMPLE_DATA`~~ | — | Removed with the owner decision of 21 Oct 2026 (sample data no longer forces the gate off). |
 | `LEAD_GATE_MAX_NEW_LEADS_PER_HOUR` | int (default 300) | Flood breaker. |
 | `LEAD_GATE_SINCE` | ISO date-time | When the gate was switched on: earlier mock attempts are never gated. |
 
@@ -273,25 +290,26 @@ Also revokes the pass behind `aspire_tool_pass` and expires the cookie.
 
 What the gate cannot do (tell the owner plainly): the predictor, homepage widget and planner run in the browser with
 their tables shipped to the page — their gate is lead capture UX, not access control (devtools bypass it).
-`/api/predictor/card` stays public for share previews (a crafted URL shows a band; accepted). Only `/api/ask` and
-`/api/mocktest/score` are truly enforced.
+`/api/predictor/card` stays public for share previews (a crafted URL shows a band; accepted). Only `/api/ask` is truly enforced.
+`/api/mocktest/score` is lead capture too: guests keep attempts in the browser, so the route records the pass and notes the test (21 Oct 2026, MOCKTEST fix).
 
 ---
 
 ## 8. Per-tool integration points (owners: see §14)
 
-Pattern for a browser-only tool:
+Pattern for a browser-only tool (owner decision 21 Oct 2026: sample data is gated too, so there is no `isSample`
+short-cut; the form shows the sample-data line itself):
 
 ```tsx
 const gate = useLeadGate({ tool: "predictor", onUnlocked: () => show(pendingResult) });
 async function onSubmit(e) { e.preventDefault(); const r = compute(); if (r.status !== "ok") return showErrors(r);
-  if (isSample || (await gate.requestAccess())) show(r); }
+  if (await gate.requestAccess()) show(r); }
 {gate.gateOpen && <LeadGateForm {...gate.formProps} messages={tGate} summary={{ exam, band }} />}
 // after a result is shown: gate.recordUse({ exam, band, page: location.pathname }); under it: <LeadGateIdentity messages={tGate} />
 ```
 
-8.1 **Predictor (full page)** — PredictorApp: validate first (`matchColleges` / `valueError`), gate only when the
-outcome is `ok` and the data is not sample (`hasSampleData`); call `preventDefault` synchronously and show a pending
+8.1 **Predictor (full page)** — PredictorApp: validate first (`matchColleges` / `valueError`), gate when the
+outcome is `ok` (~~and the data is not sample~~ — sample data is gated too, owner decision 21 Oct 2026); call `preventDefault` synchronously and show a pending
 label while `requestAccess()` runs; render the panel form in the result `<section>` (outside the input form);
 `onUnlocked` → show the result, focus its heading; `recordUse({ exam, band })` per explicit submit with an ok result
 (band from `shareBucketFor` + `bucketRange` + `predictorBand`); live what-if edits are not re-gated;
@@ -331,17 +349,36 @@ Rancho's in-chat tool cards (e.g. predict_rank) are covered by the `/api/ask` ga
 
 ## 10. Rollout preconditions and rollback
 
+**Owner decision 21 Oct 2026: switched on (`required`) before these all held** — the sample-data condition is replaced
+by the honest line in the form and the notice; the others remain open and are tracked for counsel in
+docs/aspire-approval-checklist.md §17. Still required on the server: `LEAD_GATE=required`, `LEAD_GATE_SECRET` (≥ 32
+chars) and `LEAD_GATE_SINCE` = the switch-on time. Original list:
 Turn `LEAD_GATE` on only when ALL hold: official predictor tables and real mock tests are loaded (sample data off);
 the privacy notice `{tbc}` items are filled and §11 is published in en + hi; counsel has answered TG-1, TG-2, TG-4
 (recommendation: start with `optional`); the retention purge (CRM-3) exists; WP2–WP9 shipped in ONE release with the
 copy changes of §11.4; HT-1/HT-2 rewritten; `LEAD_GATE_SECRET` set; `LEAD_GATE_SINCE` set to the switch-on time;
 `/` , `/tools/predictor`, `/tools/planner` still static in the `next build` route table.
 Rollback: `LEAD_GATE=off` (or `optional`) in `.env`, then `docker compose up -d` (recreate; no rebuild). Pages need no
-change because the note reads the live mode.
+change because the note reads the live mode, and the privacy notice says the tools "may ask".
 
 ---
 
 ## 11. Privacy notice and copy (WP10, lead-owned files: legal.ts en/hi + privacy page)
+
+**Applied 21 Oct 2026 (WP10)** in src/i18n/messages/{en,hi}/legal.ts (`privacy.toolContact`, `cookies.p1/p3`,
+`collect.columnTools` + `rows[].tools`, `tools.items`, plus `meta.description`, `hero.lead`, `about.p1`,
+`collect.title/intro/caption/hidden/also`, `protecting.p1/p2` (the contact step's limits and logs), `retention.p1`,
+`rights.p1`) and the privacy page (section id
+`tool-contact-details`, before "Student tools"; test `privacy-page.test.ts`). Deviations from the drafts below, for the
+owner decision: the section describes the step as current but mode-agnostic ("may ask once …", not "When this is
+switched on", so a rollback to `optional`/`off` leaves it true), adds a `sample` paragraph (results use sample data
+for now; sharing details does not unlock official data — rendered only while `showPlaceholderContent()` is on, the
+switch the form's `leadGate.sampleData` line uses; remove it when official data replaces the samples), says when mock
+tests ask (≥ 60 min at the start), that plans already made and mock tests started before switch-on stay open (scores already seen
+are exempt too since the 21 Oct MOCKTEST fix), that no notes are made for enquiry-unlocked browsers or signed-in users, that a skip is remembered 30
+days, and that a student should share only with a parent's or guardian's agreement; p3 adds the date/time and consent
+sentence (version + language); the Rancho item adds the per-family daily count (§5.6 step 5). Hindi uses रैंचो (not
+"Rancho") and "मुफ़्त विद्यार्थी टूल्स" to match the rest of legal.ts.
 
 ### 11.1 New section "Free student tools: contact details before results"
 **en**
@@ -434,6 +471,9 @@ Use mode-agnostic wording (e.g. "Free. You may be asked for a contact number onc
 
 ## 12. DPDP / legal checklist — proposed section 17 "Contact details before tool results (added 21 Oct 2026)"
 
+**Applied 21 Oct 2026** as docs/aspire-approval-checklist.md §17 (TG-1–TG-9 + LG-2), with the owner's decision, the
+§10 conditions that were not met at switch-on, and TG-2 (verifiable parental consent) first.
+
 - **TG-1 — Consent must be free, specific, informed, unconditional, limited to necessary data (DPDP Act 2023 s.6(1)).**
   Making marketing contact a condition of a free calculation may be held not "necessary" or not freely given. Decide
   `required` vs `optional` (config only). Recommendation: launch `optional` until counsel signs off.
@@ -518,13 +558,15 @@ shared-device.ts (+ timing.test.ts expectation); .env.example; this file.
 WP2 predictor (§8.1) · WP3 homepage widget (§8.2–8.3) · WP4 mock tests incl. `/score` (§5.7, §8.4) · WP5 planner
 (§8.5) · WP6 `/api/ask` (§5.6) · WP7 Ask page + /rancho · WP8 floating chat (§8.6) · WP9 CRM UI + reports + MCP strip
 (§3, 0.13) · WP10 lead: privacy notice §11, checklist §12, D-043, docs/crm.md + docs/api.md + docs/mcp.md +
-docs/integration-status.md, Hindi register, rollout §10. CRM-CORE: retention purge (CRM-3).
+docs/integration-status.md, Hindi register, rollout §10 (**done 21 Oct 2026**, see the §11 and §12 notes; D-043 and the
+owner's decision are recorded at the top of this file). CRM-CORE: retention purge (CRM-3), still open.
 
 ---
 
 ## 15. Open questions for the owner
 
-1. Launch mode: `optional` (recommended until counsel answers TG-1/TG-2) or `required`?
+1. ~~Launch mode: `optional` (recommended until counsel answers TG-1/TG-2) or `required`?~~ **Answered 21 Oct 2026:
+   `required`, on now with an honest sample-data note** (flood breaker kept). Counsel review: checklist §17 TG-1.
 2. Tool-use notes: `all` (current default per the lead), `parent`, or `off` until counsel answers TG-2?
 3. Gate leads: auto-assign like enquiries (default) or an Unassigned "Free tool users" queue (`LEAD_GATE_ASSIGN=none`)?
 4. Pass lifetime 6 months (proposed) — or 12 months?

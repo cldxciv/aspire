@@ -53,7 +53,7 @@ import { generatePassId, hashPassId, signPassToken, verifyPassToken } from "./to
  * Route handlers of /api/lead-gate (docs/lead-gate-plan.md §5), built from injectable deps so the
  * tests can drive the clock, limiters and failures. The real routes use `leadGateHandlers`.
  *
- *   GET    /api/lead-gate          status (mode, unlocked, via, recordsUse, expiresAt)
+ *   GET    /api/lead-gate          status (mode, unlocked, via, recordsUse, expiresAt, sample)
  *   POST   /api/lead-gate          share details once → CRM capture + pass cookie (201)
  *   DELETE /api/lead-gate          "Not you?" (forget this browser); ?withdraw=1 also withdraws consent
  *   POST   /api/lead-gate/usage    one use of a browser-only tool (predictor, planner)
@@ -127,7 +127,7 @@ export function createLeadGateHandlers(overrides: Partial<LeadGateHandlerDeps> =
         leadGateLog({ action: "status", outcome: "rate_limited" });
         return portalApiError("rate_limited", LEAD_GATE_SERVER_MESSAGES.rateLimited, { headers: retryAfter(limit.retryAfterSeconds) });
       }
-      return applyLeadGateCookies(portalApiItem(leadGateStatusData(access)), access);
+      return applyLeadGateCookies(portalApiItem(leadGateStatusData(access, deps.sampleData())), access);
     } catch (error) {
       unstable_rethrow(error);
       leadGateLog({ action: "status", outcome: "error", reason: leadGateExceptionReason(error) });

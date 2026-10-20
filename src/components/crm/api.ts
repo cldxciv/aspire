@@ -7,13 +7,34 @@ import { format } from "@/i18n/format";
 import { callApi, retryAfterMinutes, type ApiFailure, type ApiResult } from "@/lib/auth/client-api";
 import type {
   AssignmentRuleInput,
+  ConsentMethod,
   ContactChannel,
   ContactOutcome,
   CrmRole,
+  EditableLeadField,
+  EraseReason,
   LeadStage,
   LostReason,
+  ManualDuplicateMode,
+  ManualLeadSource,
   StaffInput,
 } from "@/lib/crm/types";
+
+/** Body of POST /api/crm/leads as the "Add enquiry" form sends it (empty optional fields left out). */
+export type NewLeadBody = {
+  source: ManualLeadSource;
+  studentName?: string;
+  guardianName?: string;
+  phone: string;
+  email?: string;
+  currentClass?: string;
+  programInterest?: string;
+  centreSlug?: string;
+  note?: string;
+  consent: true;
+  consentMethod: ConsentMethod;
+  onDuplicate: ManualDuplicateMode;
+};
 import type { CrmMessages } from "./format";
 
 export type CrmRequest = {
@@ -48,6 +69,18 @@ export const crmRequests = {
   },
   createTask(leadId: string, input: { title: string; dueAt: string }): CrmRequest {
     return { path: `${lead(leadId)}/tasks`, method: "POST", body: { title: input.title.trim(), dueAt: input.dueAt } };
+  },
+  /** "Add enquiry": a walk-in / phone / referral family (`onDuplicate: "report"` first, `"append"` for "Log a visit"). */
+  createLead(body: NewLeadBody): CrmRequest {
+    return { path: "/api/crm/leads", method: "POST", body };
+  },
+  /** "Edit details": only the changed fields; `null` clears one. */
+  updateDetails(leadId: string, fields: Partial<Record<EditableLeadField, string | null>>): CrmRequest {
+    return { path: lead(leadId), method: "PATCH", body: { fields } };
+  },
+  /** Admin only (D-042): wipes the family's personal data, keeps an anonymous stub. */
+  erase(leadId: string, reason: EraseReason): CrmRequest {
+    return { path: `${lead(leadId)}/erase`, method: "POST", body: { confirm: true, reason } };
   },
   completeTask(taskId: string): CrmRequest {
     return { path: `/api/crm/tasks/${encodeURIComponent(taskId)}`, method: "PATCH", body: { done: true } };

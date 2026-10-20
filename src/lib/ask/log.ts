@@ -18,6 +18,7 @@ export type AskLogOutcome =
   | "client_aborted" // the browser went away mid-answer
   | "not_configured" // no ANTHROPIC_API_KEY (503)
   | "rate_limited" // daily allowance used up (429)
+  | "gate_required" // lead gate: contact details not shared yet on this browser (401 X-Lead-Gate: required)
   | "forbidden" // same-origin check failed (403)
   | "bad_request" // 400 / 413 / 415
   | "validation_failed" // 422
@@ -78,7 +79,7 @@ export function askLog(entry: AskLogEntry): void {
   const level =
     entry.outcome === "error" || entry.outcome === "upstream_error"
       ? "error"
-      : entry.outcome === "answered"
+      : entry.outcome === "answered" || entry.outcome === "gate_required"
         ? "info"
         : "warn";
   // Explicit field picking: nothing else passed at runtime is ever written.

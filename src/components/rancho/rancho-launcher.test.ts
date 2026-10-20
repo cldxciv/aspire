@@ -28,7 +28,7 @@ function renderLauncher(locale: Locale, pathname: string | null): string {
     createElement(
       LocaleProvider,
       { locale } as ComponentProps<typeof LocaleProvider>,
-      createElement(RanchoLauncher, { messages: messagesFor(locale, "rancho") }),
+      createElement(RanchoLauncher, { messages: messagesFor(locale, "rancho"), gateMessages: messagesFor(locale, "leadGate") }),
     ),
   );
 }

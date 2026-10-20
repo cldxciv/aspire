@@ -133,6 +133,9 @@ describe("failures before the answer", () => {
     [503, { ok: false, error: "server_error", message: "Busy" }, { "Retry-After": "60" }, { kind: "busy" }],
     [403, { ok: false, error: "forbidden", message: "No" }, {}, { kind: "blocked" }],
     [500, { ok: false, error: "server_error", message: "x" }, {}, { kind: "generic" }],
+    // The lead gate's 401 (docs/lead-gate-plan.md §5.6): only with its header; any other 401 is not the gate.
+    [401, { ok: false, error: "unauthenticated", gate: "lead", message: "Share a contact number once." }, { "X-Lead-Gate": "required" }, { kind: "gate" }],
+    [401, { ok: false, error: "unauthenticated", message: "Sign in" }, {}, { kind: "generic" }],
   ] as const)("HTTP %i %j → %j", async (status, body, headers, failure) => {
     const answer = await ask(async () => jsonResponse(status, body, headers)).result;
     expect(answer).toEqual({ text: "", stop: null, meta: null, failure, cards: [] });
@@ -185,6 +188,7 @@ describe("RanchoChatPanel", () => {
         open: false,
         onClose: () => {},
         messages: messagesFor(locale, "rancho").panel,
+        gateMessages: messagesFor(locale, "leadGate"),
         locale,
         links: links(locale),
       }),

@@ -61,16 +61,24 @@ function PanelActions({ children }: { children: ReactNode }) {
  * Intro column beside a tabbed card from `lg`, stacked below. Each tab lets a visitor try the tool
  * in seconds, then go to the full tool:
  * - Rank predictor: exam + score/percentile → rank band, in the browser, on the score tables the
- *   server allows (sample tables labelled; none in production → description + link).
+ *   server allows (sample tables labelled; none in production → description + link). Lead gate
+ *   (docs/lead-gate-plan.md §8.2): the band shows after the visitor shares contact details once
+ *   per browser (compact form in the result slot; signed-in accounts skip it). The `leadGate`
+ *   messages are passed from here, so the section stays static; the gate's state is client-only.
  * - Mock tests: up to three visible tests with a Start link each (weekly / practice and sample
  *   tests labelled).
  * - Ask Rancho (Rancho is Aspire's existing snow leopard mascot, and the AI doubt solver at /tools/ask):
  *   what it does, example doubts (plain text, never put in a URL), the AI caveat. The decorative
  *   head mascot (`RanchoMascot`) marks its tab and sits beside the panel title.
- * - Study planner: exam + date → days left, computed in the browser.
+ * - Study planner: exam + date → days left, computed in the browser. Never gated (a public fact,
+ *   plan §8.3); only the full planner asks before a first plan.
  * The section is static (no request data): Rancho's "connected?" status and daily allowance are
- * left to /tools/ask. Nothing typed in the widget is stored or sent. No photos (D-030 photo budget);
- * the mascot is illustration, not a photo.
+ * left to /tools/ask. Exact scores and dates typed in the widget never leave the browser. What the
+ * predictor tab does send: the gate's status check (GET /api/lead-gate, client-side, once per page
+ * view, for the up-front note); the contact form (the visitor's details with the exam and score
+ * band); and, for a browser that shared details and whose pass records use, one note per "Predict"
+ * that ends in a band (exam, score band and page; never the exact score). The planner countdown
+ * sends nothing. No photos (D-030 photo budget); the mascot is illustration, not a photo.
  */
 export function HomeTools({ tools, locale, tone = "white" }: { tools: HomeToolsData; locale: Locale; tone?: SectionTone }) {
   const t = messagesFor(locale, "home").tools;
@@ -100,6 +108,7 @@ export function HomeTools({ tools, locale, tone = "white" }: { tools: HomeToolsD
             percentileHint: tp.form.percentileHint,
             errorValue: tp.form.errorValue,
             submit: tp.form.submit,
+            pending: tp.form.checking,
             empty: t.predictor.empty,
             crl: tp.result.crl,
             range: tp.result.range,
@@ -115,6 +124,7 @@ export function HomeTools({ tools, locale, tone = "white" }: { tools: HomeToolsD
             askRanchoContext: tp.result.askRanchoContext,
             askRanchoSample: tp.result.askRanchoSample,
           }}
+          gateMessages={messagesFor(locale, "leadGate")}
         />
       </div>
       <PanelActions>

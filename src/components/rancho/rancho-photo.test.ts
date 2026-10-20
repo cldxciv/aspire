@@ -293,7 +293,15 @@ describe("RanchoChatPanel composer", () => {
   it.each(["en", "hi"] as const)("has a camera button in the composer row and an image input that offers camera or gallery (%s)", (locale) => {
     const t = messagesFor(locale, "rancho").panel;
     const html = renderToStaticMarkup(
-      createElement(RanchoChatPanel, { id: "rancho-panel", open: false, onClose: () => {}, messages: t, locale, links: links(locale) }),
+      createElement(RanchoChatPanel, {
+        id: "rancho-panel",
+        open: false,
+        onClose: () => {},
+        messages: t,
+        gateMessages: messagesFor(locale, "leadGate"),
+        locale,
+        links: links(locale),
+      }),
     );
     // Camera button (accessible name "Add a photo"), first in the composer row, before the field and Send.
     const row = html.slice(html.indexOf('<div class="flex items-end gap-2">'));

@@ -10,8 +10,9 @@ const ROUTE = "lead_erase";
 type Context = { params: Promise<{ leadId: string }> };
 
 /**
- * POST /api/crm/leads/:leadId/erase — `{ confirm: true }`. Admin only (D-042): wipes the lead's
- * personal data and keeps an anonymised stub. → `{ leadId, erasedAt }`. Idempotent. Audited.
+ * POST /api/crm/leads/:leadId/erase — `{ confirm: true, reason? }` (reason: one of ERASE_REASONS,
+ * kept on the erase entry and in the audit row). Admin only (D-042): wipes the lead's personal
+ * data and keeps an anonymised stub. → `{ leadId, erasedAt }`. Idempotent. Audited.
  */
 export async function POST(request: NextRequest, ctx: Context) {
   try {
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest, ctx: Context) {
     if (!isCrmId(leadId)) return portalApiError("bad_request", CRM_API_MESSAGES.invalidId);
     const body = await parseCrmBody(request, eraseSchema, ROUTE);
     if (!body.ok) return body.response;
-    const result = eraseLead(auth.viewer, leadId, Date.now());
+    const result = eraseLead(auth.viewer, leadId, Date.now(), { reason: body.data.reason ?? null });
     if (result.ok) crmLog(ROUTE, "success");
     return crmResponse(result);
   } catch (error) {

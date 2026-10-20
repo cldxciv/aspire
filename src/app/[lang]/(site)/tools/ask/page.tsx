@@ -27,13 +27,16 @@ const HONEST_ITEMS = ["ai", "scope", "sources", "exams", "privacy"] as const;
  * "AI doubt solver" pill). The page itself is static; the client tool fetches `GET /api/ask` for
  * "connected?" and today's allowance, so without ANTHROPIC_API_KEY it says "Rancho isn't
  * connected yet" and the rest of the page (how it works, honest notes, enquiry link) stays useful.
+ * The lead gate (contact details once per browser before Rancho's first answer, docs/lead-gate-plan.md
+ * §8.6) is client-only too: the page passes its `leadGate` strings and stays static.
  */
 export default async function AskAspirePage() {
-  const [locale, t, tc, tTools] = await Promise.all([
+  const [locale, t, tc, tTools, tGate] = await Promise.all([
     getLocale(),
     getMessages("ask"),
     getMessages("common"),
     getMessages("tools"),
+    getMessages("leadGate"),
   ]);
   const enquiryHref = localePath("/admissions#enquiry", locale);
 
@@ -57,6 +60,7 @@ export default async function AskAspirePage() {
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,340px)] lg:items-start">
           <AskAspire
             messages={t}
+            gateMessages={tGate}
             locale={locale}
             links={{
               enquiry: enquiryHref,

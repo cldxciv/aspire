@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, LoaderCircle } from "lucide-react";
+import { ArrowRight, Info, LoaderCircle } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { flushSync } from "react-dom";
@@ -39,6 +39,11 @@ import { useLeadGateState } from "./use-lead-gate";
  * - Outcomes: unlocked → the store opens and the host's useLeadGate `onUnlocked` fires; server or
  *   network trouble on a browser-only tool also offers "Show my result without saving"
  *   (fail-open, critique 1.5); optional mode offers "Continue without sharing" with the same weight.
+ * - Sample data (store `sample`, from GET /api/lead-gate): an honest line up front, right under the
+ *   lead and before any field, says results currently use sample data, that sharing does not unlock
+ *   official data, and that Aspire will contact the family (owner decision 21 Oct 2026: gate now,
+ *   with that note; TG-3 bait-and-switch). The submit button points to it (aria-describedby). Hosts
+ *   never add their own copy of it. If `sample` is still unknown, focusing the form asks again.
  * - Copy: the `leadGate` namespace, passed in by the host's server parent (D-028).
  */
 
@@ -90,6 +95,7 @@ export function LeadGateForm({
   const fieldId = (name: string) => `${uid}-${name}`;
   const headingId = fieldId("heading");
   const statusId = fieldId("status");
+  const sampleId = fieldId("sample");
 
   const headingRef = useRef<HTMLHeadingElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -102,10 +108,16 @@ export function LeadGateForm({
     if (focusOnMount) headingRef.current?.focus();
   }, [focusOnMount]);
 
+  // Opened without a status answer on this page (hint, then the gate 401): fetch `sample` (the store retries a failure).
+  useEffect(() => {
+    if (gate.sample === null) store.loadSample();
+  }, [gate.sample, store]);
+
   const compact = variant === "compact";
   const Heading = headingLevel === 3 ? "h3" : "h2";
   const submitting = state.kind === "submitting";
   const optional = gate.mode === "optional";
+  const sample = gate.sample === true;
   const failedOpen =
     !enforced && state.kind === "error" && (state.reason === "server" || state.reason === "network" || state.reason === "rateLimited" || state.reason === "paused");
 
@@ -204,11 +216,19 @@ export function LeadGateForm({
       </Heading>
       <p className="mt-1.5 text-sm leading-relaxed text-muted">{t.lead}</p>
 
+      {sample && (
+        <p id={sampleId} className="mt-3 flex items-start gap-2 rounded-lg bg-gold-soft p-3 text-[13px] leading-snug text-ink">
+          <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-navy" />
+          <span>{t.sampleData}</span>
+        </p>
+      )}
+
       <form
         ref={formRef}
         noValidate
         onSubmit={handleSubmit}
         onChange={handleChange}
+        onFocus={gate.sample === null ? () => store.loadSample() : undefined}
         aria-busy={submitting || undefined}
         aria-describedby={statusText ? statusId : undefined}
         className="mt-4 @container"
@@ -293,6 +313,7 @@ export function LeadGateForm({
         <div className="mt-4 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
           <Button
             type="submit"
+            aria-describedby={sample ? sampleId : undefined}
             aria-disabled={submitting || undefined}
             className="w-full aria-disabled:cursor-wait aria-disabled:opacity-70 sm:w-auto"
           >

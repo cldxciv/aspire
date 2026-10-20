@@ -16,7 +16,7 @@ import { answerPlainText, parseAnswer, parseInline } from "./markdown";
 import { ASK_PROMPT_VERSION, buildSystemPrompt, buildUserText } from "./prompt";
 import { askFieldErrors, cleanQuestion } from "./schema";
 import { createTrailerFilter, parseTrailerBody, splitAnswer, tidyAnswerEnd, TRAILER_OPEN } from "./trailer";
-import { istDay, reserveQuestion, secondsUntilNextIstDay, usageStatus } from "./usage";
+import { exhaustedAllowance, istDay, reserveQuestion, secondsUntilNextIstDay, usageStatus } from "./usage";
 import { clearDoubtTopics, getWeakTopicsFromDoubts, recordDoubtTopic } from "./weak-topics";
 
 /** Unit tests for the building blocks of Rancho, the AI doubt solver (no network: the Claude API is never called). */
@@ -255,6 +255,42 @@ describe("daily allowance", () => {
     expect(reserveQuestion(db, { key: { scope: "ip", id: "a" }, limit: 5, globalLimit: 1, now: NOON_IST }).allowed).toBe(true);
     expect(reserveQuestion(db, { key: { scope: "ip", id: "b" }, limit: 5, globalLimit: 1, now: NOON_IST })).toMatchObject({ allowed: false, reason: "global" });
     expect(reserveQuestion(db, { key: { scope: "ip", id: "c" }, limit: 0, globalLimit: 100, now: NOON_IST })).toMatchObject({ allowed: false, reason: "limit" });
+    // The status shows nothing remaining once the site is full (the key's own count is kept);
+    // without `globalLimit` it reports the key alone, as before.
+    expect(usageStatus(db, { key: { scope: "ip", id: "b" }, limit: 5, globalLimit: 1, now: NOON_IST })).toMatchObject({ used: 0, remaining: 0 });
+    expect(usageStatus(db, { key: { scope: "ip", id: "b" }, limit: 5, globalLimit: 2, now: NOON_IST })).toMatchObject({ used: 0, remaining: 5 });
+    expect(usageStatus(db, { key: { scope: "ip", id: "b" }, limit: 5, now: NOON_IST })).toMatchObject({ used: 0, remaining: 5 });
+  });
+
+  it("charges extra keys (a lead-gate family) with the same limit: refused when any is used up, refunded together", () => {
+    const family = { scope: "lead" as const, id: "lead-1" };
+    const home = { scope: "ip" as const, id: "203.0.113.7" };
+    const phone = { scope: "ip" as const, id: "203.0.113.8" };
+    const first = reserveQuestion(db, { key: home, extraKeys: [family], limit: 2, globalLimit: 100, now: NOON_IST });
+    expect(first).toMatchObject({ allowed: true, used: 1, remaining: 1 });
+    // The same family from another connection: the busiest key decides the count.
+    const second = reserveQuestion(db, { key: phone, extraKeys: [family], limit: 2, globalLimit: 100, now: NOON_IST });
+    expect(second).toMatchObject({ allowed: true, used: 2, remaining: 0 });
+    expect(reserveQuestion(db, { key: phone, extraKeys: [family], limit: 2, globalLimit: 100, now: NOON_IST })).toMatchObject({
+      allowed: false,
+      reason: "limit",
+    });
+    expect(exhaustedAllowance(db, { key: { scope: "ip", id: "203.0.113.9" }, extraKeys: [family], limit: 2, globalLimit: 100, now: NOON_IST })).toMatchObject({
+      reason: "limit",
+    });
+    expect(usageStatus(db, { key: phone, extraKeys: [family], limit: 2, now: NOON_IST })).toMatchObject({ used: 2, remaining: 0 });
+    // Without the family key, the phone's own connection has used one.
+    expect(usageStatus(db, { key: phone, limit: 2, now: NOON_IST }).used).toBe(1);
+
+    // release() refunds every key it charged (and a duplicate key is charged once).
+    if (!second.allowed) throw new Error("expected allowed");
+    second.release();
+    expect(usageStatus(db, { key: phone, limit: 2, now: NOON_IST }).used).toBe(0);
+    expect(usageStatus(db, { key: family, limit: 2, now: NOON_IST }).used).toBe(1);
+    const duplicate = reserveQuestion(db, { key: family, extraKeys: [family], limit: 5, globalLimit: 100, now: NOON_IST });
+    expect(duplicate).toMatchObject({ allowed: true, used: 2 });
+    expect(usageStatus(db, { key: family, limit: 5, now: NOON_IST }).used).toBe(2);
+    expect(JSON.stringify(db.prepare("SELECT * FROM ask_usage").all())).not.toContain("lead-1");
   });
 
   it("stores only hashes: no raw IP or account id in ask_usage", () => {

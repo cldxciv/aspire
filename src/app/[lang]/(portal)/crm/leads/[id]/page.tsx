@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { CrmPageHeader, NotAllowed } from "@/components/crm/CrmBlocks";
-import { CrmGate, crmCentres, requestTime, type CrmAccess } from "@/components/crm/CrmGate";
-import type { CrmMessages } from "@/components/crm/format";
+import { classOptions, CrmGate, crmCentres, programOptions, requestTime, type CrmAccess } from "@/components/crm/CrmGate";
+import { BACK_PARAM, backLabel, DEFAULT_BACK, parseBackParam, type CrmMessages } from "@/components/crm/format";
 import { LeadDetailView } from "@/components/crm/LeadDetailView";
 import type { Option } from "@/components/crm/types";
 import type { Locale } from "@/i18n/config";
@@ -17,15 +17,19 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 type Params = Promise<{ lang: string; id: string }>;
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-/** One lead. Reading it is audited by CRM-CORE (`crm.lead_view`); leads outside the viewer's scope are a 404-style panel. */
-export default async function CrmLeadPage({ params }: { params: Params }) {
+/**
+ * One lead. Reading it is audited by CRM-CORE (`crm.lead_view`); leads outside the viewer's scope
+ * are a 404-style panel. `?back=` (allow-listed CRM list pages only) is where "Back" returns.
+ */
+export default async function CrmLeadPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   const [locale, t] = await Promise.all([getLocale(), getMessages("crm")]);
   return (
     <CrmGate path={params.then(({ id }) => (LEAD_ID.test(id) ? `/crm/leads/${id}` : "/crm"))} title={t.lead.metaTitle}>
       {(access) => (
         <Suspense fallback={<p className="text-sm text-muted">{t.common.loading}</p>}>
-          <Lead access={access} params={params} locale={locale} t={t} />
+          <Lead access={access} params={params} searchParams={searchParams} locale={locale} t={t} />
         </Suspense>
       )}
     </CrmGate>
@@ -34,8 +38,21 @@ export default async function CrmLeadPage({ params }: { params: Params }) {
 
 const LEAD_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
-async function Lead({ access, params, locale, t }: { access: CrmAccess; params: Params; locale: Locale; t: CrmMessages }) {
-  const { id } = await params;
+async function Lead({
+  access,
+  params,
+  searchParams,
+  locale,
+  t,
+}: {
+  access: CrmAccess;
+  params: Params;
+  searchParams: SearchParams;
+  locale: Locale;
+  t: CrmMessages;
+}) {
+  const [{ id }, query] = await Promise.all([params, searchParams]);
+  const back = parseBackParam(query[BACK_PARAM]) ?? DEFAULT_BACK;
   const now = await requestTime();
   const { viewer, permissions } = access;
   const result = LEAD_ID.test(id) ? getLead(viewer, id, now) : null;
@@ -43,7 +60,7 @@ async function Lead({ access, params, locale, t }: { access: CrmAccess; params: 
     return (
       <>
         <CrmPageHeader eyebrow={t.lead.eyebrow} title={t.lead.notFoundTitle} />
-        <NotAllowed title={t.lead.notFoundTitle} body={t.lead.notFoundBody} homeHref={localePath("/crm", locale)} homeLabel={t.lead.back} />
+        <NotAllowed title={t.lead.notFoundTitle} body={t.lead.notFoundBody} homeHref={localePath(back.path, locale)} homeLabel={backLabel(t, back.kind)} />
       </>
     );
   }
@@ -76,6 +93,8 @@ async function Lead({ access, params, locale, t }: { access: CrmAccess; params: 
       centres={centres.names}
       assigneeOptions={assigneeOptions}
       staffNames={staffNames}
+      back={back}
+      detailOptions={{ classes: classOptions(t), programs: programOptions(t), centres: centres.options }}
       now={now}
       locale={locale}
       t={t}

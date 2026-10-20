@@ -32,17 +32,26 @@ export interface RanchoTurnData {
   answer: string;
   cards: RanchoToolCard[];
   meta: AskAnswerMeta | null;
-  phase: "waiting" | "streaming" | "done";
+  /**
+   * "held": the lead gate asked for contact details first (docs/lead-gate-plan.md §8.6). Only the
+   * student's message shows; the chat puts the contact form (or "Send now") under it, and the
+   * question is resent from there.
+   */
+  phase: "waiting" | "streaming" | "done" | "held";
   stop: RanchoStop | null;
   failure: AskFailure | null;
 }
 
-/** Failure → copy shown in Rancho's bubble (not_configured and limit replace the composer instead). */
+/**
+ * Failure → copy shown in Rancho's bubble (not_configured and limit replace the composer instead;
+ * the lead gate's refusal shows the contact form under the question instead).
+ */
 export function failureText(failure: AskFailure | null, t: PanelMessages): string | null {
   if (!failure) return null;
   switch (failure.kind) {
     case "not_configured":
     case "limit":
+    case "gate":
       return null;
     case "busy":
       return t.errors.busy;
@@ -84,7 +93,7 @@ const answerButton =
 
 /**
  * One exchange: the student's bubble (subject / "From <tool>" tag, photo, text) and Rancho's (tool
- * cards, the streamed answer, stop notes, errors). A finished answer gets a slim footer: its topic tag,
+ * cards, the streamed answer, stop notes, errors; none while the question is held by the lead gate). A finished answer gets a slim footer: its topic tag,
  * 🔊 Listen (where the browser can speak), Copy and, on the Ask page, 👍 / 👎. Presentational.
  */
 export function RanchoTurnView({
@@ -137,6 +146,7 @@ export function RanchoTurnView({
           {turn.question && <p className="whitespace-pre-wrap break-words">{turn.question}</p>}
         </div>
       </div>
+      {turn.phase !== "held" && (
       <RanchoBubble busy={turn.phase !== "done"} wide>
         <p className="sr-only">{t.name}:</p>
         <RanchoToolCards cards={turn.cards} messages={t.cards} locale={locale} onNavigate={onNavigate} />
@@ -201,6 +211,7 @@ export function RanchoTurnView({
           </div>
         )}
       </RanchoBubble>
+      )}
     </li>
   );
 }

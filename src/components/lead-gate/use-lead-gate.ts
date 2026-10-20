@@ -23,6 +23,8 @@ import { leadGateStore, type LeadGateState, type LeadGateStore, type LeadGateUnl
  *   offer "Send now" (critique 1.15).
  * - `enforced: true` for tools the server enforces (Rancho, mock-test score): on the gate 401
  *   (isLeadGateResponse) call `markRequired()`; the form then never offers "continue without saving".
+ * - `sample` (from the store): the site shows sample data. Gate anyway (owner decision 21 Oct 2026);
+ *   <LeadGateForm> already prints the honest sample-data line, so hosts add no copy of their own.
  */
 
 export interface UseLeadGateOptions {

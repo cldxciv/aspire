@@ -326,6 +326,43 @@ export function leadStats(db: DatabaseSync, scope: LeadScope, from: number, to: 
     }));
 }
 
+/**
+ * Lead gate forms per Asia/Kolkata day (reports, plan §3 "daily count of gate leads"): `submission`
+ * activities in [from, to) whose consent version matches `versionLike` (a SQL LIKE pattern), scoped
+ * like the inbox, erased stubs included (their submissions keep the version). A form that created
+ * its lead (same instant) is a new family; any other is a family already on file. `dayStart` is the
+ * IST day number (days since 1970-01-01 IST). Newest day first.
+ */
+export function gateSubmissionsByDay(
+  db: DatabaseSync,
+  scope: LeadScope,
+  from: number,
+  to: number,
+  versionLike: string,
+  istOffsetMs: number,
+): { istDay: number; newFamilies: number; knownFamilies: number }[] {
+  const where: string[] = [
+    "a.type = 'submission'",
+    "a.at >= ?",
+    "a.at < ?",
+    "json_extract(a.meta, '$.consentTextVersion') LIKE ?",
+  ];
+  const values: SQLInputValue[] = [from, to, versionLike];
+  scopeClause(scope, where, values);
+  return db
+    .prepare(
+      `SELECT CAST((a.at + ?) / 86400000 AS INTEGER) AS ist_day,
+              SUM(CASE WHEN a.at = l.created_at THEN 1 ELSE 0 END) AS new_families,
+              SUM(CASE WHEN a.at = l.created_at THEN 0 ELSE 1 END) AS known_families
+         FROM crm_activities a JOIN crm_leads l ON l.id = a.lead_id
+        WHERE ${where.join(" AND ")}
+        GROUP BY ist_day
+        ORDER BY ist_day DESC`,
+    )
+    .all(istOffsetMs, ...values)
+    .map((row) => ({ istDay: Number(row.ist_day), newFamilies: Number(row.new_families), knownFamilies: Number(row.known_families) }));
+}
+
 /** Open (not enrolled / lost / erased) leads per assignee. */
 export function openLeadCounts(db: DatabaseSync): Map<string, number> {
   const counts = new Map<string, number>();

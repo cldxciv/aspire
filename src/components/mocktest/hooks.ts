@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { isLeadGateResponse } from "@/components/lead-gate/lead-gate-client";
+import { leadGateStore } from "@/components/lead-gate/lead-gate-store";
+import type { LeadGateMode } from "@/lib/lead-gate/contract";
+import { asksBeforeFirstResult } from "@/lib/mocktest/lead-gate";
 import { getLocalAttempt, updateLocalAttempt, type LocalAttempt } from "@/lib/mocktest/local-store";
 import type { SavedAttemptDetail, SavedAttemptSummary, ScoredAttempt } from "@/lib/mocktest/types";
 
@@ -49,6 +53,8 @@ export interface JsonResult<T> {
   status: number;
   data: T | null;
   fieldErrors?: Record<string, string[]>;
+  /** The lead gate's 401 (`X-Lead-Gate: required`): share contact details first. Other 401s stay "signed out". */
+  leadGate?: boolean;
 }
 
 /** JSON request against our own API (same origin, D-007 envelope). Network errors → status 0. */
@@ -63,7 +69,13 @@ export async function apiJson<T>(url: string, init: { method?: string; body?: un
       signal: init.signal,
     });
     const body = (await response.json().catch(() => null)) as { ok?: boolean; data?: T; fieldErrors?: Record<string, string[]> } | null;
-    return { ok: response.ok && body?.ok === true, status: response.status, data: body?.data ?? null, fieldErrors: body?.fieldErrors };
+    return {
+      ok: response.ok && body?.ok === true,
+      status: response.status,
+      data: body?.data ?? null,
+      fieldErrors: body?.fieldErrors,
+      leadGate: isLeadGateResponse(response),
+    };
   } catch {
     return { ok: false, status: 0, data: null };
   }
@@ -76,6 +88,10 @@ export type ScoredState =
   | { state: "loading" }
   | { state: "missing" }
   | { state: "error"; status: number }
+  /** The lead gate answered (docs/lead-gate-plan.md §8.4): the attempt is safe on this device, the score waits for contact details. */
+  | { state: "locked"; source: AttemptSource }
+  /** Optional mode, first result of an attempt on this device: offer the contact form (with "Continue without sharing") first. */
+  | { state: "ask"; source: AttemptSource }
   | {
       state: "ready";
       source: AttemptSource;
@@ -87,13 +103,59 @@ export type ScoredState =
 const NOT_THEIRS = new Set([400, 401, 403, 404]);
 
 /**
+ * Body of POST /api/mocktest/score for an attempt on this device (pure). `startedAt` lets the
+ * server leave attempts from before the gate open; `seen` (a score is kept here, so this browser
+ * already showed the result) keeps that result open after the pass is gone; `record` only from the
+ * result page (`fromResult`) and only on the FIRST scoring (no score kept yet), so re-opening a
+ * result or printing a certificate / report never adds a tool-use note.
+ */
+export function scoreRequestBody(testId: string, attempt: LocalAttempt, fromResult: boolean) {
+  const seen = attempt.score !== undefined;
+  return {
+    testId,
+    answers: attempt.answers,
+    timeSpentSec: attempt.timeSpentSec,
+    startedAt: attempt.startedAt,
+    ...(seen ? { seen: true as const } : {}),
+    ...(fromResult && !seen ? { record: true as const } : {}),
+  };
+}
+
+/** The page-wide gate store's answer for a first result (fails open: never blocks scoring). */
+async function gateBeforeFirstResult(): Promise<{ open: boolean; mode: LeadGateMode | null }> {
+  try {
+    const open = await leadGateStore.ensure();
+    return { open, mode: leadGateStore.getSnapshot().mode };
+  } catch {
+    return { open: true, mode: null };
+  }
+}
+
+/** What a /api/mocktest/score answer means for the result page (pure). The gate 401 → `locked`. */
+export function scoreOutcome(response: Pick<JsonResult<unknown>, "ok" | "status" | "data" | "leadGate">): "ready" | "locked" | "missing" | "error" {
+  if (response.ok && response.data) return "ready";
+  if (response.leadGate) return "locked";
+  return response.status === 404 ? "missing" : "error";
+}
+
+/**
  * Loads `?attempt=<local id>` from this browser or `?saved=<server id>` from the student's account.
  * A SAVED attempt (also a local one that was saved) is scored by GET /api/mocktest/attempts?id= —
  * the student's own attempt, so with solutions. Anything else is scored anonymously by POST
  * /api/mocktest/score, which withholds the answer key of a weekly test while its window is open
- * (QA-SEC-M6 M1). Repeatable, so a result page can be reloaded or opened later.
+ * (QA-SEC-M6 M1). Repeatable, so a result page can be reloaded or opened later. When the lead
+ * gate refuses the anonymous scoring the state is `locked` (the result page shows the contact
+ * form, then bumps `reloadKey`). In optional mode the result page's FIRST result of an attempt is
+ * `ask` (the form with "Continue without sharing") before anything is scored
+ * (`asksBeforeFirstResult`).
  */
-export function useScoredAttempt(testId: string, params: { attempt: string | null; saved: string | null }, reloadKey = 0): ScoredState {
+export function useScoredAttempt(
+  testId: string,
+  params: { attempt: string | null; saved: string | null },
+  reloadKey = 0,
+  /** The result page (not the printable views): may note the first scoring on the family's lead. */
+  fromResult = false,
+): ScoredState {
   const [state, setState] = useState<ScoredState>({ state: "loading" });
   const { attempt: localId, saved: savedParam } = params;
 
@@ -123,12 +185,20 @@ export function useScoredAttempt(testId: string, params: { attempt: string | nul
         setState({ state: "missing" });
         return;
       }
-      const scored = await apiJson<ScoredAttempt>("/api/mocktest/score", {
-        body: { testId, answers: localSource.attempt.answers, timeSpentSec: localSource.attempt.timeSpentSec },
-      });
+      if (fromResult && localSource.attempt.score === undefined) {
+        const gate = await gateBeforeFirstResult();
+        if (cancelled) return;
+        if (asksBeforeFirstResult(localSource.attempt, fromResult, gate)) {
+          setState({ state: "ask", source: localSource });
+          return;
+        }
+      }
+      const scored = await apiJson<ScoredAttempt>("/api/mocktest/score", { body: scoreRequestBody(testId, localSource.attempt, fromResult) });
       if (cancelled) return;
-      if (!scored.ok || !scored.data) {
-        setState(scored.status === 404 ? { state: "missing" } : { state: "error", status: scored.status });
+      const outcome = scoreOutcome(scored);
+      if (outcome !== "ready" || !scored.data) {
+        if (outcome === "locked") setState({ state: "locked", source: localSource });
+        else setState(outcome === "missing" ? { state: "missing" } : { state: "error", status: scored.status });
         return;
       }
       updateLocalAttempt(localSource.attempt.id, { score: scored.data.result.score, maxScore: scored.data.result.maxScore });
@@ -138,7 +208,7 @@ export function useScoredAttempt(testId: string, params: { attempt: string | nul
     return () => {
       cancelled = true;
     };
-  }, [testId, localId, savedParam, reloadKey]);
+  }, [testId, localId, savedParam, reloadKey, fromResult]);
 
   return state;
 }

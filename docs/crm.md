@@ -103,7 +103,7 @@ Every response: `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow`. Wr
 | POST `/api/crm/leads/:id/notes` | all | `{ body }` (1–2000 chars) | 201 `LeadActivity` |
 | POST `/api/crm/leads/:id/contacts` | all | `{ channel: "call" \| "whatsapp", outcome: ContactOutcome, body? }` | 201 `LeadActivity` |
 | POST `/api/crm/leads/:id/tasks` | all | `{ title, dueAt (ISO), assigneeId? }` | 201 `LeadTask` |
-| POST `/api/crm/leads/:id/erase` | admin | `{ confirm: true }` | `{ leadId, erasedAt }` |
+| POST `/api/crm/leads/:id/erase` | admin | `{ confirm: true, reason?: "family_request" \| "consent_withdrawn" \| "wrong_or_test" \| "no_longer_needed" \| "other" }` (`ERASE_REASONS`; kept on the erase entry and the audit row) | `{ leadId, erasedAt }` |
 | PATCH `/api/crm/tasks/:taskId` | assignee, or anyone who sees the lead | `{ done: true }` | `LeadTask` |
 | GET `/api/crm/tasks` | all | `range` = `today` / `overdue` / `upcoming` / `open` (default) / `done` | `MyTask[]` |
 | GET `/api/crm/reports` | all (scoped) | `from`, `to` (ISO; default last 30 days) | `FunnelReport` (incl. `byTool`) |
@@ -171,8 +171,12 @@ Times are epoch ms in SQLite, ISO strings in every service/API shape.
   meta key that is not a known non-personal fact (source, tool, page, consent version/language/text,
   stage changes, outcomes…); keeps an anonymised stub (stage, source, centre, program, class, dates, assignee)
   so funnel counts stay right. Erased leads leave the inbox (`includeErased` for admins), cannot be
-  edited, and a new enquiry from the same phone creates a fresh lead.
-- Retention: TBC by Aspire (proposal: erase unconverted leads 18 months after last activity).
+  edited, and a new enquiry from the same phone creates a fresh lead. Lead gate (§11): erase also deletes
+  the lead's gate passes (every browser is asked again) and all its `tool_use` entries; the audit
+  details carry `{ gateBrowsers, toolUsesDeleted }`; `submittedBy` / `onLostLead` stay on the stub.
+- Retention: TBC by Aspire (proposal: erase unconverted leads 18 months after last activity). Tool-use
+  notes are deleted 90 days after their last use (hourly sweep) and never move `last_activity_at`.
+  The retention purge (CRM-3) is **not built yet**, although the gate is on (checklist §17 TG-6).
 
 ## 8. Migration notes (core migration 2)
 
@@ -201,8 +205,52 @@ Times are epoch ms in SQLite, ISO strings in every service/API shape.
 
 ## 10. Open items
 
-- Retention period (D-042) and the privacy-notice section (lead, `legal.ts`).
+- Retention period (D-042) and its purge job (CRM-3). The privacy notice now describes enquiries and the
+  lead gate (`legal.ts` `privacy.toolContact`), with the periods still "to be confirmed".
+- Lead gate: no do-not-contact list that survives erase (an erased number that comes back starts a new
+  lead); in-memory limiters and flood breaker (single node); one-tap "Request a call back" for pass
+  holders is Phase 2 (docs/lead-gate-plan.md §9).
 - Merge of two leads of one family with different phones (activity type `merge` is reserved).
 - Rate limits are in-memory per process (single node, like auth/enquiries).
 - A counsellor entering a walk-in whose phone already has a lead learns its id but cannot open it
   unless it is theirs (ask a manager to reassign).
+
+## 11. Lead gate: contact details before free tools' results (D-043)
+
+Design and full contract: `docs/lead-gate-plan.md` (§3 data model, §5 routes). **Owner decision 21 Oct 2026:
+`LEAD_GATE=required` on the live site now, with an honest sample-data line in the form** (risks for counsel:
+`docs/aspire-approval-checklist.md` §17). Public routes: `docs/api.md` → "Lead gate".
+
+- **Source and tool.** Gate captures use source **`tool`** (shown as "Free tool (contact before result)");
+  `lead.tool` is the tool that asked first (`predictor` | `mock-test` | `planner` | `ask` = Rancho on every surface),
+  `lead.page` locale-free (`/` = homepage widget).
+- **`captureLead(input, now, { gate: true, assignNew })`**: dedupe by +91 number as usual, but an EXISTING lead is never
+  reopened (submission meta `onLostLead: true`), never re-assigned, and keeps its consent version/time when it has
+  one (the submission keeps the gate sentence). `LEAD_GATE_ASSIGN=none` → `assignNew: false` (new leads Unassigned).
+  `CaptureLeadInput.submittedBy: "student" | "parent"` is kept on the submission.
+- **Activity kinds** (no migration):
+
+  | kind | meta | notes |
+  |---|---|---|
+  | `submission` (gate) | `source: "tool"`, `tool`, `page`, `toolExam`, `toolBand` (predictor), `locale`, `consentTextVersion: "2026-10-21.gate.v1"`, `consentLocale`, `consentText`, `submittedBy`, `filled`, `onLostLead?` | one per unlock (none past the per-number cap) |
+  | `tool_use` | `tool`, `key`, `exam?`, `band?` (predictor), `testId?` + `scoreBand?` (mock test), `page?`, `uses`, `lastAt` | one per lead + tool + key + India day; `key` = exam (predictor, planner), test id (mock test), `rancho`; deleted 90 days after last use and on erase; no audit row; never answers, questions, photos, exact scores, category, state, gender or dates |
+  | `consent_withdrawn` | `via: "lead_gate"`, `browsersForgotten` | "Stop Aspire contacting me": all passes revoked; open lead → `lost` / `not_interested` (enrolled kept); audited `crm.gate_withdraw` |
+
+- **Table `crm_gate_passes`** (`pass_hash` PK = SHA-256 of the pass id, `lead_id` → `crm_leads` ON DELETE CASCADE,
+  `created_at`, `expires_at` (180 days, fixed), `consent_version`, `submitted_by`, `record_use`); ≤ 10 per lead; SQL
+  only in `src/lib/crm/repo/gate-passes.ts`. A stored enquiry also issues a pass (`record_use = 0`, enquiry consent
+  version): tool use is never noted under the enquiry sentence.
+- **Services** (`@/lib/crm`): `unlockGateLead`, `issueGatePassForLead`, `findGatePass`, `revokeGatePass`,
+  `revokeGatePassesForLead`, `recordToolUse`, `sweepToolUse`, `withdrawGateConsent`.
+- **Lead detail / UI (WP9).** `consentText` shows the sentence behind the lead's own `consentTextVersion`; every
+  consent is listed with its date; `tool_use` reads "Used a free tool" with one-line summaries ("Rank predictor ·
+  JEE Main · score 180–189 · 3× today", "Mock test · <test> · 40–49 %", "Rancho", "Study planner · NEET");
+  `submittedBy = student` is flagged "confirm with a parent first"; reports add a daily count of gate leads.
+- **MCP.** `get_lead` returns `tool_use` entries WITHOUT `band` / `scoreBand` (stripped in `src/lib/mcp/tools/crm.ts`,
+  critique 0.13): AI assistants see which tool was used, not the score range (`docs/mcp.md`).
+- **Settings** (runtime `.env`, no rebuild): `LEAD_GATE` (`off` / `optional` / `required`), `LEAD_GATE_SECRET`,
+  `LEAD_GATE_RECORD_USE` (`all` / `parent` / `off`), `LEAD_GATE_ASSIGN` (`auto` / `none`),
+  `LEAD_GATE_MAX_NEW_LEADS_PER_HOUR` (300), `LEAD_GATE_SINCE`.
+- **First call (no OTP).** Proposed procedure, pending Aspire's approval (checklist TG-5): confirm who holds the number
+  and that they agree to be contacted before any pitch; otherwise mark `lost: wrong_number` (the gate never reopens
+  it); erase on request.

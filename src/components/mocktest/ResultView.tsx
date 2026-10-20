@@ -2,9 +2,11 @@
 
 import { Award, FileText, Lock, MessageCircle, RotateCcw, Trophy } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toolEnquiryHref } from "@/components/forms/enquiry-context";
 import { AskRanchoLink } from "@/components/home/HomeToolsAskRancho";
+import { LeadGateIdentity } from "@/components/lead-gate/LeadGateIdentity";
+import { leadGateStore } from "@/components/lead-gate/lead-gate-store";
 import { Badge, Button, ButtonLink, EmptyState, Notice } from "@/components/ui";
 import { useLocale } from "@/i18n/client";
 import { format } from "@/i18n/format";
@@ -16,6 +18,7 @@ import { isLeaderboardTest } from "@/lib/mocktest/timing";
 import type { RunnerTest, SavedAttemptSummary, ScoredAttempt } from "@/lib/mocktest/types";
 import { formatDateTime, formatDuration, percent, type MocktestMessages } from "./format";
 import { apiJson, useScoredAttempt, useSessionStatus, type AttemptSource } from "./hooks";
+import { LockedResult, OptionalContactStep, useMocktestLeadGateMessages, type MocktestUnlock } from "./lead-gate";
 import { mockTestRancho } from "./rancho";
 import { ProjectionPanel, SolutionReview, StudyPlanView, TimeChart, TopicHeatmap } from "./ResultParts";
 
@@ -58,13 +61,25 @@ function Panel({ id, title, description, children }: { id: string; title: string
  * Signed-in students' attempts from this device are saved to their account automatically (POST
  * /api/mocktest/attempts, re-scored there too); a saved attempt shows its solutions at once, an
  * unsaved one of a weekly test only after the window closes (QA-SEC-M6 M1).
+ *
+ * Lead gate (docs/lead-gate-plan.md §8.4): when the server asks for contact details first, the
+ * page says the test is submitted and kept on this device and shows the contact form; once this
+ * browser is unlocked the result loads. In optional mode the first result of an attempt offers the
+ * form with "Continue without sharing" (`ask`). After an explicit submit / skip / continue here,
+ * focus moves to the result's heading. Under an unlocked result: "Not you?" (LeadGateIdentity).
  */
 export function ResultView({ test, t }: { test: RunnerTest; t: MocktestMessages }) {
   const locale = useLocale();
   const params = useAttemptParams();
   const [reloadKey, setReloadKey] = useState(0);
-  const state = useScoredAttempt(test.id, params, reloadKey);
+  // The result replaces the form the visitor just used: move focus to its heading (plan §6).
+  const [focusResult, setFocusResult] = useState(false);
+  const state = useScoredAttempt(test.id, params, reloadKey, true);
   const tr = t.result;
+  const reload = useCallback((info: MocktestUnlock) => {
+    setFocusResult(info.byThisHost);
+    setReloadKey((k) => k + 1);
+  }, []);
 
   if (state.state === "loading") {
     return (
@@ -92,8 +107,18 @@ export function ResultView({ test, t }: { test: RunnerTest; t: MocktestMessages 
       </Notice>
     );
   }
+  if (state.state === "locked") return <LockedResult t={t} onUnlocked={reload} />;
+  if (state.state === "ask") return <OptionalContactStep t={t} onUnlocked={reload} />;
   return (
-    <ResultBody key={reloadKey} test={test} t={t} source={state.source} initial={{ scored: state.scored, saved: state.saved }} params={params} />
+    <ResultBody
+      key={reloadKey}
+      test={test}
+      t={t}
+      source={state.source}
+      initial={{ scored: state.scored, saved: state.saved }}
+      params={params}
+      focusOnMount={focusResult}
+    />
   );
 }
 
@@ -105,15 +130,22 @@ function ResultBody({
   source,
   initial,
   params,
+  focusOnMount = false,
 }: {
   test: RunnerTest;
   t: MocktestMessages;
   source: AttemptSource;
   initial: ResultData;
   params: { attempt: string | null; saved: string | null };
+  /** Just unlocked by the visitor's own submit / skip on this page: focus the score heading. */
+  focusOnMount?: boolean;
 }) {
   const locale = useLocale();
   const tr = t.result;
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (focusOnMount) headingRef.current?.focus();
+  }, [focusOnMount]);
   // Saving the attempt returns the student's own scored result, solutions included.
   const [{ scored, saved }, setData] = useState<ResultData>(initial);
   const { result } = scored;
@@ -133,6 +165,10 @@ function ResultBody({
         {autoSubmitted && <Badge variant="neutral">{tr.autoSubmitted}</Badge>}
       </div>
 
+      {/* The panels below are h3 under the page's h1; this names the score summary and takes focus after an unlock. */}
+      <h2 ref={headingRef} tabIndex={-1} className="sr-only">
+        {tr.score}
+      </h2>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label={tr.score} value={format(t.common.scoreOf, { score: result.score, max: result.maxScore })} />
         <Stat label={tr.accuracy} value={result.accuracy === null ? tr.accuracyNone : `${percent(result.accuracy)} %`} />
@@ -143,6 +179,7 @@ function ResultBody({
         />
         <Stat label={tr.timeTaken} value={formatDuration(result.timeSec, t.common)} />
       </div>
+      <ResultGateIdentity />
 
       <SavePanel test={test} t={t} source={source} saved={saved} onSaved={setData} />
 
@@ -266,6 +303,19 @@ function ResultBody({
       </Panel>
     </div>
   );
+}
+
+/**
+ * "Your contact details are shared on this browser · Not you? · Stop Aspire contacting me" under a
+ * result this browser's pass unlocked (nothing when signed in, the gate is off or nothing was
+ * shared). Asks the page-wide gate store once so the line knows.
+ */
+function ResultGateIdentity() {
+  const tGate = useMocktestLeadGateMessages();
+  useEffect(() => {
+    void leadGateStore.ensure();
+  }, []);
+  return <LeadGateIdentity messages={tGate} />;
 }
 
 type SaveState = { state: "idle" } | { state: "saving" } | { state: "saved" } | { state: "failed" };

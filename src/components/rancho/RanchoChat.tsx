@@ -16,6 +16,10 @@ import {
 
 import { hoursFromSeconds, type AskFailure } from "@/components/ask/ask-client";
 import { withEnquiryTool } from "@/components/forms/enquiry-context";
+import { LeadGateForm } from "@/components/lead-gate/LeadGateForm";
+import { LeadGateIdentity } from "@/components/lead-gate/LeadGateIdentity";
+import { LeadGateNote } from "@/components/lead-gate/LeadGateNote";
+import { useLeadGate } from "@/components/lead-gate/use-lead-gate";
 import { Notice } from "@/components/ui/Feedback";
 import type { Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
@@ -30,6 +34,20 @@ import { RanchoPhotoAttachment } from "./RanchoPhotoAttachment";
 import { RanchoSubjectChips, RanchoSubjectSelect } from "./RanchoSubjectPicker";
 import { failureText, RanchoBubble, RanchoTurnView, type RanchoTurnData } from "./RanchoTurn";
 import { askRancho, chatBlock, fetchAskStatus, RANCHO_DESKTOP_QUERY, validateQuestion } from "./rancho-chat";
+import {
+  heldQuestionInput,
+  isGateFailure,
+  RANCHO_GATE_IDLE,
+  ranchoGateNotice,
+  ranchoGatePreflight,
+  ranchoGateReducer,
+  ranchoGateUnlock,
+  ranchoGateView,
+  ranchoHoldAnnouncement,
+  type RanchoGateEvent,
+  type RanchoGateState,
+  type RanchoHeldQuestion,
+} from "./rancho-gate";
 import { listenForRanchoOpen, type RanchoHandoff } from "./rancho-handoff";
 import {
   createPreviewUrls,
@@ -43,6 +61,8 @@ import { speechLang, withTranscript, type VoiceProblem } from "./rancho-voice";
 import { useSpeechInput, useSpeechOutput, useVoiceSupport } from "./useRanchoVoice";
 
 export type RanchoPanelMessages = Messages<"rancho">["panel"];
+/** The lead gate's strings (namespace `leadGate`), loaded by the server parent (D-028). */
+export type RanchoGateMessages = Messages<"leadGate">;
 
 export interface RanchoLinks {
   /** The full Rancho page (/tools/ask). */
@@ -59,6 +79,8 @@ export interface RanchoChatProps {
   /** "panel": the floating launcher's dialog. "page": the chat card on /tools/ask and /rancho. */
   variant: "panel" | "page";
   messages: RanchoPanelMessages;
+  /** The contact form, its up-front note and the "Not you?" line (docs/lead-gate-plan.md §8.6). */
+  gateMessages: RanchoGateMessages;
   locale: Locale;
   links: RanchoLinks;
   /** Panel: the dialog's id (the launcher's `aria-controls`). */
@@ -142,15 +164,26 @@ function scrollPaddingTop(): number {
  *   buttons. In voice mode the answer to a spoken question is read aloud automatically.
  * - "Ask Rancho about this" handoffs (rancho-handoff.ts) prefill the field and show a removable
  *   "From …" chip; the next question carries `toolContext`.
+ * - Lead gate (docs/lead-gate-plan.md §8.6, rancho-gate.ts): before a question is sent, the page's
+ *   gate is asked (`useLeadGate`, tool "ask"); when it is locked, or `/api/ask` answers with its
+ *   gate 401, the question and its photo are HELD (in memory) as the student's message, the
+ *   contact form (`<LeadGateForm enforced variant="compact">`) appears under it and the composer
+ *   is disabled. Unlocked by this form → the question is resent once, automatically; unlocked
+ *   elsewhere (another tab or tool) → "Send now"; either way focus goes back to the composer.
+ *   Refused again right after this form got a pass → the form returns with "this browser didn't
+ *   remember" (cookies may be blocked). "New chat" drops the held question. The
+ *   up-front note (`<LeadGateNote>`) sits in the welcome message and "Not you?"
+ *   (`<LeadGateIdentity>`) under the latest answer. Sample data does not skip it: the form says so.
  *
  * The panel is a native `<dialog>`: `showModal()` on phones (full-height sheet, focus contained, page
- * inert and not scrollable), `show()` from 640px (non-modal popover above the launcher). Esc and ✕
+ * inert and not scrollable; so also while the contact form shows), `show()` from 640px (non-modal
+ * popover above the launcher, which grows to the full available height while the form shows). Esc and ✕
  * close it; focus returns to the launcher. The conversation (photos included, as object URLs) is React
  * state only (no storage); "New chat" clears it, and so does the chat going away (unmounted, or
  * hidden by Next's `<Activity>`). Closing the panel stops a streaming answer, listening and reading.
  */
 export function RanchoChat(props: RanchoChatProps) {
-  const { variant, messages: t, locale, links, returnFocusRef, onFeedback } = props;
+  const { variant, messages: t, gateMessages: tg, locale, links, returnFocusRef, onFeedback } = props;
   const panel = variant === "panel";
   const open = panel ? props.open === true : true;
   const close = props.onClose ?? noop;
@@ -197,6 +230,11 @@ export function RanchoChat(props: RanchoChatProps) {
   const voiceModeRef = useRef(false);
   /** The last handoff whose prefill got focus. */
   const focusedHandoffRef = useRef(0);
+  /** Mirrors `gateHold` for the gate's unlock callback and for code after an `await`. */
+  const gateHoldRef = useRef<RanchoGateState>(RANCHO_GATE_IDLE);
+  const sendNowRef = useRef<HTMLButtonElement | null>(null);
+  /** A held question was just sent again: its form or "Send now" went away, maybe with focus in it. */
+  const refocusAfterResendRef = useRef(false);
 
   const desktop = useSyncExternalStore(
     subscribeDesktop,
@@ -241,6 +279,28 @@ export function RanchoChat(props: RanchoChatProps) {
   const [voiceMode, setVoiceMode] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<Record<number, "yes" | "no">>({});
+  /** A question held by the lead gate (its turn is the last one, phase "held") and whether "Send now" is offered (rancho-gate.ts). */
+  const [gateHold, setGateHold] = useState<RanchoGateState>(RANCHO_GATE_IDLE);
+  const held = gateHold.held;
+
+  // Rancho behind the lead gate (docs/lead-gate-plan.md §8.6). `enforced`: /api/ask enforces it, so
+  // the form never offers "show without saving".
+  const gate = useLeadGate({
+    tool: "ask",
+    enforced: true,
+    onUnlocked: (info) => {
+      const waiting = gateHoldRef.current.held;
+      if (!waiting) return;
+      const next = ranchoGateUnlock(waiting, info);
+      if (next.action === "resend") resend(next.question);
+      else {
+        updateGateHold({ type: "offer", question: next.question });
+        setAnnouncement(t.gate.unlocked);
+      }
+    },
+  });
+  const { closeGate, markRequired } = gate;
+  const gateStore = gate.formProps.store;
 
   // A new handoff: prefill the field (the student still presses Send) and show the "From …" chip.
   if (handoff && handoff.id !== handoffId) {
@@ -250,7 +310,11 @@ export function RanchoChat(props: RanchoChatProps) {
     setFieldError(null);
   }
 
-  const busy = turns.some((turn) => turn.phase !== "done");
+  const busy = turns.some((turn) => turn.phase === "waiting" || turn.phase === "streaming");
+  /** What sits under a held question: the contact form, "Send now" (unlocked elsewhere), or nothing yet. */
+  const gateView = ranchoGateView(gateHold, gate.gateOpen);
+  /** "This browser didn't keep it" above the form after a refusal that followed this chat's own pass. */
+  const gateNotice = ranchoGateNotice(gateHold, gateView);
   const block = chatBlock(status, { notConfigured, limitReached: Boolean(limitFailure) });
   const notConnected = block === "not_connected";
   const outOfQuestions = block === "limit";
@@ -307,11 +371,45 @@ export function RanchoChat(props: RanchoChatProps) {
     if (!active || active === document.body || !dialogRef.current?.contains(active)) headingRef.current?.focus();
   }, [blocked, open, panel]);
 
-  // Follow the answer while it streams, unless the student scrolled up to read.
+  // Follow the answer while it streams, unless the student scrolled up to read (or a question is
+  // held by the lead gate: the effect below places the form).
   useEffect(() => {
     const log = logRef.current;
-    if (log && stickToBottom.current) log.scrollTop = log.scrollHeight;
-  }, [turns, notConnected, outOfQuestions]);
+    if (log && stickToBottom.current && !held) log.scrollTop = log.scrollHeight;
+  }, [turns, notConnected, outOfQuestions, held]);
+
+  // Lead gate: bring the contact form (or "Send now") into view under the held question, the
+  // question too when it is short. The form focuses its own heading (it appears after Send); "Send
+  // now" takes focus only if focus was lost (the form it replaces went away).
+  useEffect(() => {
+    const log = logRef.current;
+    const box = gateView ? log?.querySelector<HTMLElement>("[data-rancho-gate]") : null;
+    if (!log || !box) return;
+    stickToBottom.current = false;
+    const logTop = log.getBoundingClientRect().top;
+    const boxTop = box.getBoundingClientRect().top - logTop;
+    const question = log.querySelector<HTMLElement>('[data-rancho-turn="held"]');
+    const questionTop = question ? question.getBoundingClientRect().top - logTop : boxTop;
+    log.scrollTop += (boxTop - questionTop <= log.clientHeight / 3 ? questionTop : boxTop) - 12;
+    if (gateView === "ready") {
+      const active = document.activeElement;
+      if (!active || active === document.body) sendNowRef.current?.focus({ preventScroll: true });
+    }
+  }, [gateView]);
+
+  // Lead gate: the held question was sent again (this chat's form unlocked it, or "Send now"). The
+  // form or button that had focus is gone: put focus back in the chat, on the composer (enabled
+  // again), unless the student already moved it somewhere else.
+  useEffect(() => {
+    if (held || !refocusAfterResendRef.current) return;
+    refocusAfterResendRef.current = false;
+    const active = document.activeElement;
+    const root = panel ? dialogRef.current : sectionRef.current;
+    if (active && active !== document.body && active !== root) return;
+    const field = textareaRef.current;
+    if (field && !field.disabled) field.focus({ preventScroll: true });
+    else headingRef.current?.focus({ preventScroll: true });
+  }, [held, panel]);
 
   // The field grows with its text (typed, spoken or prefilled), up to a few lines. Empty, it stays one
   // line: a placeholder that would wrap in a narrow row is cut short (`placeholder:truncate`) instead.
@@ -369,6 +467,9 @@ export function RanchoChat(props: RanchoChatProps) {
       setPreparing(false);
       setPhotoError(null);
       setTurns([]);
+      gateHoldRef.current = RANCHO_GATE_IDLE; // a question held by the lead gate goes with its turn
+      setGateHold(RANCHO_GATE_IDLE);
+      refocusAfterResendRef.current = false;
       // The composer's draft (typed text, a handoff's prefill and "From …" chip) stays: it points at
       // nothing that was freed, and React's dev double-mount (Strict Mode) runs this cleanup right
       // after the panel first mounts with a handoff, which must not wipe it.
@@ -420,7 +521,7 @@ export function RanchoChat(props: RanchoChatProps) {
   }
 
   function choosePhoto() {
-    if (!preparing) fileInputRef.current?.click();
+    if (!preparing && !held) fileInputRef.current?.click();
   }
 
   function removePhoto() {
@@ -461,7 +562,8 @@ export function RanchoChat(props: RanchoChatProps) {
 
   async function send(event?: FormEvent) {
     event?.preventDefault();
-    if (busy || blocked) return;
+    // A question held by the lead gate waits for the contact form (the composer is disabled meanwhile).
+    if (busy || blocked || held) return;
     if (preparing) {
       // Send is aria-disabled meanwhile; say why nothing was sent.
       setAnnouncement(t.photo.wait);
@@ -489,29 +591,31 @@ export function RanchoChat(props: RanchoChatProps) {
     setVoiceProblem(null);
     stopSpeaking();
 
-    const asked = question.trim();
-    const consented = photoConsent;
-    const context = toolContext;
-    const spoken = spokenRef.current;
+    const asked: RanchoHeldQuestion = {
+      turnId: nextTurnId.current++,
+      question: question.trim(),
+      subject,
+      language: answerLanguage,
+      photo: attached,
+      photoConsent: attached ? photoConsent : false,
+      toolContext,
+      spoken: spokenRef.current,
+      autoResent: false,
+      afterOwnPass: false,
+    };
     spokenRef.current = false;
-    const askedLanguage = answerLanguage;
-    const chat = chatRef.current;
-    const turnId = nextTurnId.current++;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    stickToBottom.current = true;
     // The sent message keeps showing the photo; the composer lets go of it.
     if (attached) previewUrls.hold(attached.previewUrl);
     setTurns((list) => [
       ...list,
       {
-        id: turnId,
-        question: asked,
+        id: asked.turnId,
+        question: asked.question,
         photoUrl: attached?.previewUrl ?? null,
-        subject,
-        language: askedLanguage,
-        toolContext: context,
-        spoken,
+        subject: asked.subject,
+        language: asked.language,
+        toolContext: asked.toolContext,
+        spoken: asked.spoken,
         answer: "",
         cards: [],
         meta: null,
@@ -523,32 +627,112 @@ export function RanchoChat(props: RanchoChatProps) {
     setQuestion("");
     setToolContext(null);
     if (attached) setComposerPhoto(null);
+    await ask(asked);
+  }
+
+  /** The chat's lead-gate state goes through ranchoGateReducer (rancho-gate.ts); the ref is readable after an `await`. */
+  function updateGateHold(event: RanchoGateEvent) {
+    const next = ranchoGateReducer(gateHoldRef.current, event);
+    gateHoldRef.current = next;
+    setGateHold(next);
+  }
+
+  /** Holds a question for the lead gate: its turn shows only the question; the form appears under it. */
+  function holdQuestion(asked: RanchoHeldQuestion, require: boolean) {
+    refocusAfterResendRef.current = false;
+    // The server's gate 401 (or GET /api/ask) said so: a local hint was stale; open the form.
+    if (require) markRequired();
+    const snapshot = gateStore.getSnapshot();
+    // Normally locked now (its form shows). Already open again (another tab, in that instant): "Send now".
+    const gateIsOpen = snapshot.status === "open";
+    updateGateHold({ type: "hold", question: asked, gateIsOpen });
+    setTurns((list) =>
+      list.map((turn): Turn => (turn.id === asked.turnId ? { ...turn, phase: "held", answer: "", cards: [], meta: null, stop: null, failure: null } : turn)),
+    );
+    setAnnouncement(t.gate[ranchoHoldAnnouncement(asked, { gateIsOpen, mode: snapshot.mode })]);
+  }
+
+  function dropHeld() {
+    refocusAfterResendRef.current = false;
+    updateGateHold({ type: "drop" });
+  }
+
+  /**
+   * Sends the held question again: once automatically after this chat's own form unlocked the gate,
+   * or on "Send now". Its turn (and photo preview) is reused.
+   */
+  function resend(asked: RanchoHeldQuestion) {
+    if (gateHoldRef.current.held?.turnId !== asked.turnId) return; // "New chat" dropped it meanwhile
+    updateGateHold({ type: "send" });
+    refocusAfterResendRef.current = true;
+    setTurns((list) => list.map((turn): Turn => (turn.id === asked.turnId ? { ...turn, phase: "waiting" } : turn)));
+    void ask(asked);
+  }
+
+  /**
+   * Asks the page's lead gate, then sends one question (new, or held and resent) and shows its
+   * answer in turn `asked.turnId`. The lead gate's refusal holds the question instead (rancho-gate.ts).
+   */
+  async function ask(asked: RanchoHeldQuestion) {
+    const { turnId, photo: attached, photoConsent: consented, toolContext: context, spoken, language: askedLanguage } = asked;
+    const chat = chatRef.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    stickToBottom.current = true;
     setAnnouncement(t.thinking);
     const update = (patch: Partial<Turn> | ((turn: Turn) => Partial<Turn>)) =>
       setTurns((list) => list.map((turn) => (turn.id === turnId ? { ...turn, ...(typeof patch === "function" ? patch(turn) : patch) } : turn)));
     // After a failed send, the photo (and tool context) go back to the composer for another try.
     const giveBack = (withPhoto: boolean) => {
-      setQuestion((current) => current || asked);
+      setQuestion((current) => current || asked.question);
       setToolContext((current) => current ?? context);
       if (withPhoto && attached && !photoRef.current) setComposerPhoto(attached, consented);
     };
 
-    const result = await askRancho(
-      { question: asked, subject, language: askedLanguage, photo: attached, photoConsent: attached ? consented : undefined, toolContext: context },
-      {
-        signal: controller.signal,
-        onStart: ({ remaining, limit }) =>
-          setStatus((s) => (s ? { ...s, remaining, limit, used: Math.max(0, limit - remaining) } : s)),
-        onText: (text) => update({ answer: text, phase: "streaming" }),
-        onCard: (card) => update((turn) => ({ cards: [...turn.cards, card] })),
-      },
-    );
+    // Lead gate first (docs/lead-gate-plan.md §8.6): usually already known on this page (the note in
+    // the welcome message asked when the chat opened). Fails open; /api/ask still enforces it.
+    /** False when "New chat" or the chat going away superseded this question, or Stop was pressed (nothing sent). */
+    const stillWanted = () => {
+      if (!mountedRef.current || chat !== chatRef.current) return false;
+      if (!controller.signal.aborted) return true;
+      if (abortRef.current === controller) abortRef.current = null;
+      update({ phase: "done", stop: "stopped" });
+      return false;
+    };
+    let allowed = await gate.requestAccess();
+    if (!stillWanted()) return;
+    let preflight = ranchoGatePreflight({ allowed, access: status?.access, via: gateStore.getSnapshot().via });
+    if (preflight === "require") {
+      // GET /api/ask said "share details first", but the gate's own status couldn't be read. That
+      // answer may be stale (another tab may have shared details since): ask the gate once more.
+      await gateStore.refresh().catch(() => true);
+      allowed = await gate.requestAccess();
+      if (!stillWanted()) return;
+      preflight = ranchoGatePreflight({ allowed, access: status?.access, via: gateStore.getSnapshot().via });
+    }
+    if (preflight !== "send") {
+      if (abortRef.current === controller) abortRef.current = null;
+      holdQuestion(asked, preflight === "require");
+      return;
+    }
+
+    const result = await askRancho(heldQuestionInput(asked), {
+      signal: controller.signal,
+      onStart: ({ remaining, limit }) => setStatus((s) => (s ? { ...s, remaining, limit, used: Math.max(0, limit - remaining) } : s)),
+      onText: (text) => update({ answer: text, phase: "streaming" }),
+      onCard: (card) => update((turn) => ({ cards: [...turn.cards, card] })),
+    });
     if (abortRef.current === controller) abortRef.current = null;
     // "New chat" cleared this question, or the chat went away (which also clears it): its turn is gone
     // and its photo already released.
     if (!mountedRef.current || chat !== chatRef.current) return;
 
     const failure = result.failure;
+    if (isGateFailure(failure)) {
+      // The gate's 401: nothing was read or counted. Hold the question and photo; show the form.
+      holdQuestion(asked, true);
+      return;
+    }
     if (failure?.kind === "not_configured" || failure?.kind === "limit") {
       // Not answered and not counted: drop the turn, give the question (and photo) back, show the notice.
       setTurns((list) => list.filter((turn) => turn.id !== turnId));
@@ -593,6 +777,8 @@ export function RanchoChat(props: RanchoChatProps) {
     setPreparing(false);
     setPhotoError(null);
     setTurns([]);
+    dropHeld(); // a question held by the lead gate is dropped with the chat
+    closeGate();
     setQuestion("");
     setToolContext(null);
     setFieldError(null);
@@ -660,6 +846,8 @@ export function RanchoChat(props: RanchoChatProps) {
   const consentError = fieldError?.field === "consent" ? fieldError.message : null;
   const voiceError = voiceProblemText(voiceProblem, t.voice);
   const photoLabel = preparing ? t.photo.preparing : photo ? t.photo.change : t.photo.add;
+  /** The lead gate holds a question: the composer is disabled until it is sent or "New chat". */
+  const composerHeld = held !== null;
   const onNavigate = panel ? close : undefined;
   /** Enquiry links from Rancho record where the lead came from (D-039: `from=ask`, nothing else). */
   const enquiryHref = withEnquiryTool(links.enquiry, "ask");
@@ -739,6 +927,8 @@ export function RanchoChat(props: RanchoChatProps) {
             {t.privacyLink}
           </Link>
         </p>
+        {/* Up front, before any question: "we ask once for a contact number" (live mode; nothing when off or already shared). */}
+        <LeadGateNote messages={tg} className="mt-2" />
       </RanchoBubble>
 
       {turns.length === 0 && !blocked && <RanchoSubjectChips name={`${uid}-subject`} value={subject} onChange={setSubject} messages={t} />}
@@ -761,6 +951,43 @@ export function RanchoChat(props: RanchoChatProps) {
           />
         ))}
       </ol>
+      {held && gateView === "form" && (
+        // Its own <form>, outside the composer; focus moves to its heading (it appears after Send).
+        <div data-rancho-gate="form" className="mt-3 min-w-0">
+          {gateNotice === "notKept" && (
+            // Refused again right after this form shared details: say why instead of looping silently.
+            <div data-rancho-gate-notice="" className="mb-3">
+              <RanchoBubble>
+                <p>{t.gate.notKept}</p>
+              </RanchoBubble>
+            </div>
+          )}
+          <LeadGateForm
+            {...gate.formProps}
+            messages={tg}
+            variant="compact"
+            headingLevel={3}
+            privacyHref={links.privacy}
+            signInHref={links.signIn}
+          />
+        </div>
+      )}
+      {held && gateView === "ready" && (
+        <div data-rancho-gate="ready" className="mt-3">
+          <RanchoBubble>
+            <p>{t.gate.unlocked}</p>
+            <button
+              ref={sendNowRef}
+              type="button"
+              onClick={() => resend(held)}
+              className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-full bg-gold px-4 text-sm font-bold text-navy transition-colors hover:bg-gold-2"
+            >
+              <SendHorizontal aria-hidden="true" className="size-4" />
+              {t.gate.sendNow}
+            </button>
+          </RanchoBubble>
+        </div>
+      )}
       {lastTurn?.phase === "done" && lastTurn.answer && (
         // One quiet line under the latest answer: a human can help too (D-039: `from=ask`).
         <p data-rancho-stuck="" className="mt-2 pl-10 text-xs leading-5 text-muted">
@@ -769,6 +996,11 @@ export function RanchoChat(props: RanchoChatProps) {
             {t.errors.enquiry}
           </Link>
         </p>
+      )}
+      {lastTurn?.phase === "done" && lastTurn.answer && (
+        // Contact details shared on this browser: "Not you?" / "Stop Aspire contacting me" (no name).
+        // Nothing for signed-in accounts, a closed gate or a remembered skip.
+        <LeadGateIdentity messages={tg} className="pl-10" />
       )}
     </div>
   );
@@ -865,6 +1097,7 @@ export function RanchoChat(props: RanchoChatProps) {
             aria-disabled={preparing ? true : undefined}
             aria-describedby={photoError ? ids.photoError : undefined}
             className={cn(composerButton, preparing && "cursor-progress opacity-60")}
+            disabled={composerHeld}
           >
             {preparing ? (
               <LoaderCircle aria-hidden="true" className="size-5 animate-spin text-blue motion-reduce:animate-none" />
@@ -881,6 +1114,7 @@ export function RanchoChat(props: RanchoChatProps) {
               title={listening ? t.voice.stop : t.voice.start}
               aria-describedby={voiceError ? ids.voiceError : undefined}
               className={cn(composerButton, listening && "bg-danger text-white hover:bg-danger hover:text-white motion-safe:animate-pulse")}
+              disabled={composerHeld}
             >
               {listening ? <Square aria-hidden="true" className="size-4" /> : <Mic aria-hidden="true" className="size-5" />}
               <span className="sr-only">{listening ? t.voice.stop : t.voice.start}</span>
@@ -899,10 +1133,11 @@ export function RanchoChat(props: RanchoChatProps) {
               if (questionError) setFieldError(null);
             }}
             onKeyDown={onQuestionKeyDown}
-            placeholder={listening ? t.voice.listening : photo ? t.photo.placeholder : t.placeholder}
+            placeholder={composerHeld ? t.gate.composerWaiting : listening ? t.voice.listening : photo ? t.photo.placeholder : t.placeholder}
             aria-invalid={questionError ? true : undefined}
             aria-describedby={cn(ids.hint, questionError && ids.error, ids.privacy)}
-            className="max-h-34 min-h-11 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-1.5 py-2.5 text-[15px] leading-6 text-ink placeholder:truncate placeholder:text-[#7b8ba0] focus:outline-none"
+            className="max-h-34 min-h-11 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-1.5 py-2.5 text-[15px] leading-6 text-ink placeholder:truncate placeholder:text-[#7b8ba0] focus:outline-none disabled:cursor-not-allowed"
+            disabled={composerHeld}
           />
           {/* In the row when there is room; in a narrow chat it sits on the line below instead. */}
           {showSubjectSelect && (
@@ -931,7 +1166,8 @@ export function RanchoChat(props: RanchoChatProps) {
             type="submit"
             title={t.send}
             aria-disabled={preparing ? true : undefined}
-            className="grid size-11 shrink-0 place-items-center rounded-full bg-gold text-navy transition-colors hover:bg-gold-2 aria-disabled:cursor-progress aria-disabled:opacity-60"
+            className="grid size-11 shrink-0 place-items-center rounded-full bg-gold text-navy transition-colors hover:bg-gold-2 aria-disabled:cursor-progress aria-disabled:opacity-60 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={composerHeld}
           >
             <SendHorizontal aria-hidden="true" className="size-5" />
             <span className="sr-only">{t.send}</span>
@@ -1067,7 +1303,9 @@ export function RanchoChat(props: RanchoChatProps) {
           : cn(
               "fixed inset-auto z-30 rounded-card border border-line shadow-[0_24px_60px_-12px_rgb(11_45_91/0.35)]",
               "right-[max(1rem,env(safe-area-inset-right))] bottom-[calc(max(1rem,env(safe-area-inset-bottom))+4.25rem)]",
-              "h-[min(680px,calc(100dvh-72px-6.5rem))] w-[min(26rem,calc(100vw-2rem))] lg:w-[min(28rem,calc(100vw-2rem))]",
+              // The contact form needs room: full available height while it shows.
+              gateView === "form" ? "h-[calc(100dvh-72px-6.5rem)]" : "h-[min(680px,calc(100dvh-72px-6.5rem))]",
+              "w-[min(26rem,calc(100vw-2rem))] lg:w-[min(28rem,calc(100vw-2rem))]",
             ),
       )}
     >

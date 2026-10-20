@@ -1,5 +1,6 @@
 "use client";
 
+import { LoaderCircle } from "lucide-react";
 import { useId, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui";
 import { format } from "@/i18n/format";
@@ -26,19 +27,22 @@ const fieldClass =
 
 /**
  * Builds (or edits) the plan input. A new plan starts today; editing a planning field rebuilds it
- * from today (see `applySettings`).
+ * from today (see `applySettings`). `busy`: the new plan is waiting for the lead-gate status check
+ * (planner-gate.ts); the button shows a pending label and further submits are ignored.
  */
 export function PlanForm({
   t,
   data,
   today,
   settings,
+  busy = false,
   onSubmit,
 }: {
   t: PlannerMessages;
   data: PlannerData;
   today: DateKey;
   settings: PlannerSettings | null;
+  busy?: boolean;
   onSubmit: (settings: PlannerSettings) => void;
 }) {
   const id = useId();
@@ -69,6 +73,7 @@ export function PlanForm({
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
     if (!isDateKey(examDate) || examDate < min) {
       setError(t.form.errors.examDate);
       return;
@@ -206,8 +211,22 @@ export function PlanForm({
       </details>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" variant={settings ? "dark" : "primary"}>
-          {settings ? t.form.update : t.form.submit}
+        <Button
+          type="submit"
+          variant={settings ? "dark" : "primary"}
+          aria-disabled={busy || undefined}
+          className="aria-disabled:cursor-wait aria-disabled:opacity-70"
+        >
+          {busy ? (
+            <>
+              <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
+              {t.form.checking}
+            </>
+          ) : settings ? (
+            t.form.update
+          ) : (
+            t.form.submit
+          )}
         </Button>
         {settings && <p className="text-xs text-muted">{t.form.updateNote}</p>}
       </div>

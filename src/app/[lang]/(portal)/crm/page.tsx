@@ -1,8 +1,18 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { AddLeadForm } from "@/components/crm/AddLeadForm";
 import { CrmPageHeader } from "@/components/crm/CrmBlocks";
-import { CrmGate, crmCentres, programOptions, sourceOptions, requestTime, type CrmAccess } from "@/components/crm/CrmGate";
-import { parseInboxFilters, toLeadFilters, type CrmMessages } from "@/components/crm/format";
+import {
+  classOptions,
+  CrmGate,
+  crmCentres,
+  manualSourceOptions,
+  programOptions,
+  sourceOptions,
+  requestTime,
+  type CrmAccess,
+} from "@/components/crm/CrmGate";
+import { ADD_LEAD_PARAM, inboxQuery, parseInboxFilters, toLeadFilters, type CrmMessages } from "@/components/crm/format";
 import { InboxFiltersForm, LeadList, type InboxOptions } from "@/components/crm/InboxView";
 import type { Locale } from "@/i18n/config";
 import { getLocale, getMessages } from "@/i18n/server";
@@ -15,7 +25,10 @@ export async function generateMetadata(): Promise<Metadata> {
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-/** Lead inbox: filters live in the URL (GET form); the list is read on the server for the viewer. */
+/**
+ * Enquiries (the lead inbox): filters live in the URL (GET form); the list is read on the server
+ * for the viewer. `?add=1` (the console top bar's "+ Add enquiry") opens the add-enquiry drawer.
+ */
 export default async function CrmInboxPage({ searchParams }: { searchParams: SearchParams }) {
   const [locale, t] = await Promise.all([getLocale(), getMessages("crm")]);
   return (
@@ -33,7 +46,8 @@ export default async function CrmInboxPage({ searchParams }: { searchParams: Sea
 }
 
 async function Inbox({ access, searchParams, locale, t }: { access: CrmAccess; searchParams: SearchParams; locale: Locale; t: CrmMessages }) {
-  const filters = parseInboxFilters(await searchParams);
+  const params = await searchParams;
+  const filters = parseInboxFilters(params);
   const now = await requestTime();
   const { viewer, permissions } = access;
   const centres = await crmCentres(locale);
@@ -48,10 +62,34 @@ async function Inbox({ access, searchParams, locale, t }: { access: CrmAccess; s
         : [],
   };
   const page = listLeads(viewer, toLeadFilters(filters), { page: filters.page }, now);
+  const addParam = params[ADD_LEAD_PARAM];
+  const openAdd = permissions.canCreateLeads && (Array.isArray(addParam) ? addParam[0] : addParam) === "1";
   return (
     <>
+      {permissions.canCreateLeads && (
+        <div className="mb-4 flex justify-end">
+          <AddLeadForm
+            openSignal={openAdd ? now : null}
+            sources={manualSourceOptions(t)}
+            options={{ classes: classOptions(t), programs: programOptions(t), centres: centres.options }}
+            t={{ add: t.add, common: t.common, errors: t.errors }}
+          />
+        </div>
+      )}
       <InboxFiltersForm filters={filters} options={options} permissions={permissions} locale={locale} t={t} />
-      <LeadList page={page} filters={filters} ctx={{ centres: centres.names, viewerId: viewer.userId, now, locale, t, counsellor: viewer.role === "counsellor" }} />
+      <LeadList
+        page={page}
+        filters={filters}
+        ctx={{
+          centres: centres.names,
+          viewerId: viewer.userId,
+          now,
+          locale,
+          t,
+          counsellor: viewer.role === "counsellor",
+          back: `/crm${inboxQuery(filters)}`,
+        }}
+      />
     </>
   );
 }

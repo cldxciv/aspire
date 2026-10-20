@@ -47,7 +47,9 @@ const mocktest = {
   list: {
     eyebrow: "Tests",
     title: "Choose a mock test",
-    description: "Each test runs in your browser. Guests' answers stay on this device; signed-in students can save attempts and join the leaderboard.",
+    /** Mode-agnostic (lead-gate-plan §11.4): the contact step may be on or off. */
+    description:
+      "Each test runs in your browser. You may be asked for a contact number once before your score (not if you are signed in). Guests' answers stay on this device; signed-in students can save attempts and join the leaderboard.",
     start: "Start test",
     leaderboard: "Leaderboard",
     practice: "Practice test",
@@ -283,6 +285,29 @@ const mocktest = {
     askRanchoAllStrong: "{test}: score {band} of the maximum; every topic strong",
     askRanchoBand: "{low}–{high} %",
     askRanchoBelowZero: "below 0 %",
+  },
+  /**
+   * Lead gate (docs/lead-gate-plan.md §8.4): contact details once before results. The form's own
+   * copy (fields, consent, sample-data line) is the `leadGate` namespace; these are the mock-test
+   * lines around it. Shown only when the live mode asks, so they may say "we ask".
+   */
+  gate: {
+    /** Up-front note on the start screen of a test of 60 minutes or more (replaces leadGate.note). */
+    noteStartRequired: "Free. This test is long, so we ask once for a contact number before you start, not at the end (not needed if you're signed in).",
+    noteStartOptional: "Free. Before you start you may share a contact number, or continue without it.",
+    /** Above the form after Start was pressed. `{n}` = minutes. */
+    startIntro: "This test takes {n} minutes, so we ask now, before the timer starts, not after you finish.",
+    startSubmit: "Save and start the test",
+    /** After the form could not be sent (network, server, busy, paused): the test still starts; the result page asks again. */
+    startWithoutSaving: "Start the test without sharing",
+    /** Result page while the score waits for contact details. */
+    lockedTitle: "Your test is submitted and saved on this device",
+    lockedBody: "Share a contact number once to see your score, topic analysis and solutions. Your answers stay on this device.",
+    /** Same page while the contact step is optional (the form then offers "Continue without sharing"). */
+    optionalBody: "Before your score you may share a contact number, or continue without it. Your answers stay on this device.",
+    /** Certificate and report for parents of such an attempt (no second form there). */
+    printLocked: "Your score is not shown yet. Open the result page, share a contact number once, then come back here.",
+    printLockedCta: "Open the result page",
   },
   certificate: {
     heading: "Certificate of participation",

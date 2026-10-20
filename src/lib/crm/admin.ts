@@ -16,12 +16,14 @@ import { scrubTasks } from "./repo/tasks";
 import {
   CRM_ROLES,
   crmPermissions,
+  ERASE_REASONS,
   type AssignmentRule,
   type AssignmentRuleInput,
   type CrmResult,
   type CrmRole,
   type CrmStaffMember,
   type CrmViewer,
+  type EraseReason,
   type StaffInput,
 } from "./types";
 
@@ -59,6 +61,9 @@ const KEEP_META_KEYS = [
   // Lead gate (docs/lead-gate-plan.md): who filled in the gate form, and that it landed on a lost lead.
   "submittedBy",
   "onLostLead",
+  // Staff-entered families: how they agreed to be contacted (proof of consent, not personal data).
+  "consentMethod",
+  "reason",
 ] as const;
 
 export const ERASED_TASK_TITLE = "[erased]";
@@ -68,13 +73,17 @@ export const ERASED_TASK_TITLE = "[erased]";
  * dates, assignee) so funnel counts stay right. Admin only. Idempotent.
  * Lead gate: also deletes the lead's passes (every browser is asked again) and all its `tool_use`
  * entries (not needed for funnel counts); the audit row carries the two counts.
+ * `options.reason` (one of ERASE_REASONS, from the admin's erase dialog) is kept on the erase
+ * entry and in the audit row; an unknown value is ignored.
  */
 export function eraseLead(
   viewer: CrmViewer,
   leadId: string,
   now: number = Date.now(),
+  options: { reason?: EraseReason | null } = {},
 ): CrmResult<{ leadId: string; erasedAt: string }> {
   if (!crmPermissions(viewer).canErase) return fail("forbidden", CRM_MESSAGES.forbidden);
+  const reason = (ERASE_REASONS as readonly unknown[]).includes(options.reason) ? (options.reason as EraseReason) : null;
   const db = getDb();
   return withTransaction(db, (): CrmResult<{ leadId: string; erasedAt: string }> => {
     const lead = findLeadById(db, leadId);
@@ -97,13 +106,13 @@ export function eraseLead(
     const gate = deleteGateDataForLead(db, leadId);
     scrubActivities(db, leadId, KEEP_META_KEYS);
     scrubTasks(db, leadId, ERASED_TASK_TITLE, now);
-    insertActivity(db, { leadId, type: "erase", actorId: viewer.userId, at: now });
+    insertActivity(db, { leadId, type: "erase", meta: reason ? { reason } : {}, actorId: viewer.userId, at: now });
     crmAudit(db, {
       actorId: viewer.userId,
       action: CRM_AUDIT.leadErase,
       target: leadId,
       // ("pass…" keys would be dropped by the audit sanitiser)
-      details: { gateBrowsers: gate.passesRevoked, toolUsesDeleted: gate.toolUsesDeleted },
+      details: { gateBrowsers: gate.passesRevoked, toolUsesDeleted: gate.toolUsesDeleted, ...(reason ? { reason } : {}) },
       now,
     });
     return ok({ leadId, erasedAt: toIso(now) });

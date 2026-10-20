@@ -25,6 +25,11 @@ interface Script {
   blocks?: FakeEvent[];
   /** One script per model turn of a question (tool use); `sdk.turn` counts the stream() calls. */
   turns?: Script[];
+  /**
+   * After its chunks, waits (before message_stop) until the request is aborted, then throws the
+   * SDK's abort error, as the real SDK does when the browser went away mid-answer.
+   */
+  hang?: boolean;
 }
 const sdk = vi.hoisted(() => ({
   calls: [] as { params: Record<string, unknown>; apiKey: unknown }[],
@@ -35,11 +40,11 @@ const sdk = vi.hoisted(() => ({
 vi.mock("@anthropic-ai/sdk", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@anthropic-ai/sdk")>();
   class FakeAnthropic {
-    beta: { messages: { stream: (params: Record<string, unknown>) => unknown } };
+    beta: { messages: { stream: (params: Record<string, unknown>, options?: { signal?: AbortSignal }) => unknown } };
     constructor(options: { apiKey?: unknown }) {
       this.beta = {
         messages: {
-          stream: (params) => {
+          stream: (params, streamOptions) => {
             sdk.calls.push({ params, apiKey: options.apiKey });
             const turns = sdk.script.turns;
             const script = turns ? turns[Math.min(sdk.turn++, turns.length - 1)] : sdk.script;
@@ -53,6 +58,14 @@ vi.mock("@anthropic-ai/sdk", async (importOriginal) => {
               [Symbol.asyncIterator]: () => ({
                 next: async () => {
                   if (script.error) throw script.error;
+                  if (script.hang && index === events.length - 1) {
+                    const signal = streamOptions?.signal;
+                    await new Promise<void>((_resolve, reject) => {
+                      const fail = () => reject(new actual.APIUserAbortError());
+                      if (signal?.aborted) fail();
+                      else signal?.addEventListener("abort", fail, { once: true });
+                    });
+                  }
                   return index < events.length ? { done: false, value: events[index++] } : { done: true, value: undefined };
                 },
               }),
@@ -76,6 +89,12 @@ const { getDb, resetDatabaseForTests } = await import("@/lib/db/connection");
 const { createTestUser, TestBrowser } = await import("@/lib/auth/testing/harness");
 const loginRoute = await import("@/app/api/auth/login/route");
 const { getWeakTopicsFromDoubts } = await import("@/lib/ask/weak-topics");
+const { createSession } = await import("@/lib/auth/sessions");
+const { createLeadGateHandlers } = await import("@/lib/lead-gate/handlers");
+const { createLeadGateLimiters, resetLeadGateLimitersForTests, sharedLeadGateLimiters } = await import("@/lib/lead-gate/limits");
+const { LEAD_GATE_CONSENT_VERSION } = await import("@/lib/lead-gate/contract");
+const { LEAD_GATE_COOKIE } = await import("@/lib/lead-gate/server");
+const { isLeadGateResponse } = await import("@/components/lead-gate/lead-gate-client");
 const ask = await import("./route");
 
 const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
@@ -441,6 +460,311 @@ describe("GET /api/ask", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     const text = await response.text();
     expect(text).not.toContain("test-key-not-real");
-    expect(JSON.parse(text)).toMatchObject({ ok: true, data: { configured: true, account: "guest", limit: 2, remaining: 2, maxImageBytes: 4 * 1024 * 1024 } });
+    expect(JSON.parse(text)).toMatchObject({
+      ok: true,
+      data: { configured: true, access: "open", account: "guest", limit: 2, remaining: 2, maxImageBytes: 4 * 1024 * 1024 },
+    });
+  });
+});
+
+/**
+ * Lead gate (docs/lead-gate-plan.md §5.6): contact details once per browser before Rancho answers.
+ * Owner decision 21 Oct 2026: on now, mode `required`, also while sample data is shown.
+ * Synthetic people and numbers only.
+ */
+describe("/api/ask behind the lead gate", () => {
+  const GATE_SECRET = "ask-route-test-secret-0123456789abcdefghij";
+  const UNLOCK = {
+    studentName: "Gate Student",
+    phone: "98100 12345",
+    currentClass: "class-11",
+    submittedBy: "parent",
+    consent: true,
+    consentVersion: LEAD_GATE_CONSENT_VERSION,
+    tool: "ask",
+    context: { page: "/tools/ask", locale: "en" },
+    website: "",
+  };
+  let gateHandlers: ReturnType<typeof createLeadGateHandlers>;
+
+  beforeEach(() => {
+    vi.stubEnv("LEAD_GATE", "required");
+    vi.stubEnv("LEAD_GATE_SECRET", GATE_SECRET);
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "false");
+    const limiters = createLeadGateLimiters();
+    gateHandlers = createLeadGateHandlers({ limiters: () => limiters });
+  });
+
+  afterEach(() => resetLeadGateLimitersForTests());
+
+  /** Shares contact details on this browser (POST /api/lead-gate): it now holds a pass cookie. */
+  async function unlock(b: InstanceType<typeof TestBrowser>, body: Record<string, unknown> = UNLOCK) {
+    const response = await b.send(gateHandlers.POST, "/api/lead-gate", { body });
+    expect(response.status).toBe(201);
+    expect(b.jar.has(LEAD_GATE_COOKIE)).toBe(true);
+  }
+
+  async function signedIn(role: "student" | "parent", ip: string, options: { mustChangePassword?: boolean } = {}) {
+    const user = await createTestUser({ role, loginId: `gate.${role}.${ip.split(".").at(-1)}`, password: "pass-word-2026", ...options });
+    const b = browser(ip);
+    b.jar.set("aspire_session", createSession(user.id).token);
+    return b;
+  }
+
+  async function askStatus(b: InstanceType<typeof TestBrowser>) {
+    return ((await (await b.send(ask.GET, "/api/ask")).json()) as { data: Record<string, unknown> }).data;
+  }
+
+  function toolUses(): Record<string, unknown>[] {
+    return getDb()
+      .prepare("SELECT meta FROM crm_activities WHERE type = 'tool_use' ORDER BY id")
+      .all()
+      .map((row) => JSON.parse(String(row.meta)) as Record<string, unknown>);
+  }
+
+  it("answers a locked guest with the gate 401 before reading the body: nothing reserved, counted, or sent to Claude (or its tools)", async () => {
+    // A tool-using answer is scripted: it must never run for a locked browser.
+    sdk.script = { turns: [{ stopReason: "tool_use", blocks: [{ type: "tool_use", id: "toolu_1", name: "find_mock_tests", input: { exam: "NEET" } }] }, { chunks: ["x"] }] };
+    const locked = browser("203.0.113.110");
+    const request = locked.request("/api/ask", { body: { question: "Find the height", language: "en" } });
+    cookieState.jar = locked.jar;
+    const response = await ask.POST(request);
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("x-lead-gate")).toBe("required");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(isLeadGateResponse(response)).toBe(true);
+    expect(await response.json()).toMatchObject({ ok: false, error: "unauthenticated", gate: "lead" });
+    expect(request.bodyUsed).toBe(false);
+    expect(sdk.calls).toHaveLength(0);
+
+    // Junk or huge bodies get the same cheap 401 (never a 400 / 413 after buffering them).
+    expect((await post(locked, "{not json")).status).toBe(401);
+    expect((await post(locked, { language: "en", question: "x".repeat(6 * 1024 * 1024) })).status).toBe(401);
+    // Same-origin and "configured" still come first.
+    expect((await post(locked, { question: "q", language: "en" }, { origin: "https://evil.example" })).status).toBe(403);
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    expect((await post(locked, { question: "q", language: "en" })).status).toBe(503);
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key-not-real");
+
+    expect(await askStatus(locked)).toMatchObject({ access: "gate_required", account: "guest", used: 0, remaining: 2 });
+    expect(Number(getDb().prepare("SELECT COUNT(*) AS n FROM ask_usage").get()?.n)).toBe(0);
+    expect(toolUses()).toEqual([]);
+    const logs = loggedLines().join("\n");
+    expect(logs).toContain('"outcome":"gate_required"');
+    expect(logs).not.toContain("Find the height");
+  });
+
+  it("gates while sample data is shown too (owner decision: the form says so, the gate stays)", async () => {
+    vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
+    const locked = browser("203.0.113.111");
+    expect((await post(locked, { question: "q", language: "en" })).status).toBe(401);
+    expect(await askStatus(locked)).toMatchObject({ access: "gate_required" });
+  });
+
+  it("after contact details are shared once: answers stream and the family's record notes ONLY that Rancho was used, once per day", async () => {
+    const family = browser("203.0.113.112");
+    await unlock(family);
+    expect(await askStatus(family)).toMatchObject({ access: "open", account: "guest", remaining: 2 });
+
+    const request = family.request("/api/ask", {
+      body: { question: "Find the height", subject: "physics", language: "en", photoConsent: true, image: { mediaType: "image/jpeg", data: Buffer.from(JPEG).toString("base64") } },
+    });
+    cookieState.jar = family.jar;
+    const first = await ask.POST(request);
+    expect(first.status).toBe(200);
+    expect(request.bodyUsed).toBe(true);
+    expect(answerText(await readStream(first))).toContain("Final answer");
+
+    const second = await post(family, { question: "And the time?", language: "en" });
+    expect(second.status).toBe(200);
+    await second.text();
+
+    const uses = toolUses();
+    expect(uses).toHaveLength(1);
+    expect(Object.keys(uses[0]).sort()).toEqual(["key", "lastAt", "tool", "uses"]);
+    expect(uses[0]).toMatchObject({ tool: "ask", key: "rancho", uses: 2 });
+    const stored = JSON.stringify(getDb().prepare("SELECT * FROM crm_activities WHERE type = 'tool_use'").all());
+    for (const secret of ["Find the height", "physics", "Physics", "Projectile", "Final answer", "image", "photo"]) {
+      expect(stored).not.toContain(secret);
+    }
+  });
+
+  it("refusals, upstream errors and failed answers note nothing", async () => {
+    const family = browser("203.0.113.113");
+    await unlock(family);
+
+    sdk.script = { chunks: ["I can't help with that."], stopReason: "refusal" };
+    expect((await readStream(await post(family, { question: "q", language: "en" }))).at(-1)).toMatchObject({ t: "done", stop: "refusal" });
+
+    sdk.script = { error: new RateLimitError(429, undefined, "slow down", new Headers()) };
+    expect((await post(family, { question: "q", language: "en" })).status).toBe(503);
+
+    sdk.turn = 0;
+    sdk.script = {
+      turns: [
+        { stopReason: "tool_use", blocks: [{ type: "tool_use", id: "toolu_1", name: "find_mock_tests", input: { exam: "NEET" } }] },
+        { error: new InternalServerError(500, undefined, "overloaded", new Headers()) },
+      ],
+    };
+    // (No sample mock tests while SHOW_PLACEHOLDER_CONTENT=false, so no card: the error is "upstream".)
+    expect((await readStream(await post(family, { question: "q", language: "en" }))).at(-1)).toEqual({ t: "error", code: "upstream" });
+    expect(toolUses()).toEqual([]);
+  });
+
+  it("a pass that does not record use (LEAD_GATE_RECORD_USE=parent, shared by a student) answers but notes nothing", async () => {
+    vi.stubEnv("LEAD_GATE_RECORD_USE", "parent");
+    const family = browser("203.0.113.114");
+    await unlock(family, { ...UNLOCK, submittedBy: "student" });
+    const response = await post(family, { question: "q", language: "en" });
+    expect(response.status).toBe(200);
+    await response.text();
+    expect(toolUses()).toEqual([]);
+  });
+
+  it("signed-in accounts skip the gate and note nothing; a must-change-password session skips it on the guest allowance", async () => {
+    const student = await signedIn("student", "203.0.113.115");
+    const answered = await post(student, { question: "q", language: "en" });
+    expect(answered.status).toBe(200);
+    await answered.text();
+    expect(await askStatus(student)).toMatchObject({ access: "open", account: "student", limit: 3, used: 1 });
+
+    const parent = await signedIn("parent", "203.0.113.116");
+    const parentAnswer = await post(parent, { question: "q", language: "en" });
+    expect(parentAnswer.status).toBe(200);
+    await parentAnswer.text();
+
+    const temporary = await signedIn("student", "203.0.113.117", { mustChangePassword: true });
+    const temporaryAnswer = await post(temporary, { question: "q", language: "en" });
+    expect(temporaryAnswer.status).toBe(200);
+    await temporaryAnswer.text();
+    expect(await askStatus(temporary)).toMatchObject({ access: "open", account: "guest", limit: 2, used: 1 });
+
+    expect(toolUses()).toEqual([]);
+    expect(Number(getDb().prepare("SELECT COUNT(*) AS n FROM crm_leads").get()?.n)).toBe(0);
+  });
+
+  it("optional mode and off: never a 401; GET reports gate_optional / open", async () => {
+    vi.stubEnv("LEAD_GATE", "optional");
+    const guest = browser("203.0.113.118");
+    expect(await askStatus(guest)).toMatchObject({ access: "gate_optional" });
+    const optional = await post(guest, { question: "q", language: "en" });
+    expect(optional.status).toBe(200);
+    await optional.text();
+
+    vi.stubEnv("LEAD_GATE", "off");
+    expect(await askStatus(guest)).toMatchObject({ access: "open" });
+    const off = await post(guest, { question: "q", language: "en" });
+    expect(off.status).toBe(200);
+    await off.text();
+    expect(toolUses()).toEqual([]);
+  });
+
+  it("one pass used from two connections shares the family's allowance, and the connection's own allowance still applies", async () => {
+    const home = browser("203.0.113.120");
+    await unlock(home);
+    for (let i = 0; i < 2; i += 1) {
+      const ok = await post(home, { question: `q${i}`, language: "en" });
+      expect(ok.status).toBe(200);
+      await ok.text();
+    }
+
+    // The same pass from another connection: the family has used today's guest allowance.
+    const phone = browser("203.0.113.121");
+    phone.jar.set(LEAD_GATE_COOKIE, home.jar.get(LEAD_GATE_COOKIE) ?? "missing");
+    const shared = await post(phone, { question: "q", language: "en" });
+    expect(shared.status).toBe(429);
+    expect(await shared.json()).toMatchObject({ error: "rate_limited" });
+    expect(await askStatus(phone)).toMatchObject({ access: "open", used: 2, remaining: 0 });
+
+    // Another family on the first connection: that IP has used its allowance.
+    const neighbour = browser("203.0.113.120");
+    await unlock(neighbour, { ...UNLOCK, phone: "9822012345", studentName: "Other Student" });
+    expect((await post(neighbour, { question: "q", language: "en" })).status).toBe(429);
+    expect(sdk.calls).toHaveLength(2);
+  });
+
+  it("re-asks a browser whose pass cookie is dead, and clears that cookie", async () => {
+    const family = browser("203.0.113.122");
+    await unlock(family);
+    const value = family.jar.get(LEAD_GATE_COOKIE) ?? "";
+    family.jar.set(LEAD_GATE_COOKIE, value.replace(/\.(\d{10})\./, (_m, s: string) => `.${Number(s) + 1}.`));
+    const response = await post(family, { question: "q", language: "en" });
+    expect(response.status).toBe(401);
+    expect(response.headers.getSetCookie().some((cookie) => /^aspire_tool_pass=;.*Max-Age=0/i.test(cookie))).toBe(true);
+    expect(family.jar.has(LEAD_GATE_COOKIE)).toBe(false);
+    expect(sdk.calls).toHaveLength(0);
+  });
+
+  it("optional mode with a pass: answers, charges the family's allowance and notes the use", async () => {
+    vi.stubEnv("LEAD_GATE", "optional");
+    const home = browser("203.0.113.123");
+    await unlock(home);
+    expect(await askStatus(home)).toMatchObject({ access: "open" });
+    const answered = await post(home, { question: "q", language: "en" });
+    expect(answered.status).toBe(200);
+    await answered.text();
+    expect(toolUses()).toEqual([expect.objectContaining({ tool: "ask", key: "rancho", uses: 1 })]);
+
+    // The same pass from another connection: the family's question already counts there.
+    const phone = browser("203.0.113.124");
+    phone.jar.set(LEAD_GATE_COOKIE, home.jar.get(LEAD_GATE_COOKIE) ?? "missing");
+    expect(await askStatus(phone)).toMatchObject({ access: "open", used: 1, remaining: 1 });
+  });
+
+  it("a browser that goes away mid-answer notes nothing", async () => {
+    sdk.script = { chunks: ["Step 1: use v² = u² + 2as. "], hang: true };
+    const family = browser("203.0.113.125");
+    await unlock(family);
+    const response = await post(family, { question: "q", language: "en" });
+    expect(response.status).toBe(200);
+
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let received = "";
+    while (!received.includes('"t":"delta"')) {
+      const { value, done } = await reader.read();
+      if (done) throw new Error("the stream ended before the answer started");
+      received += decoder.decode(value, { stream: true });
+    }
+    await reader.cancel();
+
+    await vi.waitFor(() => expect(loggedLines().join("\n")).toContain('"outcome":"client_aborted"'));
+    expect(loggedLines().join("\n")).not.toContain('"outcome":"answered"');
+    expect(toolUses()).toEqual([]);
+  });
+
+  it("degrades to optional while the flood breaker is tripped: no 401, GET reports gate_optional", async () => {
+    vi.stubEnv("LEAD_GATE_MAX_NEW_LEADS_PER_HOUR", "1");
+    sharedLeadGateLimiters().breaker.record(Date.now());
+    const guest = browser("203.0.113.126");
+    expect(await askStatus(guest)).toMatchObject({ access: "gate_optional" });
+    const answered = await post(guest, { question: "q", language: "en" });
+    expect(answered.status).toBe(200);
+    await answered.text();
+    expect(toolUses()).toEqual([]);
+
+    // The hour rolls on (breaker cleared): the gate is required again.
+    resetLeadGateLimitersForTests();
+    expect(await askStatus(guest)).toMatchObject({ access: "gate_required" });
+    expect((await post(guest, { question: "q", language: "en" })).status).toBe(401);
+  });
+
+  it("reports nothing remaining once the site-wide cap is reached, so no contact form is offered for a question that would be refused", async () => {
+    vi.stubEnv("ASK_ASPIRE_GLOBAL_DAILY", "1");
+    const family = browser("203.0.113.127");
+    await unlock(family);
+    const answered = await post(family, { question: "q", language: "en" });
+    expect(answered.status).toBe(200);
+    await answered.text();
+
+    // A locked guest elsewhere: its own allowance is untouched, but the site has none left today.
+    const locked = browser("203.0.113.128");
+    expect(await askStatus(locked)).toMatchObject({ access: "gate_required", used: 0, remaining: 0 });
+    expect(await askStatus(family)).toMatchObject({ access: "open", used: 1, remaining: 0 });
+    const refused = await post(family, { question: "q", language: "en" });
+    expect(refused.status).toBe(429);
+    expect(await refused.json()).toMatchObject({ error: "rate_limited" });
+    expect(sdk.calls).toHaveLength(1);
   });
 });

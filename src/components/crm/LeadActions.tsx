@@ -1,15 +1,34 @@
 "use client";
 
-import { CheckCircle2, ClipboardPenLine, LoaderCircle, MessageCircle, Phone, Plus, StickyNote } from "lucide-react";
-import { useId, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui";
+import { CheckCircle2, ClipboardPenLine, Eraser, LoaderCircle, MessageCircle, Pencil, Phone, Plus, StickyNote } from "lucide-react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Button, Notice } from "@/components/ui";
 import { format } from "@/i18n/format";
 import type { Messages } from "@/i18n/messages/types";
 import { cn } from "@/lib/cn";
-import { CONTACT_CHANNELS, LEAD_STAGES, LOST_REASONS, type ContactChannel, type LeadStage } from "@/lib/crm/types";
+import {
+  CONTACT_CHANNELS,
+  ERASE_REASONS,
+  LEAD_STAGES,
+  LOST_REASONS,
+  type ContactChannel,
+  type EditableLeadField,
+  type LeadStage,
+} from "@/lib/crm/types";
 import { crmRequests } from "./api";
 import { ActionFeedback, CrmDialog, fieldClasses, labelClasses, useCrmAction } from "./client-kit";
-import { NOTE_MAX, logContactRequest, needsLostReason, noteRequest, stageChangeRequest, taskRequest } from "./lead-forms";
+import {
+  NOTE_MAX,
+  editDetailsRequest,
+  eraseRequest,
+  logContactRequest,
+  needsLostReason,
+  noteRequest,
+  stageChangeRequest,
+  taskRequest,
+  type DetailIssue,
+  type DetailValues,
+} from "./lead-forms";
 import { OUTCOMES_BY_CHANNEL, type Option } from "./types";
 
 /** The `crm` message slices the lead-detail islands need (one shared object, passed to each). */
@@ -634,5 +653,311 @@ export function TaskForm({ leadId, t, pagePath, defaultDate }: Base & { defaultD
       </div>
       <ActionFeedback status={action.status} error={action.error} className="sm:col-span-3" />
     </form>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Edit details (existing PATCH `fields`; admin-console plan §8, Agent B)
+
+export type DetailOptions = { classes: Option[]; programs: Option[]; centres: Option[] };
+
+/** The current value stays selectable even when it is not one of the usual options (old or unknown slugs). */
+function withCurrent(options: Option[], current: string): Option[] {
+  return current && !options.some((option) => option.value === current) ? [{ value: current, label: current }, ...options] : options;
+}
+
+/**
+ * "Edit details" button + dialog: names, email, class, program, centre. Sends only what changed;
+ * the server marks those fields staff-edited (later website forms never overwrite them). The phone
+ * number is not editable (it is the dedupe key).
+ */
+export function EditDetailsButton({
+  leadId,
+  initial,
+  showContactName,
+  options,
+  t,
+  pagePath,
+}: Base & { initial: DetailValues; showContactName: boolean; options: DetailOptions }) {
+  const id = useId();
+  const titleId = `${id}-title`;
+  const e = t.lead.edit;
+  const d = t.lead.details;
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState<DetailValues>(initial);
+  const [issues, setIssues] = useState<Partial<Record<EditableLeadField, DetailIssue>>>({});
+  const [note, setNote] = useState("");
+  const [status, setStatus] = useState("");
+  const action = useCrmAction(t, pagePath);
+
+  function openDialog() {
+    setValues(initial);
+    setIssues({});
+    setNote("");
+    setStatus("");
+    action.reset();
+    setOpen(true);
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const built = editDetailsRequest(leadId, initial, values);
+    if (!built.ok) {
+      if (built.nothing) {
+        setIssues({});
+        setNote(e.nothing);
+        return;
+      }
+      setIssues(built.issues);
+      setNote("");
+      const first = Object.keys(built.issues)[0];
+      if (first) document.getElementById(`${id}-${first}`)?.focus();
+      return;
+    }
+    setIssues({});
+    setNote("");
+    const data = await action.run(built.request, e.saved);
+    if (data === null) return;
+    setOpen(false);
+    setStatus(e.saved);
+  }
+
+  const issueText = (field: EditableLeadField) => {
+    if (!issues[field]) return null;
+    return field === "email" ? e.invalidEmail : e.invalidName;
+  };
+  const text = (field: EditableLeadField, label: string, type: "text" | "email" = "text") => {
+    const issue = issueText(field);
+    return (
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={`${id}-${field}`} className={labelClasses}>
+          {label} <span className="font-normal text-muted">{t.common.optional}</span>
+        </label>
+        <input
+          id={`${id}-${field}`}
+          type={type}
+          value={values[field]}
+          maxLength={field === "email" ? 254 : 80}
+          autoComplete="off"
+          aria-invalid={issue ? true : undefined}
+          aria-describedby={issue ? `${id}-${field}-error` : undefined}
+          onChange={(event) => setValues((current) => ({ ...current, [field]: event.target.value }))}
+          className={fieldClasses}
+        />
+        {issue && (
+          <p id={`${id}-${field}-error`} className="text-sm font-semibold text-danger">
+            {issue}
+          </p>
+        )}
+      </div>
+    );
+  };
+  const select = (field: EditableLeadField, label: string, list: Option[]) => (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={`${id}-${field}`} className={labelClasses}>
+        {label}
+      </label>
+      <select
+        id={`${id}-${field}`}
+        value={values[field]}
+        onChange={(event) => setValues((current) => ({ ...current, [field]: event.target.value }))}
+        className={fieldClasses}
+      >
+        <option value="">{e.notGiven}</option>
+        {withCurrent(list, initial[field]).map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col items-start gap-1 sm:items-end">
+      <Button variant="outline" onClick={openDialog}>
+        <Pencil aria-hidden="true" className="size-4" />
+        {e.button}
+      </Button>
+      <p role="status" className="text-sm font-semibold text-success">
+        {status}
+      </p>
+      <CrmDialog open={open} titleId={titleId} onClose={() => setOpen(false)}>
+        <form onSubmit={submit} noValidate className="p-5 md:p-6" aria-busy={action.pending || undefined}>
+          <h2 id={titleId} className="text-lg font-extrabold text-navy">
+            {e.title}
+          </h2>
+          <p className="mt-2 text-sm text-muted">{e.intro}</p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            {text("studentName", d.student)}
+            {text("guardianName", d.guardian)}
+            {showContactName && text("contactName", d.contactName)}
+            {text("email", d.email, "email")}
+            {select("currentClass", d.class, options.classes)}
+            {select("programInterest", d.program, options.programs)}
+            {select("centreSlug", d.centre, options.centres)}
+          </div>
+          <p className="mt-4 text-xs text-muted">{e.phoneNote}</p>
+          <p role="status" className="mt-2 text-sm font-semibold text-muted">
+            {note}
+          </p>
+          <ActionFeedback status="" error={action.error} className="mt-1" />
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              {t.common.cancel}
+            </Button>
+            <Button type="submit" variant="dark" disabled={action.pending}>
+              {action.pending && <Spinner />}
+              {e.save}
+            </Button>
+          </div>
+        </form>
+      </CrmDialog>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Erase (admins only; existing POST …/erase; D-042)
+
+const dangerButton =
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-control border px-4 py-2.5 text-sm font-bold transition disabled:pointer-events-none disabled:opacity-60";
+
+/**
+ * Set by EraseLeadPanel just before its erase request. A successful erase refreshes the page, which
+ * removes the panel (with its status line and the dialog's trigger); the erased notice of that lead
+ * then takes focus once, so keyboard and screen-reader users land on the confirmation.
+ */
+let focusErasedNoticeFor: string | null = null;
+
+/** The "personal data erased" notice of a lead page; focused once right after this tab erased it. */
+export function ErasedNotice({ leadId, children }: { leadId: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focusErasedNoticeFor !== leadId) return;
+    focusErasedNoticeFor = null;
+    ref.current?.focus();
+  }, [leadId]);
+  return (
+    <div ref={ref} tabIndex={-1} className="rounded-control">
+      <Notice variant="warning">{children}</Notice>
+    </div>
+  );
+}
+
+/**
+ * Admin-only "Erase personal data": a dialog that says what is deleted and what is kept, asks for
+ * a reason and for the confirmation word typed exactly. The server re-checks the admin role.
+ */
+export function EraseLeadPanel({ leadId, t, pagePath }: Base) {
+  const id = useId();
+  const titleId = `${id}-title`;
+  const r = t.lead.erase;
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [typed, setTyped] = useState("");
+  const [issue, setIssue] = useState<"reasonRequired" | "wordMismatch" | null>(null);
+  const [status, setStatus] = useState("");
+  const action = useCrmAction(t, pagePath);
+
+  function openDialog() {
+    setReason("");
+    setTyped("");
+    setIssue(null);
+    setStatus("");
+    action.reset();
+    setOpen(true);
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const built = eraseRequest(leadId, { typed, word: r.word, reason });
+    if (!built.ok) {
+      setIssue(built.issue);
+      document.getElementById(built.issue === "reasonRequired" ? `${id}-reason` : `${id}-word`)?.focus();
+      return;
+    }
+    setIssue(null);
+    focusErasedNoticeFor = leadId;
+    const data = await action.run(built.request, r.done);
+    if (data === null) {
+      focusErasedNoticeFor = null;
+      return;
+    }
+    setOpen(false);
+    setStatus(r.done);
+  }
+
+  return (
+    <div>
+      <p className="text-sm text-muted">{r.intro}</p>
+      <button type="button" onClick={openDialog} className={cn(dangerButton, "mt-3 border-danger bg-white text-danger hover:bg-danger-soft")}>
+        <Eraser aria-hidden="true" className="size-4" />
+        {r.button}
+      </button>
+      <p role="status" className="mt-2 text-sm font-semibold text-success">
+        {status}
+      </p>
+      <CrmDialog open={open} titleId={titleId} onClose={() => setOpen(false)}>
+        <form onSubmit={submit} noValidate className="p-5 md:p-6" aria-busy={action.pending || undefined}>
+          <h2 id={titleId} className="text-lg font-extrabold text-navy">
+            {r.dialogTitle}
+          </h2>
+          <p className="mt-2 text-sm text-ink">{r.what}</p>
+          <div className="mt-4 flex flex-col gap-1.5">
+            <label htmlFor={`${id}-reason`} className={labelClasses}>
+              {r.reason} <span className="font-normal text-muted">{t.common.required}</span>
+            </label>
+            <select
+              id={`${id}-reason`}
+              value={reason}
+              aria-invalid={issue === "reasonRequired" ? true : undefined}
+              aria-describedby={issue === "reasonRequired" ? `${id}-issue` : undefined}
+              onChange={(event) => setReason(event.target.value)}
+              className={fieldClasses}
+            >
+              <option value="">{r.reasonPlaceholder}</option>
+              {ERASE_REASONS.map((value) => (
+                <option key={value} value={value}>
+                  {r.reasons[value]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="mt-4 flex flex-col gap-1.5">
+            <label htmlFor={`${id}-word`} className={labelClasses}>
+              {format(r.confirmLabel, { word: r.word })}
+            </label>
+            <input
+              id={`${id}-word`}
+              value={typed}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              lang="en"
+              aria-invalid={issue === "wordMismatch" ? true : undefined}
+              aria-describedby={issue === "wordMismatch" ? `${id}-issue` : undefined}
+              onChange={(event) => setTyped(event.target.value)}
+              className={cn(fieldClasses, "font-mono")}
+            />
+          </div>
+          {issue && (
+            <p id={`${id}-issue`} className="mt-3 text-sm font-semibold text-danger">
+              {issue === "reasonRequired" ? r.reasonRequired : format(r.wordMismatch, { word: r.word })}
+            </p>
+          )}
+          <ActionFeedback status="" error={action.error} className="mt-2" />
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              {t.common.cancel}
+            </Button>
+            <button type="submit" disabled={action.pending} className={cn(dangerButton, "border-danger bg-danger text-white hover:opacity-90")}>
+              {action.pending ? <Spinner /> : <Eraser aria-hidden="true" className="size-4" />}
+              {r.confirm}
+            </button>
+          </div>
+        </form>
+      </CrmDialog>
+    </div>
   );
 }

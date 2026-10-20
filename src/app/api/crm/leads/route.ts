@@ -36,7 +36,9 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/crm/leads — a lead entered by staff (walk-in, phone call, referral, other): `ManualLeadInput`.
- * 201 `{ leadId, isNew: true }`; 200 `{ leadId, isNew: false }` when the phone already has a lead.
+ * 201 `{ leadId, isNew: true, canOpen }`; 200 `{ leadId, isNew: false, canOpen }` when the phone already
+ * has a lead (this contact is added to it), or with `onDuplicate: "report"` 200
+ * `{ leadId, isNew: false, duplicate: true, canOpen }` and nothing written.
  */
 export async function POST(request: NextRequest) {
   try {

@@ -14,6 +14,7 @@ import { formatVerifyId } from "@/lib/mocktest/timing";
 import type { RunnerTest, ScoredAttempt } from "@/lib/mocktest/types";
 import { formatDate, formatDuration, percent, type MocktestMessages } from "./format";
 import { useScoredAttempt, useSessionStatus } from "./hooks";
+import { LockedPrintNote } from "./lead-gate";
 import { attemptQuery, useAttemptParams } from "./ResultView";
 
 /**
@@ -57,10 +58,22 @@ function Missing({ t }: { t: MocktestMessages }) {
   );
 }
 
-function Status({ state, t }: { state: ReturnType<typeof useScoredAttempt>; t: MocktestMessages }) {
+function Status({
+  state,
+  t,
+  test,
+  query,
+}: {
+  state: ReturnType<typeof useScoredAttempt>;
+  t: MocktestMessages;
+  test: RunnerTest;
+  query: string;
+}) {
   if (state.state === "loading") return <p role="status" className="py-10 text-center text-muted">{t.common.loading}</p>;
   if (state.state === "missing") return <Missing t={t} />;
   if (state.state === "error") return <Notice variant="error" role="alert">{t.common.networkError}</Notice>;
+  // Lead gate: contact details are shared on the result page only (plan §8.4: no second form here).
+  if (state.state === "locked" || state.state === "ask") return <LockedPrintNote t={t} resultHref={`/tools/mock-tests/${test.id}/result${query}`} />;
   return null;
 }
 
@@ -69,7 +82,7 @@ function Status({ state, t }: { state: ReturnType<typeof useScoredAttempt>; t: M
 
 export function CertificateView({ test, t }: { test: RunnerTest; t: MocktestMessages }) {
   const { params, state } = useLoaded(test);
-  if (state.state !== "ready") return <Status state={state} t={t} />;
+  if (state.state !== "ready") return <Status state={state} t={t} test={test} query={attemptQuery(params)} />;
   return (
     <Certificate
       test={test}
@@ -242,7 +255,7 @@ export function buildParentReportText(input: {
 
 export function ParentReportView({ test, t }: { test: RunnerTest; t: MocktestMessages }) {
   const { params, state } = useLoaded(test);
-  if (state.state !== "ready") return <Status state={state} t={t} />;
+  if (state.state !== "ready") return <Status state={state} t={t} test={test} query={attemptQuery(params)} />;
   return <ParentReport test={test} t={t} scored={state.scored} submittedAt={state.source.attempt.submittedAt} backHref={attemptQuery(params)} />;
 }
 

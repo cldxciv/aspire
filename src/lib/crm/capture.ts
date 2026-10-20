@@ -4,13 +4,14 @@ import { randomUUID } from "node:crypto";
 
 import { getDb, withTransaction } from "@/lib/db/connection";
 
-import { CRM_AUDIT, CRM_MESSAGES, crmAudit, fail, ok } from "./access";
+import { canSeeLead, CRM_AUDIT, CRM_MESSAGES, crmAudit, fail, ok } from "./access";
 import { autoAssign, NOTE_MAX } from "./leads";
 import { canonicalTool, cleanMultiline, cleanPagePath, cleanReferrer, cleanSlug, cleanText, normalizePhoneE164 } from "./pure";
-import { insertActivity } from "./repo/activities";
+import { insertActivity, listActivitiesOfTypes } from "./repo/activities";
 import { findLeadById, findLeadByPhone, insertLead, updateLead, type LeadRow, type LeadUpdate } from "./repo/leads";
 import type { Meta } from "./repo/rows";
 import {
+  CONSENT_METHODS,
   GATE_SUBMITTERS,
   MANUAL_LEAD_SOURCES,
   type CaptureLeadInput,
@@ -20,7 +21,10 @@ import {
   type CrmViewer,
   type EditableLeadField,
   type LeadContext,
+  type ManualLeadAnswer,
+  type ManualLeadDuplicate,
   type ManualLeadInput,
+  type ManualLeadResult,
 } from "./types";
 
 /**
@@ -346,17 +350,32 @@ export function leadInputFromEnquiry(
 
 /**
  * A lead entered by staff (walk-in, phone call, referral). The staff member confirms the family
- * agreed to be contacted. An existing lead with the same phone is reused (activity appended).
- * Counsellors' new leads are assigned to themselves; others go through auto-assignment.
+ * agreed to be contacted (and, optionally, how: `consentMethod`, kept on the `created` activity).
+ * An existing lead with the same phone is reused (activity appended) — or, with
+ * `onDuplicate: "report"`, left untouched and reported as `duplicate: true` (with whether it is
+ * closed or the family withdrew consent, and its id only if the viewer may open it; the check is
+ * audited) so the screen can offer "Open" / "Log a visit" first. Counsellors' new leads are
+ * assigned to themselves; others go through auto-assignment. `canOpen` says whether the viewer may
+ * open the lead afterwards.
  */
+export function createManualLead(
+  viewer: CrmViewer,
+  input: ManualLeadInput & { onDuplicate?: "append" },
+  now?: number,
+): CrmResult<ManualLeadResult>;
+export function createManualLead(viewer: CrmViewer, input: ManualLeadInput, now?: number): CrmResult<ManualLeadAnswer>;
 export function createManualLead(
   viewer: CrmViewer,
   input: ManualLeadInput,
   now: number = Date.now(),
-): CrmResult<{ leadId: string; isNew: boolean }> {
+): CrmResult<ManualLeadAnswer> {
   const fieldErrors: Record<string, string[]> = {};
   if (!(MANUAL_LEAD_SOURCES as readonly string[]).includes(input.source)) fieldErrors.source = ["Choose where this lead came from."];
   if (input.consent !== true) fieldErrors.consent = ["Confirm the family agreed to be contacted."];
+  const consentMethod = input.consentMethod ?? null;
+  if (consentMethod !== null && !(CONSENT_METHODS as readonly string[]).includes(consentMethod)) {
+    fieldErrors.consentMethod = ["Choose how the family agreed."];
+  }
   const phone = normalizePhoneE164(input.phone);
   if (!phone) fieldErrors.phone = ["Enter a valid 10-digit mobile number."];
   const fields = cleanFields(input);
@@ -364,10 +383,33 @@ export function createManualLead(
   if (input.email && !fields.email) fieldErrors.email = ["Enter a valid email address."];
   if (Object.keys(fieldErrors).length > 0 || !phone) return fail("validation", CRM_MESSAGES.validation, fieldErrors);
   const note = cleanMultiline(input.note, NOTE_MAX);
+  const methodMeta: Meta = consentMethod ? { consentMethod } : {};
 
   const db = getDb();
-  return withTransaction(db, (): CrmResult<{ leadId: string; isNew: boolean }> => {
+  return withTransaction(db, (): CrmResult<ManualLeadAnswer> => {
     const existing = findLeadByPhone(db, phone);
+    if (existing && input.onDuplicate === "report") {
+      // Nothing written to the lead: staff decide first whether to open the family or log this
+      // visit on it. The check itself is audited (no phone or name), so numbers cannot be probed
+      // silently; a lead outside the viewer's scope is reported without its id.
+      const canOpen = canSeeLead(viewer, existing);
+      const latestConsent = listActivitiesOfTypes(db, existing.id, ["submission", "created", "consent_withdrawn"])[0];
+      crmAudit(db, {
+        actorId: viewer.userId,
+        action: CRM_AUDIT.leadDuplicateCheck,
+        target: existing.id,
+        details: { source: input.source, canOpen },
+        now,
+      });
+      return ok<ManualLeadDuplicate>({
+        leadId: canOpen ? existing.id : null,
+        isNew: false,
+        duplicate: true,
+        canOpen,
+        closed: existing.stage === "lost",
+        withdrawn: latestConsent?.type === "consent_withdrawn",
+      });
+    }
     if (existing) {
       const merged = mergeSubmission(existing, fields, cleanContext(undefined), null, existing.consentTextVersion ?? "staff-recorded", existing.consentAt ?? now, now);
       // Staff re-entering a family: never touch consent records, only fill empty fields.
@@ -388,7 +430,7 @@ export function createManualLead(
         leadId: existing.id,
         type: "created",
         body: note,
-        meta: { source: input.source, existing: true, filled: merged.filled },
+        meta: { source: input.source, existing: true, filled: merged.filled, ...methodMeta },
         actorId: viewer.userId,
         at: now,
       });
@@ -399,7 +441,8 @@ export function createManualLead(
         details: { source: input.source, isNew: false },
         now,
       });
-      return ok({ leadId: existing.id, isNew: false });
+      const fresh = findLeadById(db, existing.id) ?? existing;
+      return ok({ leadId: existing.id, isNew: false, canOpen: canSeeLead(viewer, fresh) });
     }
 
     const id = randomUUID();
@@ -423,7 +466,7 @@ export function createManualLead(
       lastActivityAt: now,
       nextTaskDueAt: null,
     });
-    insertActivity(db, { leadId: id, type: "created", body: note, meta: { source: input.source }, actorId: viewer.userId, at: now });
+    insertActivity(db, { leadId: id, type: "created", body: note, meta: { source: input.source, ...methodMeta }, actorId: viewer.userId, at: now });
     if (viewer.role === "counsellor") {
       insertActivity(db, { leadId: id, type: "assignment", meta: { from: null, to: viewer.userId }, actorId: viewer.userId, at: now });
     } else {
@@ -437,6 +480,7 @@ export function createManualLead(
       details: { source: input.source, isNew: true },
       now,
     });
-    return ok({ leadId: id, isNew: true });
+    const created = findLeadById(db, id);
+    return ok({ leadId: id, isNew: true, canOpen: created ? canSeeLead(viewer, created) : false });
   });
 }
