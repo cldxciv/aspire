@@ -5,12 +5,17 @@ import type { DatabaseSync } from "node:sqlite";
 import { getDb, withTransaction } from "@/lib/db/connection";
 
 import { assignableMember, canSeeLead, CRM_AUDIT, CRM_MESSAGES, crmAudit, fail, leadScopeFor, ok } from "./access";
-import { pickAssignee } from "./assignment";
+import { AREA_FILTER_NONE, AREA_FILTER_TOOL_SIGNUPS, type RoutingResult } from "./lead-ops-types";
 import { canonicalTool, cleanMultiline, cleanSlug, cleanText, istDayBounds, maskPhone, parseTime, phoneLastDigits, toIso } from "./pure";
 import { insertActivity, listActivities, listActivitiesOfTypes, type ActivityRow } from "./repo/activities";
+import { findLeadRouting } from "./repo/areas-core";
+import { listExternalRefsOfLead } from "./repo/intake";
 import { findLeadById, queryLeads, updateLead as updateLeadRow, type LeadQuery, type LeadRow, type LeadUpdate } from "./repo/leads";
 import { findDisplayNames } from "./repo/staff";
 import { listLeadTasks, type TaskRow } from "./repo/tasks";
+import { pickAssigneeForLead } from "./routing";
+import { closeSlaClock, onContactLogged } from "./sla";
+import { slaClockView } from "./sla-state";
 import {
   CONTACT_CHANNELS,
   CONTACT_OUTCOMES,
@@ -69,6 +74,8 @@ export function toLeadSummary(row: LeadRow, now: number, options: { fullPhone?: 
     overdue: row.nextTaskDueAt !== null && row.nextTaskDueAt < now,
     submissionCount: row.submissionCount,
     erased: row.erasedAt !== null,
+    area: row.areaId ? { id: row.areaId, en: row.areaNameEn ?? row.areaId, hi: row.areaNameHi ?? row.areaNameEn ?? row.areaId } : null,
+    sla: row.openClock ? slaClockView(row.openClock, now) : null,
   };
 }
 
@@ -139,6 +146,8 @@ function toLeadDetail(db: DatabaseSync, row: LeadRow, now: number): LeadDetail {
       if (typeof id === "string") ids.add(id);
     }
   }
+  const routing = findLeadRouting(db, row.id);
+  if (routing?.routedBy) ids.add(routing.routedBy);
   const names = findDisplayNames(db, [...ids]);
   const activities = activityRows.map((activity) => toLeadActivity(activity, names));
   // The sentence behind the lead's own consent version (a lead-gate capture keeps an earlier enquiry
@@ -170,7 +179,35 @@ function toLeadDetail(db: DatabaseSync, row: LeadRow, now: number): LeadDetail {
     erasedAt: toIso(row.erasedAt),
     activities,
     tasks: listLeadTasks(db, row.id).map((task) => toLeadTask(task, now)),
+    routing: routing
+      ? {
+          areaId: routing.areaId,
+          areaName: routing.areaId ? { en: row.areaNameEn ?? routing.areaId, hi: row.areaNameHi ?? row.areaNameEn ?? routing.areaId } : null,
+          match: routing.match,
+          outcome: routing.outcome,
+          placeInput: routing.placeInput,
+          gateOnly: routing.gateOnly,
+          routedAt: toIso(routing.routedAt),
+          routedBy: routing.routedBy ? (names.get(routing.routedBy) ?? null) : null,
+        }
+      : null,
+    origins: listExternalRefsOfLead(db, row.id).map((ref) => ({
+      provider: ref.provider,
+      metaLeadId: ref.provider === "meta" ? ref.externalId : null,
+      createdAt: toIso(ref.createdAt),
+    })),
+    confirmConsent: needsConsentConfirmation(activities, row.consentTextVersion),
   };
+}
+
+/**
+ * H4: the lead's own consent came from a Meta lead form (or an imported Meta row) without the
+ * form's consent checkbox: staff confirm consent and the parent / guardian on the first call.
+ */
+function needsConsentConfirmation(activities: readonly LeadActivity[], consentVersion: string | null): boolean {
+  if (!consentVersion || !consentVersion.startsWith("meta:")) return false;
+  const latest = activities.find((activity) => activity.type === "submission" && activity.meta.consentTextVersion === consentVersion);
+  return consentVersion.endsWith(":cb") ? false : latest?.meta.consentConfirmed !== true;
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +258,11 @@ export function buildLeadQuery(
   if (createdTo !== null) query.createdTo = createdTo;
   if (filters.includeErased === true && viewer.role === "admin") query.includeErased = true;
   if (filters.sort && LEAD_SORTS.includes(filters.sort)) query.sort = filters.sort;
+  // Lead routing (§13.5, §21): these only narrow the scope above (the route refuses an area
+  // outside an area head's areas with 403; see `leadFilterForbidden`).
+  if (filters.area === AREA_FILTER_NONE || filters.area === AREA_FILTER_TOOL_SIGNUPS) query.area = filters.area;
+  else if (typeof filters.area === "string" && /^[a-z0-9-]{1,64}$/.test(filters.area)) query.area = filters.area;
+  if (filters.sla === "open" || filters.sla === "overdue" || filters.sla === "escalated") query.sla = { kind: filters.sla, now };
   return query;
 }
 
@@ -339,7 +381,7 @@ export function updateLead(
       if (viewer.role === "counsellor") return fail("forbidden", CRM_MESSAGES.forbidden);
       const target = patch.assigneeId;
       const centre = patch.fields?.centreSlug !== undefined ? cleanSlug(patch.fields.centreSlug) : row.centreSlug;
-      if (target !== null && !assignableMember(db, viewer, target, centre)) {
+      if (target !== null && !assignableMember(db, viewer, target, { centreSlug: centre, areaId: row.areaId })) {
         fieldErrors.assigneeId = ["Choose an active staff member who covers this lead's centre."];
       } else if (target !== row.assignedTo) {
         update.assignedTo = target;
@@ -375,6 +417,14 @@ export function updateLead(
           update.lostReason = reason;
           if (stageOrdinal(to) > stageOrdinal(row.furthestStage)) update.furthestStage = to;
           afterWrites.push(() => recordStageChange(db, viewer.userId, row.id, row.stage, to, reason, now));
+          // The first-call clock (§14.3 CORE wiring): lost closes it; contacted or beyond is a first contact.
+          if (to === "lost" && row.stage !== "lost") {
+            afterWrites.push(() => closeSlaClock(db, { leadId: row.id, resolution: "closed", at: now }));
+          } else if (to !== "lost" && to !== row.stage && stageOrdinal(to) >= stageOrdinal("contacted")) {
+            afterWrites.push(() =>
+              onContactLogged(db, { leadId: row.id, channel: "stage", outcome: null, stage: to, actorId: viewer.userId, via: viewer.channel ?? "ui", at: now }),
+            );
+          }
         }
       }
     } else if (patch.lostReason !== undefined && patch.lostReason !== null) {
@@ -524,6 +574,15 @@ export function logContact(
     }
     updateLeadRow(db, leadId, update);
     if (update.stage) recordStageChange(db, viewer.userId, leadId, "new", "contacted", null, now);
+    // The first-call clock (§14.3): only a human in the CRM resolves it (`via: "ui"`); MCP never does (L3).
+    onContactLogged(db, {
+      leadId,
+      channel: input.channel,
+      outcome: input.outcome,
+      actorId: viewer.userId,
+      via: viewer.channel ?? "ui",
+      at: now,
+    });
     crmAudit(db, {
       actorId: viewer.userId,
       action: CRM_AUDIT.contactLog,
@@ -535,16 +594,35 @@ export function logContact(
   });
 }
 
-/** Re-runs auto-assignment for an unassigned lead (used by capture). Inside a transaction. */
-export function autoAssign(db: DatabaseSync, row: LeadRow, now: number): string | null {
-  if (row.assignedTo) return row.assignedTo;
-  const picked = pickAssignee(db, { centreSlug: row.centreSlug, programInterest: row.programInterest }, now);
-  if (!picked) return null;
+/**
+ * Auto-assignment for an arriving lead (§14.1 step 3; inside the caller's transaction). Without
+ * `replace`, an assigned lead keeps its assignee. With `replace` (the assignee is no longer
+ * assignable: disabled, inactive, away, outside the area), someone else is picked
+ * (`pickAssigneeForLead`, excluding them); when nobody can take it the lead moves to the
+ * unassigned queue so a head sees it. The `assignment` activity records from → to and `via`.
+ */
+export function autoAssign(
+  db: DatabaseSync,
+  row: LeadRow,
+  now: number,
+  routing: RoutingResult = { areaId: row.areaId, outcome: row.areaId ? "area" : "empty", match: null },
+  options: { replace?: boolean } = {},
+): string | null {
+  if (row.assignedTo && !options.replace) return row.assignedTo;
+  const from = row.assignedTo;
+  const picked = pickAssigneeForLead(db, row, routing, now, { exclude: from ? [from] : [] });
+  if (!picked) {
+    if (from === null) return null;
+    updateLeadRow(db, row.id, { assignedTo: null });
+    insertActivity(db, { leadId: row.id, type: "assignment", meta: { from, to: null, auto: true }, actorId: null, at: now });
+    return null;
+  }
+  if (picked.userId === from) return from;
   updateLeadRow(db, row.id, { assignedTo: picked.userId });
   insertActivity(db, {
     leadId: row.id,
     type: "assignment",
-    meta: { from: null, to: picked.userId, auto: true, via: picked.via },
+    meta: { from, to: picked.userId, auto: true, via: picked.via },
     actorId: null,
     at: now,
   });

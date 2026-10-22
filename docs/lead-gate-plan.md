@@ -21,6 +21,42 @@ being built for one release.** `LEAD_GATE` still defaults to `off` in code; the 
 > retention purge CRM-3). The risks are flagged for counsel in docs/aspire-approval-checklist.md §17 (TG-1–TG-9,
 > LG-2), TG-2 (verifiable parental consent) first.
 
+> **Owner decision, 22 Oct 2026 — "Who skips the form."** Supersedes "signed-in users skip" (box above, item 3; the
+> table row below; critique 1.18's rule). Implemented by GATE-RULES:
+> 1. **Once per browser (180-day pass): unchanged.**
+> 2. **Signed-in staff and admins (roles `admin` / `staff`, super admins included) never skip.** They see and fill the
+>    same form as any visitor, so testing matches reality. Their submission is an ordinary visitor's: no account link.
+> 3. **Signed-in students and parents skip ONLY if their account already has a mobile number on file.** Accounts have
+>    no phone field (the `users` table holds name, login id, role, password hash; login ids are not phone numbers), so
+>    today **no account has a number on file and every student and parent is asked once**
+>    (`accountMobileOnFile()` in src/lib/lead-gate/server.ts returns false; a test fails if a phone/mobile column is
+>    added to `users` without revisiting it). When asked: the name is pre-filled from the account (a student's own
+>    name; a parent's linked learner when exactly one is linked; editable) and the role is pre-selected (GET
+>    `prefill`); the consent box is never pre-ticked. After a successful submission the pass works exactly as for
+>    guests (unlocks, notes tool use, "Not you?", cleared by sign-out), and the lead's submission entry records the
+>    account link only: `accountId` (opaque id) + `accountRole` (`student` | `parent`). No other account data is
+>    copied, the link is scrubbed on erase, and past the per-phone cap (nothing appended) no link is written.
+>    **The gate never writes the phone into the account**; account profile changes are out of scope (a later
+>    "save this number to my account" with its own consent would make step 3's skip reachable).
+> 4. **Homepage planner countdown**: gated by a separate homepage workflow (src/components/home/** untouched here).
+>    The kit is ready for it: `useLeadGate({ tool: "planner", usageKey: "countdown" })` → `recordUse({ exam })` notes
+>    `{ tool: "planner", key: "countdown-<exam>", exam, feature: "countdown" }` (its own entry per exam and day, apart
+>    from plans; the CRM reads "Study planner · exam countdown · JEE Main"), and the form's button reads
+>    `leadGate.submitFor.countdown` ("Show my countdown").
+> 5. `/api/ask` and `/api/mocktest/score` use the same rule (both enforce `resolveLeadGateAccess().enforce`).
+>
+> Copy made untrue by it and changed in the same release (en + hi): the form's "Have an account? Sign in instead"
+> line (removed: signing in no longer skips the step), `leadGate.note.required` "(not needed if you're signed in)",
+> the "(not if you're signed in)" asides in `ask.honest.items.privacy`, `mocktest` intro + `noteStartRequired`,
+> `planner` lead (now "(even if you're signed in)" or dropped), Rancho's `notKept` "or sign in", and the privacy
+> notice `toolContact` p1 ("unless you are signed in" → "also when you are signed in"), p3 (discloses the account
+> link) and p4 ("or while you are signed in" dropped). New strings: `leadGate.fields.studentNameFromAccount`,
+> `leadGate.accountNote`, `leadGate.submitFor.countdown`, `crm.lead.gate.signedIn.*`, `crm.lead.toolUse.countdown`
+> (Hindi review pending, §11).
+>
+> Consequence to note: sign-out still forgets the browser's pass (shared devices, §5.1), so a student who signs out
+> and back in on the same browser is asked again; their lead is matched by the number (no duplicate lead).
+
 Owner request (verbatim): *"every tool should be a data collection point before showing the result of any tool collect
 the contact information of the submitee."*
 
@@ -31,7 +67,7 @@ Lead's binding defaults, and where this plan deviates (each deviation is flagged
 | One short form: student name, mobile/WhatsApp (E.164 dedupe), class, "I am a: student / parent", consent tick + version registry | Kept. ⚑ The mobile field is labelled **"Parent's or guardian's mobile (WhatsApp)"** (students are asked for a parent's number). ⚑ A **new consent version** `2026-10-21.gate.v1` in the same registry (v2 says "about this enquiry", lists email and does not disclose tool notes). |
 | Asked once per browser; then all tools unlock | Kept: a signed `aspire_tool_pass` cookie + a server row, **180 days** (⚑ not 365). A stored enquiry also unlocks the browser. |
 | Each later tool use recorded on the same lead (tool + non-sensitive summary; never Rancho questions/photos or answers) | Kept, ⚑ minimised and switchable: `LEAD_GATE_RECORD_USE=all|parent|off`; Rancho records only "Rancho used" (no subject, no photo flag); one entry per tool + key + day; 90-day expiry; never moves the retention clock. |
-| Signed-in students/parents skip it | Kept: any verified session skips it (staff/admin too); nothing is stored for account holders. |
+| Signed-in students/parents skip it | ~~Kept: any verified session skips it (staff/admin too); nothing is stored for account holders.~~ **Changed by the owner (22 Oct 2026, box above):** staff/admins never skip; students/parents skip only with a mobile number on file (none has one yet), otherwise they are asked once with the name pre-filled and the lead records the account link. |
 | No OTP | Kept (D-041). Risks in §12. |
 | Reuse capture/dedupe/assignment pipeline | Kept (`captureLead`), ⚑ with gate rules: an existing lead is never reopened, re-assigned or given a weaker consent. `LEAD_GATE_ASSIGN=none` offers an Unassigned queue. |
 | Rate limits that don't block a family using several tools | Kept: one unlock per browser; generous status/usage limits; IPv6 per /64; a per-phone cap that never locks a family out. |
@@ -43,7 +79,7 @@ Lead's binding defaults, and where this plan deviates (each deviation is flagged
 ## 1. How it works
 
 1. A tool host (predictor, planner, mock-test result, Rancho) validates its own input first, then calls
-   `gate.requestAccess()`. If the browser is unlocked (gate off, signed in, a pass, a remembered "skip", or the server
+   `gate.requestAccess()`. If the browser is unlocked (gate off, a student/parent account with a mobile on file (none yet; 22 Oct 2026), a pass, a remembered "skip", or the server
    can't be reached for a browser-only tool) the result shows at once.
 2. Otherwise `<LeadGateForm>` appears inline (never a modal) where the result would be. One submit →
    `POST /api/lead-gate` → `captureLead` (source `tool`, dedupe by +91 number, consent text from the registry,
@@ -95,7 +131,7 @@ Critique 0 = privacy/legal lens, critique 1 = abuse/UX/engineering lens.
 | 1.14 | Tools consent overwrites enquiry consent (minor) | **Accepted** | See 0.2; WP9 lists every consent with its date. |
 | 1.15 | Focus jumps; pending Rancho turn (minor) | **Accepted** | Focus moves only after an explicit submit (`focusOnMount`); `gateOpen` derived (asked and no unlock since); `onUnlocked({ byThisHost })`: Rancho auto-sends only when its own form unlocked, else shows "Send now"; Rancho panel switches to `showModal` / full height while the form shows. |
 | 1.17 | Implausible-number error generic; Hindi gaps; untrue line (minor) | **Accepted** | `isImplausibleMobile` in the client-safe contract with its own message key (en + hi); every Hindi string filled. |
-| 1.18 | Session refresh; must-change-password mismatch (minor) | **Accepted** | `resolveLeadGateAccess` returns the `CurrentSession`; `applyLeadGateCookies` re-issues a refreshed session cookie and clears a dead pass cookie. Rule: ANY verified session skips the gate (no lead for account holders); allowances unchanged (`resolveAsker` still charges password-change sessions as guests: allowance ≠ identity). Tested. |
+| 1.18 | Session refresh; must-change-password mismatch (minor) | **Accepted** | `resolveLeadGateAccess` returns the `CurrentSession`; `applyLeadGateCookies` re-issues a refreshed session cookie and clears a dead pass cookie. Rule: ~~ANY verified session skips the gate (no lead for account holders)~~ superseded 22 Oct 2026 (owner box above: staff/admins never skip; students/parents only with a mobile on file); allowances unchanged (`resolveAsker` still charges password-change sessions as guests: allowance ≠ identity). Tested. |
 | 1.19 | Interactive flows untested (minor) | **Accepted** | Store logic is DOM-free and fully unit-tested with fake deps; manual browser checklist §13.2. |
 
 ---
@@ -168,24 +204,32 @@ Contract types: src/lib/lead-gate/contract.ts (client-safe).
 - Server lookup (`resolveLeadGateAccess`): signature + expiry checked first (no DB work for junk); then
   `crm_gate_passes` by SHA-256(passId) joined to a non-erased lead, `expires_at > now`, and `consent_version` in
   `ACCEPTED_PASS_CONSENT_VERSIONS` (gate versions + enquiry versions). Fixed expiry, no sliding.
-- Order: gate off → `off`; any verified session → `session`; live pass → `pass`; else locked. `required` degrades to
-  `optional` while the flood breaker is tripped. A dead cookie is cleared in the response.
+- Order (owner decision 22 Oct 2026): gate off → `off`; a signed-in **student or parent account with a mobile number
+  on file** → `session` (none today: accounts have no phone field); live pass → `pass` (signed in or not); else
+  locked — guests, signed-in staff and admins, and students/parents without a number. `required` degrades to
+  `optional` while the flood breaker is tripped. A dead cookie is cleared in the response. `LeadGateAccess` also
+  carries `account` (the student/parent account, for the lead link) and `session` (cookie refresh, allowances).
 - Cleared by: "Not you?" (DELETE), withdrawal (all passes of the lead), sign-out (`/api/auth/logout`), erase, expiry,
   a retired consent version, a rotated secret. Sign-out also removes the local hints (`clearToolStorage`, prefix
   `aspire.leadgate.`).
 - Threat model: a stolen cookie can only unlock tools and append `tool_use` rows to that lead; it reveals nothing.
 
 ### 5.2 `GET /api/lead-gate` → 200
-`{ ok:true, data:{ mode:"off"|"optional"|"required", unlocked:boolean, via:"off"|"session"|"pass"|null, recordsUse:boolean, expiresAt:ISO|null } }`
+`{ ok:true, data:{ mode:"off"|"optional"|"required", unlocked:boolean, via:"off"|"session"|"pass"|null, recordsUse:boolean, expiresAt:ISO|null, sample:boolean, prefill:{ studentName:string|null, submittedBy:"student"|"parent" }|null } }`
 · 429 (600 / 10 min per IP bucket) · 500. Prerender bail-outs re-throw. Re-issues a refreshed session cookie; clears a
-dead pass cookie.
+dead pass cookie. `prefill` (22 Oct 2026): only for a signed-in student or parent account that is asked — its own
+name (student) or its one linked learner's name (parent; else null), 2–80 characters, and its role. Null for guests,
+staff, admins, gate off and accounts let through. It is the account's own data sent to its own browser (no-store);
+no lead field is ever returned.
 
 ### 5.3 `POST /api/lead-gate` (≤ 4 KB)
 Body: `{ studentName (2–80), phone (enquiry phoneSchema + implausible check), currentClass (CLASS_OPTIONS),
 submittedBy:"student"|"parent", consent:true, consentVersion:"2026-10-21.gate.v1", tool:"predictor"|"mock-test"|"ask"|"planner", context?: {page, locale, utm_*, referrer, toolExam, toolBand}, website? }`.
 Order and answers:
 1. 403 cross-origin.
-2. Gate off → 200 `{unlocked:true, via:"off"}`; signed in → 200 `{via:"session"}` (nothing stored, body unread).
+2. Gate off → 200 `{unlocked:true, via:"off"}`; a student/parent account with a mobile on file → 200 `{via:"session"}`
+   (nothing stored, body unread). Everyone else continues below, signed-in staff and admins exactly like visitors; a
+   signed-in student/parent's capture adds `accountId` + `accountRole` to the submission entry (22 Oct 2026).
 3. 429 per IP bucket (60 / 10 min).
 4. 415 / 413 / 400 / 422 (`fieldErrors`; `consentVersion` error = stale page).
 5. Honeypot → 201 with the normal body and a cookie that never works; nothing stored.
@@ -201,7 +245,9 @@ Same-origin; 30 / 10 min per IP bucket; idempotent; always expires the cookie. `
 `withdrawGateConsent` (all passes revoked, open lead → lost/not_interested, `consent_withdrawn` entry, audited).
 
 ### 5.5 `POST /api/lead-gate/usage` (≤ 1 KB) → 200 `{ recorded:boolean, reason?:"off"|"session"|"no_pass"|"not_recorded" }`
-Body `{ tool:"predictor"|"planner", exam, band? (predictor only, "score-a-b"/"percentile-a-b"), page? }`; `ask` /
+Body `{ tool:"predictor"|"planner", exam, band? (predictor only, "score-a-b"/"percentile-a-b"), key? (planner only:
+"countdown" = the homepage exam countdown → entry key `countdown-<exam>`, fact `feature:"countdown"`; other values
+422, dropped for the predictor), page? }`; `ask` /
 `mock-test` → 422 (recorded server-side, cannot be spoofed). 429 at 600 / 10 min per IP bucket or 120 / hour per
 pass. The client ignores failures and forgets its hint on `no_pass`.
 
@@ -235,7 +281,8 @@ grandfathered → `leadGateRequiredResponse("Share a contact number once to see 
 Grandfathered (never gated): an attempt whose server-recorded start (from `/api/mocktest/start`) is before
 `gate.since`. Body gains `record?: true`, sent by ResultView only for the FIRST scoring of a local attempt (no
 `LocalAttempt.score` yet); then, via pass only, `recordLeadGateToolUse(gate, { tool:"mock-test", key: testId, testId,
-exam, scoreBand: mockScoreBand(score, max) })` in try/catch. Signed-in flows (`/attempts`) unchanged.
+exam, scoreBand: mockScoreBand(score, max) })` in try/catch. POST `/api/mocktest/attempts` (a signed-in student's save,
+which scores the attempt) applies the same gate: see docs/api.md, "Lead gate on server-enforced tools".
 
 ### 5.8 `/api/enquiries` (implemented; body contract unchanged)
 After a STORED enquiry (CRM mode; not honeypot, not capped, not store-failed) the 201 also carries
@@ -375,7 +422,7 @@ switched on", so a rollback to `optional`/`off` leaves it true), adds a `sample`
 for now; sharing details does not unlock official data — rendered only while `showPlaceholderContent()` is on, the
 switch the form's `leadGate.sampleData` line uses; remove it when official data replaces the samples), says when mock
 tests ask (≥ 60 min at the start), that plans already made and mock tests started before switch-on stay open (scores already seen
-are exempt too since the 21 Oct MOCKTEST fix), that no notes are made for enquiry-unlocked browsers or signed-in users, that a skip is remembered 30
+are exempt too since the 21 Oct MOCKTEST fix), that no notes are made for enquiry-unlocked browsers (since 22 Oct 2026 a signed-in account with a pass is noted like a guest), that a skip is remembered 30
 days, and that a student should share only with a parent's or guardian's agreement; p3 adds the date/time and consent
 sentence (version + language); the Rancho item adds the per-family daily count (§5.6 step 5). Hindi uses रैंचो (not
 "Rancho") and "मुफ़्त विद्यार्थी टूल्स" to match the rest of legal.ts.
@@ -383,7 +430,7 @@ sentence (version + language); the Rancho item adds the per-family daily count (
 ### 11.1 New section "Free student tools: contact details before results"
 **en**
 - When this is switched on, the free tools (rank & college predictor, mock-test scores, study planner and Rancho) ask
-  once for contact details before showing a result, unless you are signed in to an Aspire account. We ask for: the
+  once for contact details before showing a result, ~~unless you are signed in to an Aspire account~~ also when you are signed in to an Aspire account (22 Oct 2026; live text: legal.ts). We ask for: the
   student's name, a parent's or guardian's mobile number (WhatsApp), the class, and whether you are the student or a
   parent or guardian, plus your consent.
 - Why: so that Aspire's counsellors can call or WhatsApp your family about Aspire's courses and admissions. The
@@ -516,10 +563,10 @@ Use mode-agnostic wording (e.g. "Free. You may be asked for a contact number onc
   submission / `no_lead`; previous pass revoked, ≤ 10 per lead, expiry sweep; all-or-nothing transaction;
   `recordToolUse` per-day merge, IST midnight, per-tool facts only, refuses erased/unknown; TTL sweep; erase deletes
   passes + tool notes (audit counts); withdrawal (stage, activities, audit, not undone by the gate, enrolled kept).
-- src/app/api/lead-gate/lead-gate-api.test.ts — GET locked/off/sample/session (student, parent, must-change-password),
+- src/app/api/lead-gate/lead-gate-api.test.ts — GET locked/off/sample; per role (22 Oct 2026): guest, admin, staff → locked, no prefill; student / parent without a mobile → locked + prefill (parent: one linked learner); with a mobile (injected) → `session`; default runtime lets no account through;
   prerender bail-out; POST happy path + cookie attributes + Secure in production + only hash stored; identical body
   new vs existing and no names; 422 per field / implausible / stale version; 403/415/413/400; IP limit + IPv6 /64;
-  phone cap; honeypot; session/off 200; store failure 500 without cookie or leaked details; breaker 503 → optional →
+  phone cap; honeypot; session/off 200; signed-in student/parent capture records accountId + accountRole only (scrubbed on erase), admin/staff capture links nothing; countdown usage key; store failure 500 without cookie or leaked details; breaker 503 → optional →
   recovers; tampered/expired/erased → locked + cookie cleared; DELETE forget/idempotent/cross-origin; withdraw;
   usage recorded/merged/page stripped; ask/mock-test 422; no_pass/session/off/not_recorded; per-pass 429; the gate 401
   helper + `isLeadGateResponse`; `resolveLeadGateAccess` + `recordLeadGateToolUse`; sign-out clears the pass; a stored

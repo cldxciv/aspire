@@ -75,6 +75,28 @@ export function listActivitiesOfTypes(db: DatabaseSync, leadId: string, types: r
 }
 
 /**
+ * Time (epoch ms) of the lead's latest activity of one of `types`, or null (lead routing §14.2:
+ * Meta chronology). `toStages` narrows `stage_change` entries to those that moved the lead INTO
+ * one of the stages (e.g. its last move to `lost` or `enrolled`); other types are not narrowed.
+ */
+export function lastActivityAt(
+  db: DatabaseSync,
+  leadId: string,
+  types: readonly ActivityType[],
+  filter: { toStages?: readonly string[] } = {},
+): number | null {
+  if (types.length === 0) return null;
+  const marks = types.map(() => "?").join(", ");
+  const toStages = filter.toStages ?? [];
+  const stageFilter =
+    toStages.length > 0 ? ` AND (type <> 'stage_change' OR json_extract(meta, '$.to') IN (${toStages.map(() => "?").join(", ")}))` : "";
+  const row = db
+    .prepare(`SELECT MAX(at) AS at FROM crm_activities WHERE lead_id = ? AND type IN (${marks})${stageFilter}`)
+    .get(leadId, ...types, ...toStages);
+  return row?.at === null || row?.at === undefined ? null : Number(row.at);
+}
+
+/**
  * Lead gate (docs/lead-gate-plan.md §3): one `tool_use` entry per lead + tool + key per day
  * ([dayStart, dayEnd), Asia/Kolkata). A repeat use that day adds 1 to `uses`, takes the latest
  * facts and moves the entry's time to `now`; otherwise a new entry starts at `uses: 1`.

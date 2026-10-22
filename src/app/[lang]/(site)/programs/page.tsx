@@ -2,15 +2,19 @@ import { CircleCheck } from "lucide-react";
 import type { Metadata } from "next";
 import { BleedSplit } from "@/components/home/BleedSplit";
 import { CtaBleedSplit } from "@/components/home/CtaSplit";
+import { layoutPreviewBanner } from "@/components/page-layout/preview-banner";
+import { PageLayoutFrame, type LayoutSlots } from "@/components/page-layout/render";
 import { ProgramDirectory } from "@/components/programs/ProgramDirectory";
+import { ProgramsListHero } from "@/components/programs/ProgramHero";
 import { programCardMessages } from "@/components/programs/program-view";
 import { TrackTiles } from "@/components/programs/TrackTiles";
 import { interleaveCards, resultMosaicMedia } from "@/components/results/ResultMosaicMedia";
-import { ButtonLink, EmptyState, Notice, PageHero, PhotoBand, Section, SectionHeading } from "@/components/ui";
+import { ButtonLink, EmptyState, Notice, PhotoBand, Section, SectionHeading } from "@/components/ui";
 import { stockImages } from "@/content/images";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
 import { localePath } from "@/i18n/paths";
 import { getPrograms, getResultCards, isPlaceholder, localizeImage } from "@/lib/data";
+import { getPageLayout } from "@/lib/page-layout/loader";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getMessages("programs");
@@ -22,13 +26,25 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * Programs (D-030 image-rich, D-031): hero, directory, a tracks band with one photo per track, the
+ * Programs (D-030 image-rich, D-031): hero (2026-10-22 redesign: B frame + D program picker, see
+ * src/components/hero/README.md; the labelled stock photo only beside the copy while no program is
+ * listed), directory, a tracks band with one photo per track, the
  * page-guide split beside a mosaic of Aspire's previous JEE and NEET result cards (a general
  * section: the cards are not tied to any one program; fallback photo without visible cards), and
  * the closing CTA. No landscapes; no photo repeats on the page.
+ *
+ * Page layout (docs/page-layout-plan.md §12.3): the sections after the hero follow the published
+ * layout (`getPageLayout("programs")`, editable by a super admin; the program list can move but
+ * never hide, the closing CTA stays last). Background tones come from position (white / surface
+ * alternate over the sections that render); photo sides stay fixed (D8).
  */
 export default async function ProgramsPage() {
-  const [locale, t, common] = await Promise.all([getLocale(), getMessages("programs"), getMessages("common")]);
+  const [locale, t, common, layout] = await Promise.all([
+    getLocale(),
+    getMessages("programs"),
+    getMessages("common"),
+    getPageLayout("programs"),
+  ]);
   const [programs, jeeCards, neetCards] = await Promise.all([
     getPrograms(undefined, locale),
     getResultCards({ exam: "JEE", limit: 4 }, locale),
@@ -40,19 +56,10 @@ export default async function ProgramsPage() {
   const photo = (image: (typeof stockImages)[keyof typeof stockImages]) => localizeImage(image, locale);
   const tl = t.list;
 
-  return (
-    <>
-      <PageHero
-        title={tl.heroTitle}
-        lead={tl.heroLead}
-        crumbs={[{ label: tl.crumb }]}
-        homeLabel={common.labels.home}
-        homeHref={localePath("/", locale)}
-        image={photo(stockImages.seminarFromBehind)}
-        imageLabel={stockLabel}
-      />
-
-      <Section aria-labelledby="programs-title">
+  // One slot per section, rendered in layout order.
+  const slots: LayoutSlots<"programs"> = {
+    directory: ({ tone }) => (
+      <Section tone={tone} aria-labelledby="programs-title">
         <SectionHeading
           id="programs-title"
           title={tl.directoryTitle}
@@ -72,10 +79,12 @@ export default async function ProgramsPage() {
           {tl.availabilityNotice}
         </Notice>
       </Section>
+    ),
 
-      {/* D-030: a wide photo band carries the tracks heading, then one tall photo per track.
-          Program cards above show their own photos, so none of these repeats a card photo. */}
-      <Section tone="surface" aria-labelledby="programs-tracks-title">
+    // D-030: a wide photo band carries the tracks heading, then one tall photo per track.
+    // Program cards above show their own photos, so none of these repeats a card photo.
+    tracks: ({ tone }) => (
+      <Section tone={tone} aria-labelledby="programs-tracks-title">
         <PhotoBand image={photo(stockImages.tableDiscussion)} imageLabel={stockLabel} aspect="3/1">
           <h2
             id="programs-tracks-title"
@@ -96,9 +105,12 @@ export default async function ProgramsPage() {
           />
         </div>
       </Section>
+    ),
 
+    guide: ({ tone }) => (
       <BleedSplit
         aria-labelledby="programs-guide-title"
+        tone={tone}
         image={photo(stockImages.pocketWatchWorksheet)}
         media={resultsMedia}
         imageSide="left"
@@ -120,9 +132,11 @@ export default async function ProgramsPage() {
           ))}
         </ul>
       </BleedSplit>
+    ),
 
+    cta: ({ tone }) => (
       <CtaBleedSplit
-        tone="surface"
+        tone={tone}
         headingId="programs-cta-title"
         title={tl.ctaTitle}
         description={tl.ctaBody}
@@ -131,6 +145,23 @@ export default async function ProgramsPage() {
         image={photo(stockImages.mentoringConversation)}
         imageLabel={stockLabel}
       />
-    </>
+    ),
+  };
+
+  return (
+    <PageLayoutFrame
+      layout={layout}
+      banner={await layoutPreviewBanner(layout)}
+      hero={
+        <ProgramsListHero
+          locale={locale}
+          programs={programs}
+          photo={photo(stockImages.seminarFromBehind)}
+          t={t}
+          common={common}
+        />
+      }
+      slots={slots}
+    />
   );
 }

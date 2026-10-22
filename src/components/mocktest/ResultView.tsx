@@ -21,6 +21,7 @@ import { apiJson, useScoredAttempt, useSessionStatus, type AttemptSource } from 
 import { LockedResult, OptionalContactStep, useMocktestLeadGateMessages, type MocktestUnlock } from "./lead-gate";
 import { mockTestRancho } from "./rancho";
 import { ProjectionPanel, SolutionReview, StudyPlanView, TimeChart, TopicHeatmap } from "./ResultParts";
+import { fixedSaveBody } from "./save-request";
 
 /** Query string that identifies an attempt (`attempt=` local id or `saved=` server id). */
 export function attemptQuery(params: { attempt: string | null; saved: string | null }): string {
@@ -362,16 +363,9 @@ function SavePanel({
     if (source.kind !== "local") return;
     setSave({ state: "saving" });
     const a = source.attempt;
+    // This panel is part of a result already shown on this device: the lead gate never asks again (`seen`).
     const response = await apiJson<{ attempt: SavedAttemptSummary; scored: ScoredAttempt }>("/api/mocktest/attempts", {
-      body: {
-        testId: test.id,
-        attemptId: a.id,
-        answers: a.answers,
-        timeSpentSec: a.timeSpentSec,
-        startedAt: a.startedAt,
-        submittedAt: a.submittedAt,
-        startToken: a.startToken ?? null,
-      },
+      body: fixedSaveBody(test.id, a),
     });
     if (response.ok && response.data) {
       updateLocalAttempt(a.id, { savedId: response.data.attempt.id });

@@ -13,3 +13,6 @@ coverage
 tsconfig.tsbuildinfo
 next-env.d.ts
 private
+# aspire-ops managed-agent config and its ant lockfile (agents/aspire-ops/README.md): not part of the app
+agents
+claude-lock.json

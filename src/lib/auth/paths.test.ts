@@ -6,10 +6,12 @@ import {
   isCrmPagePath,
   isPortalApiPath,
   isPortalPagePath,
+  isQuestionBankPagePath,
   localizedPostLoginPath,
   portalPathAllowsRole,
   portalRoleForPath,
   postLoginRedirect,
+  QUESTION_BANK_HOME,
   sanitizeNextPath,
 } from "./paths";
 
@@ -24,12 +26,13 @@ describe("postLoginRedirect", () => {
 });
 
 describe("staff and the CRM (M7)", () => {
-  it("sends staff to /crm and only ever to /crm pages", () => {
-    expect(postLoginRedirect("staff", undefined)).toBe("/crm");
+  it("sends staff to Today's calls and only ever to /crm pages (lead routing §20, A6)", () => {
+    expect(postLoginRedirect("staff", undefined)).toBe("/crm/today");
     expect(postLoginRedirect("staff", "/crm/leads/abc")).toBe("/crm/leads/abc");
-    expect(postLoginRedirect("staff", "/admin")).toBe("/crm");
-    expect(postLoginRedirect("staff", "/student")).toBe("/crm");
-    expect(postLoginRedirect("staff", "//evil.com/crm")).toBe("/crm");
+    expect(postLoginRedirect("staff", "/crm")).toBe("/crm");
+    expect(postLoginRedirect("staff", "/admin")).toBe("/crm/today");
+    expect(postLoginRedirect("staff", "/student")).toBe("/crm/today");
+    expect(postLoginRedirect("staff", "//evil.com/crm")).toBe("/crm/today");
   });
 
   it("lets admins follow a /crm next, but not students or parents", () => {
@@ -50,6 +53,31 @@ describe("staff and the CRM (M7)", () => {
     expect(isPortalApiPath("/api/crm/leads")).toBe(true);
     expect(sanitizeNextPath("/hi/crm/leads")).toBe("/crm/leads");
     expect(buildLoginHref("/crm/leads", "hi")).toBe("/hi/login?next=%2Fcrm%2Fleads");
+  });
+});
+
+describe("staff and the question bank (docs/question-bank-plan.md §B6)", () => {
+  it("lets staff follow a /admin/questions next, but no other admin page", () => {
+    expect(portalPathAllowsRole("/admin/questions", "staff")).toBe(true);
+    expect(portalPathAllowsRole("/admin/questions/review", "staff")).toBe(true);
+    expect(portalPathAllowsRole("/admin/questions/q_abc123", "staff")).toBe(true);
+    expect(portalPathAllowsRole("/admin/questions/blueprints/bp_1", "staff")).toBe(true);
+    expect(portalPathAllowsRole("/admin/questionsx", "staff")).toBe(false);
+    expect(portalPathAllowsRole("/admin", "staff")).toBe(false);
+    expect(portalPathAllowsRole("/admin/users", "staff")).toBe(false);
+    expect(postLoginRedirect("staff", "/admin/questions/review")).toBe("/admin/questions/review");
+    expect(postLoginRedirect("staff", "/hi/admin/questions")).toBe("/admin/questions");
+    expect(postLoginRedirect("staff", "/admin/users")).toBe("/crm/today");
+  });
+
+  it("admins keep the whole admin area; students and parents never get the question bank", () => {
+    expect(portalPathAllowsRole("/admin/questions", "admin")).toBe(true);
+    expect(portalPathAllowsRole("/admin/questions", "student")).toBe(false);
+    expect(portalPathAllowsRole("/admin/questions", "parent")).toBe(false);
+    expect(postLoginRedirect("student", "/admin/questions")).toBe("/student");
+    expect(isQuestionBankPagePath("/admin/questions/team")).toBe(true);
+    expect(isQuestionBankPagePath("/admin/question")).toBe(false);
+    expect(QUESTION_BANK_HOME).toBe("/admin/questions");
   });
 });
 

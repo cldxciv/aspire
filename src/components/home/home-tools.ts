@@ -3,6 +3,7 @@ import { format } from "@/i18n/format";
 import { clampToolSummary, type RanchoOpenDetail } from "@/lib/ask/cards";
 import { addDays, diffDays, istDateKey, istInstant, isDateKey, type DateKey } from "@/lib/planner/dates";
 import { PLAN_LIMITS } from "@/lib/planner/plan";
+import type { ExamId } from "@/lib/planner/types";
 import {
   bucketRange,
   predictRankBand,
@@ -17,13 +18,60 @@ import {
 } from "@/lib/predictor/engine";
 
 /**
- * Pure, client-safe helpers for the homepage "Student tools" widget (HomeTools): tab keyboard
- * rules, the mini rank estimate and its lead-gate steps, and the exam countdown. Nothing here
- * reads the clock or storage; callers pass "today" (read in the browser only).
+ * Pure, client-safe helpers for the homepage "Student tools" widget (HomeTools): tab order and
+ * keyboard rules, the shared gate layout, the mini rank estimate and the exam countdown with their
+ * lead-gate steps. Nothing here reads the clock or storage; callers pass "today" (read in the
+ * browser only).
  */
 
 export const HOME_TOOL_KEYS = ["predictor", "mockTests", "ask", "planner"] as const;
 export type HomeToolKey = (typeof HOME_TOOL_KEYS)[number];
+
+/**
+ * Tile order: the tools that work on this deployment first, then the rest, each group in
+ * HOME_TOOL_KEYS order. The first tile is the initial tab, so the section never opens on "Coming
+ * soon" (production today: Ask, Planner, then the predictor and mock tests).
+ */
+export function homeToolOrder(available: Record<HomeToolKey, boolean>): HomeToolKey[] {
+  return [...HOME_TOOL_KEYS.filter((key) => available[key]), ...HOME_TOOL_KEYS.filter((key) => !available[key])];
+}
+
+/** Example doubts in the Ask panel, in display order (phones show the first three). */
+export const HOME_ASK_EXAMPLES = ["maths", "chemistry", "biology", "physics"] as const;
+
+/** An example bubble opens the chat with that question prefilled (a window event, never a URL). */
+export const askExampleDetail = (prompt: string): RanchoOpenDetail => ({ prompt });
+
+/** What a gated tool's panel shows in its result area (predictor and countdown). */
+export type ToolSlot = "empty" | "invalid" | "gate" | "result";
+
+/** How a gated tool lays out for its current slot (one rule for the predictor and the countdown). */
+export interface ToolGateLayout {
+  /** The up-front LeadGateNote under the inputs (hidden while the form itself says it). */
+  note: boolean;
+  /** The "Your … is ready · Change …" row above the contact form. */
+  recap: boolean;
+  /** ToolPanel `gated`: one wide column at `md`, the inputs hidden below `md`. */
+  gated: boolean;
+  /** The planner's "What the planner does" list at the foot of its stage (hidden while the form shows). */
+  extras: boolean;
+  /** "bare" lets the form's focus rings show (no clipping, no tint). */
+  stageTone: "default" | "bare";
+  /** One gold action per state: the tool's own button only before a result or form. */
+  submitVariant: "primary" | "outline";
+}
+
+export function toolGateLayout(slot: ToolSlot): ToolGateLayout {
+  const gate = slot === "gate";
+  return {
+    note: !gate,
+    recap: gate,
+    gated: gate,
+    extras: !gate,
+    stageTone: gate ? "bare" : "default",
+    submitVariant: slot === "empty" || slot === "invalid" ? "primary" : "outline",
+  };
+}
 
 /** Fixed DOM ids: the section renders once per page. */
 export const homeToolTabId = (key: HomeToolKey) => `home-tools-tab-${key}`;
@@ -38,8 +86,8 @@ export interface KeyModifiers {
 
 /**
  * WAI-ARIA tabs (APG): the index a key press moves to from tab `index` of `count`, or null when
- * the key is not a tab key. Both arrow pairs work, because the tabs are a grid on phones and a
- * vertical rail from `md`; focus wraps around. With Alt, Ctrl or Meta held it is never a tab key,
+ * the key is not a tab key. The tiles are one horizontal row, but both arrow pairs work (Up / Down
+ * as well as Left / Right), as they always have; focus wraps around. With Alt, Ctrl or Meta held it is never a tab key,
  * so browser and OS shortcuts (Alt+Left = Back, Ctrl+Home, Cmd+Arrow) keep working.
  */
 export function tabTargetIndex(key: string, index: number, count: number, modifiers: KeyModifiers = {}): number | null {
@@ -223,4 +271,65 @@ export function splitTemplate(template: string, name: string): [string, string] 
   const token = `{${name}}`;
   const at = template.indexOf(token);
   return at === -1 ? [template, ""] : [template.slice(0, at), template.slice(at + token.length)];
+}
+
+// ── Lead gate for the countdown (owner update, 22 Oct 2026): contact details before the days left ──
+
+/** The countdown shows a number of days (or "today" / "tomorrow"): the result the gate guards. */
+export const countdownShowsDays = (countdown: ExamCountdown): boolean =>
+  countdown.kind === "days" || countdown.kind === "today" || countdown.kind === "tomorrow";
+
+/** What an explicit "Show days left" led to: fix the date, show the countdown, or the contact form first. */
+export type CountdownReveal = "invalid" | "shown" | "gated";
+
+/**
+ * One explicit "Show days left". The date is validated FIRST: a missing, past or too-far date
+ * never asks for contact details. A valid one asks the gate, which answers true at once when the
+ * browser is unlocked, the gate is off, or the server can't be reached (fails open).
+ */
+export async function revealCountdown(countdown: ExamCountdown, requestAccess: () => Promise<boolean>): Promise<CountdownReveal> {
+  if (!countdownShowsDays(countdown)) return "invalid";
+  return (await requestAccess()) ? "shown" : "gated";
+}
+
+/** What the countdown does after a gate step (countdownGateStep). */
+export interface CountdownGateEffect {
+  /** The countdown may show (until "Not you?"); it then follows the inputs live. */
+  reveal: boolean;
+  /** The one tool-use note for this step: the exam only (never the date or the days), or null. */
+  note: { exam: ExamId } | null;
+  /** Where focus goes: the countdown, the date field, or nowhere. */
+  focus: "result" | "date" | null;
+}
+
+/**
+ * The countdown's gate steps, mirroring the predictor's (miniGateStep); `countdown` is the CURRENT one.
+ * - `submit`: invalid → back to the date field; gated → nothing yet (the form focuses its heading);
+ *   shown → the countdown and one note.
+ * - `unlocked` (this host's form, another tool on the page or another tab): the countdown, and one
+ *   note when the current inputs give days. Focus moves only when this host's own form unlocked.
+ */
+export function countdownGateStep(
+  event: { kind: "submit"; decision: CountdownReveal } | { kind: "unlocked"; byThisHost: boolean },
+  countdown: ExamCountdown,
+  exam: ExamId,
+): CountdownGateEffect {
+  if (event.kind === "submit") {
+    if (event.decision === "invalid") return { reveal: false, note: null, focus: "date" };
+    if (event.decision === "gated") return { reveal: false, note: null, focus: null };
+    return { reveal: true, note: { exam }, focus: null };
+  }
+  const ok = countdownShowsDays(countdown);
+  return { reveal: true, note: ok ? { exam } : null, focus: event.byThisHost ? (ok ? "result" : "date") : null };
+}
+
+/**
+ * The countdown's slot: the form while it is open; the prompt before the first press; the notice
+ * for a missing, past or too-far date after it; the days once revealed (live from then on).
+ */
+export function countdownSlot(state: { countdown: ExamCountdown; submitted: boolean; revealed: boolean; gateOpen: boolean }): ToolSlot {
+  if (state.gateOpen) return "gate";
+  if (!state.submitted) return "empty";
+  if (!countdownShowsDays(state.countdown)) return "invalid";
+  return state.revealed ? "result" : "empty";
 }

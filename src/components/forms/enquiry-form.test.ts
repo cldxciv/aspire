@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { CONSENT_VERSION, enquirySchema, heroStepOfField, validateHeroStep } from "@/lib/contracts/enquiry";
-import { FIELD_ORDER, buildHeroPayload, buildPayload, pickErrors } from "./enquiry-payload";
+import { HP_DISTRICTS } from "@/content/hp-districts";
+import enForms from "@/i18n/messages/en/forms";
+import hiForms from "@/i18n/messages/hi/forms";
+import { FIELD_ORDER, buildHeroPayload, buildPayload, districtOptions, needsDistrict, pickErrors } from "./enquiry-payload";
+import { localizeFieldError } from "./field-errors";
 import { firstHeroError, pickHeroErrors } from "./hero-steps";
 import { submitEnquiry } from "./submit-enquiry";
 
@@ -107,7 +111,13 @@ describe("buildHeroPayload (home hero, D-021)", () => {
   it("maps every field to the step that renders it", () => {
     expect(["name", "classOrExam"].map(heroStepOfField)).toEqual([0, 0]);
     expect(["guardianName", "phone"].map(heroStepOfField)).toEqual([1, 1]);
-    expect(["preferredCentre", "message", "consent"].map(heroStepOfField)).toEqual([2, 2, 2]);
+    expect(["preferredCentre", "district", "message", "consent"].map(heroStepOfField)).toEqual([2, 2, 2, 2]);
+  });
+
+  it("sends the district only when the select is rendered (no centre chosen)", () => {
+    expect(buildHeroPayload(formData({ ...validHero, district: "kangra" }), true)).toMatchObject({ district: "kangra" });
+    expect(buildHeroPayload(formData(validHero), true).district).toBeUndefined();
+    expect(enquirySchema.safeParse(buildHeroPayload(formData({ ...validHero, district: "outside-hp" }), true)).success).toBe(true);
   });
 
   it("passes each step on its own before the full schema", () => {
@@ -262,5 +272,42 @@ describe("submitEnquiry", () => {
     const pending = submitEnquiry({});
     await vi.advanceTimersByTimeAsync(20_000);
     await expect(pending).resolves.toEqual({ kind: "timeout" });
+  });
+});
+
+describe("district select (lead routing, section 13.8)", () => {
+  it("shows while no centre is chosen", () => {
+    expect([undefined, null, "", "not-sure"].map(needsDistrict)).toEqual([true, true, true, true]);
+    expect(needsDistrict("shimla")).toBe(false);
+  });
+
+  it("lists the 12 districts in the page's language, then Outside Himachal", () => {
+    const en = districtOptions("en", enForms.shared.district.outsideHp);
+    expect(en).toHaveLength(13);
+    expect(en.at(-1)).toEqual({ value: "outside-hp", label: "Outside Himachal" });
+    expect(en.map((option) => option.value)).toContain("lahaul-spiti");
+    expect(en.slice(0, 12).map((option) => option.label)).toEqual([...en.slice(0, 12).map((option) => option.label)].sort((a, b) => a.localeCompare(b, "en")));
+    const hi = districtOptions("hi", hiForms.shared.district.outsideHp);
+    expect(hi.find((option) => option.value === "kangra")?.label).toBe(HP_DISTRICTS.find((district) => district.id === "kangra")?.hi);
+    expect(hi.at(-1)?.label).toBe(hiForms.shared.district.outsideHp);
+  });
+
+  it("is in the admissions and contact field order and sent when rendered", () => {
+    expect(FIELD_ORDER.admissions).toContain("district");
+    expect(FIELD_ORDER.contact).toContain("district");
+    const contact = buildPayload(
+      "contact",
+      formData({ name: "Test Parent", phone: "9876543210", topic: "admissions", consent: "on", consentVersion: CONSENT_VERSION, district: "una" }),
+      "enquiry",
+      false,
+    );
+    expect(contact).toMatchObject({ source: "contact", district: "una" });
+    expect(enquirySchema.safeParse(contact).success).toBe(true);
+    expect(pickErrors({ district: ["Select a district from the list"] }, FIELD_ORDER.contact)).toEqual({ district: "Select a district from the list" });
+  });
+
+  it("localises the district error", () => {
+    expect(localizeFieldError("district", "Select a district from the list", enForms.shared.errors)).toBe(enForms.shared.errors.district);
+    expect(localizeFieldError("district", "Select a district from the list", hiForms.shared.errors)).toBe(hiForms.shared.errors.district);
   });
 });

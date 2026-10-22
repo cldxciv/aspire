@@ -89,6 +89,31 @@ describe("stages and permissions", () => {
   it("derives permissions from the CRM role", () => {
     expect(crmPermissions({ role: "counsellor" })).toMatchObject({ canAssign: false, canExport: false, canErase: false, canViewStaff: false });
     expect(crmPermissions({ role: "manager" })).toMatchObject({ canAssign: true, canExport: true, canErase: false, canManageStaff: false });
-    expect(crmPermissions({ role: "admin" })).toMatchObject({ canAssign: true, canExport: true, canErase: true, canManageStaff: true, canEditRules: true });
+    // D-044: staff logins, rules and every CRM setting are super-admin only; ordinary admins read.
+    expect(crmPermissions({ role: "admin" })).toMatchObject({
+      canAssign: true,
+      canExport: true,
+      canErase: true,
+      canManageStaff: false,
+      canEditRules: false,
+      isSuperAdmin: false,
+      canEditSettings: false,
+      canImport: false,
+      canViewImportHistory: true,
+      canManageIntegrations: false,
+      canViewSettings: true,
+    });
+    expect(crmPermissions({ role: "admin", superAdmin: true })).toMatchObject({
+      canManageStaff: true,
+      canEditRules: true,
+      isSuperAdmin: true,
+      canEditSettings: true,
+      canImport: true,
+      canManageIntegrations: true,
+      canReassignBulk: true,
+    });
+    // A "superAdmin" flag on a staff viewer means nothing: only admins can be super admins.
+    expect(crmPermissions({ role: "manager", superAdmin: true })).toMatchObject({ isSuperAdmin: false, canEditSettings: false, canReassignBulk: true });
+    expect(crmPermissions({ role: "counsellor" })).toMatchObject({ canViewDashboard: false, canViewSettings: false, canSetOwnAvailability: true });
   });
 });

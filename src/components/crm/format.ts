@@ -7,6 +7,15 @@ import { htmlLang } from "@/i18n/config";
 import { format } from "@/i18n/format";
 import type { Messages } from "@/i18n/messages/types";
 import {
+  AREA_FILTER_NONE,
+  AREA_FILTER_TOOL_SIGNUPS,
+  SLA_FILTERS,
+  type RoutingMatch,
+  type RoutingOutcome,
+  type SlaClockView,
+  type SlaFilter,
+} from "@/lib/crm/lead-ops-types";
+import {
   isGateConsentVersion,
   isLeadStage,
   type LeadActivity,
@@ -54,6 +63,12 @@ export function submitterLabel(t: CrmMessages, value: string | null | undefined)
   return t.lead.gate.submittedBy[value];
 }
 
+/** A gate submission made while signed in to a student or parent account (meta `accountRole`). */
+export function accountLinkLabel(t: CrmMessages, value: string | null | undefined): string | null {
+  if (value !== "student" && value !== "parent") return null;
+  return t.lead.gate.signedIn[value];
+}
+
 const SCORE_BAND = /^(score|percentile)-(\d{1,4})-(\d{1,4})$/;
 const PERCENT_BAND = /^pct-(\d{1,3})-(\d{1,3})$/;
 
@@ -89,6 +104,7 @@ export function toolUseSummary(t: CrmMessages, meta: Meta, at: string | null, no
   const u = t.lead.toolUse;
   const tool = metaText(meta, "tool");
   const parts: string[] = [toolLabel(t, tool) ?? u.unknownTool];
+  if (tool === "planner" && metaText(meta, "feature") === "countdown") parts.push(u.countdown);
   if (tool !== "ask") {
     const exam = examLabel(t, metaText(meta, "exam"));
     if (exam) parts.push(exam);
@@ -111,7 +127,7 @@ export function isGateSubmission(activity: Pick<LeadActivity, "type" | "meta">):
   return activity.type === "submission" && isGateConsentVersion(activity.meta?.consentTextVersion);
 }
 
-export type ConsentKind = "gate" | "enquiry" | "staff" | "withdrawn";
+export type ConsentKind = "gate" | "enquiry" | "staff" | "withdrawn" | "meta" | "import";
 
 /** One consent the family gave (or withdrew), for the lead page's consent list. */
 export interface ConsentEntry {
@@ -142,12 +158,22 @@ export function consentHistory(activities: readonly LeadActivity[]): ConsentEntr
     if (activity.type === "submission") {
       const version = metaText(meta, "consentTextVersion");
       if (!version) continue;
+      const source = metaText(meta, "source");
+      const kind: ConsentKind = isGateConsentVersion(version)
+        ? "gate"
+        : version.startsWith("meta:")
+          ? "meta"
+          : source === "csv_import"
+            ? "import"
+            : "enquiry";
       entries.push({
         ...base,
-        kind: isGateConsentVersion(version) ? "gate" : "enquiry",
+        kind,
         version,
         locale: metaText(meta, "consentLocale"),
         text: metaText(meta, "consentText"),
+        // Imports keep how the families agreed (CONSENT_METHODS or a system method).
+        method: kind === "import" || kind === "meta" ? metaText(meta, "consentMethod") : null,
         submittedBy: metaText(meta, "submittedBy"),
       });
     } else if (activity.type === "created") {
@@ -197,6 +223,41 @@ export function lostReasonLabel(t: CrmMessages, reason: string | null | undefine
 export function outcomeLabel(t: CrmMessages, outcome: string | null | undefined): string | null {
   if (!outcome) return null;
   return pick(t.lead.contact.outcomes, outcome, outcome);
+}
+
+/** An area's name in the page language (lists carry both); null without an area. */
+export function areaName(locale: Locale, area: { en: string; hi: string } | null | undefined): string | null {
+  if (!area) return null;
+  return locale === "hi" ? area.hi || area.en : area.en;
+}
+
+/** "Town name", "From the chosen centre", … for how a lead's area was found. */
+export function routingMatchLabel(t: CrmMessages, match: RoutingMatch | null | undefined): string | null {
+  if (!match) return null;
+  return pick(t.lead.routing.matches, match, match);
+}
+
+export function routingOutcomeLabel(t: CrmMessages, outcome: RoutingOutcome | null | undefined): string | null {
+  if (!outcome) return null;
+  return pick(t.lead.routing.outcomes, outcome, outcome);
+}
+
+/** Clock time in IST ("11:30 am" / "11:30 am, 21 Oct" when not today), for the first-call chip. */
+export function slaTimeLabel(value: string | number, now: number, locale: Locale): string {
+  const ms = typeof value === "number" ? value : Date.parse(value);
+  if (!Number.isFinite(ms)) return "";
+  const time = new Intl.DateTimeFormat(htmlLang[locale], { timeStyle: "short", timeZone: CRM_TIME_ZONE }).format(ms);
+  if (istDayKey(ms) === istDayKey(now)) return time;
+  const day = new Intl.DateTimeFormat(htmlLang[locale], { day: "numeric", month: "short", timeZone: CRM_TIME_ZONE }).format(ms);
+  return `${time}, ${day}`;
+}
+
+/** The first-call chip's text (state as words, never colour alone). */
+export function slaChipText(t: Pick<CrmMessages, "slaChip">, clock: Pick<SlaClockView, "state" | "dueAt">, now: number, locale: Locale): string {
+  const time = slaTimeLabel(clock.dueAt, now, locale);
+  if (clock.state === "escalated") return format(t.slaChip.escalated, { time });
+  if (clock.state === "overdue") return format(t.slaChip.overdue, { time });
+  return format(t.slaChip.due, { time });
 }
 
 export function centreLabel(
@@ -333,9 +394,13 @@ export interface InboxFilters {
   assignee: string;
   due: DueFilter | "";
   page: number;
+  /** Lead routing (§21): "" any, an area id, `none` or `tool_signups`. Optional for older callers. */
+  area?: string;
+  /** "" any, or `open` / `overdue` / `escalated`. */
+  sla?: SlaFilter | "";
 }
 
-export const EMPTY_FILTERS: InboxFilters = { q: "", stage: "", centre: "", program: "", source: "", assignee: "", due: "", page: 1 };
+export const EMPTY_FILTERS: InboxFilters = { q: "", stage: "", centre: "", program: "", source: "", assignee: "", due: "", page: 1, area: "", sla: "" };
 
 type RawParams = Record<string, string | string[] | undefined> | URLSearchParams;
 
@@ -358,6 +423,8 @@ export function parseInboxFilters(params: RawParams): InboxFilters {
     const value = first(params, key).toLowerCase();
     return SLUG.test(value) ? value : "";
   };
+  const area = first(params, "area").toLowerCase();
+  const sla = first(params, "sla");
   return {
     q: first(params, "q").slice(0, 80),
     stage: isLeadStage(stage) || stage === "open" ? stage : "",
@@ -367,6 +434,8 @@ export function parseInboxFilters(params: RawParams): InboxFilters {
     assignee: ID.test(assignee) ? assignee : "",
     due: (DUE_FILTERS as readonly string[]).includes(due) ? (due as DueFilter) : "",
     page: Number.isFinite(page) && page > 1 && page < 10_000 ? page : 1,
+    area: area === AREA_FILTER_NONE || area === AREA_FILTER_TOOL_SIGNUPS || /^[a-z0-9-]{1,64}$/.test(area) ? area : "",
+    sla: (SLA_FILTERS as readonly string[]).includes(sla) ? (sla as SlaFilter) : "",
   };
 }
 
@@ -374,8 +443,9 @@ export function parseInboxFilters(params: RawParams): InboxFilters {
 export function inboxQuery(filters: InboxFilters, overrides: Partial<InboxFilters> = {}): string {
   const merged = { ...filters, ...overrides };
   const params = new URLSearchParams();
-  for (const key of ["q", "stage", "centre", "program", "source", "assignee", "due"] as const) {
-    if (merged[key]) params.set(key, merged[key]);
+  for (const key of ["q", "stage", "centre", "program", "source", "assignee", "due", "area", "sla"] as const) {
+    const value = merged[key];
+    if (value) params.set(key, value);
   }
   if (merged.page > 1) params.set("page", String(merged.page));
   const query = params.toString();
@@ -392,11 +462,15 @@ export function toLeadFilters(filters: InboxFilters): LeadFilters {
   if (filters.source) out.source = filters.source;
   if (filters.assignee) out.assignee = filters.assignee;
   if (filters.due) out.due = filters.due;
+  if (filters.area) out.area = filters.area;
+  if (filters.sla) out.sla = filters.sla;
   return out;
 }
 
 export function hasActiveFilters(filters: InboxFilters): boolean {
-  return Boolean(filters.q || filters.stage || filters.centre || filters.program || filters.source || filters.assignee || filters.due);
+  return Boolean(
+    filters.q || filters.stage || filters.centre || filters.program || filters.source || filters.assignee || filters.due || filters.area || filters.sla,
+  );
 }
 
 // ---------------------------------------------------------------------------------------------

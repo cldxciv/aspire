@@ -70,6 +70,7 @@ describe("hero steps", () => {
       "phone",
       "email",
       "preferredCentre",
+      "district",
       "message",
       "consent",
     ]);

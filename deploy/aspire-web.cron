@@ -9,3 +9,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # Disk check every 6 hours: logs only when under 3 GB free; always updates data/ops/disk-status.json.
 15 */6 * * * root /opt/aspire-web/bin/disk-check.sh --quiet --status >> /var/log/aspire-web-disk.log 2>&1
+
+# Meta Lead Ads (optional, deploy/README.md → Integrations key): every 10 minutes, fetch waiting Meta leads over
+# the loopback port. Does nothing until /opt/aspire-web/meta-sync.header exists (mode 600: "Authorization: Bearer <INTEGRATIONS_CRON_TOKEN>").
+# Only failures are logged (curl's one-line error, no token or body).
+*/10 * * * * root [ -s /opt/aspire-web/meta-sync.header ] && curl -fsS -m 60 -o /dev/null -X POST -H @/opt/aspire-web/meta-sync.header http://127.0.0.1:3011/api/integrations/meta/sync 2>> /var/log/aspire-web-meta-sync.log

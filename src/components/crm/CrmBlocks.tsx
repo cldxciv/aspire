@@ -7,6 +7,8 @@ import type { Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
 import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
+import type { CrmViewer } from "@/lib/crm/types";
+import { AwayToggle } from "./AwayToggle";
 import {
   dueStatus,
   formatDate,
@@ -18,6 +20,7 @@ import {
   toolLabel,
   type CrmMessages,
 } from "./format";
+import { SuperAdminBadge } from "./SuperAdminBadge";
 import type { LeadStage } from "./types";
 
 /**
@@ -217,4 +220,33 @@ export function NotAllowed({ title, body, homeHref, homeLabel }: { title: string
 
 export function crmHref(path: string, locale: Locale): string {
   return localePath(path, locale);
+}
+
+/**
+ * The viewer's line under the CRM header (docs/lead-routing-plan.md §20): the gold "Super admin"
+ * chip for super admins, and "Away until …" for staff (counsellors and area heads). Nothing for
+ * an ordinary admin. Server-safe; `AwayToggle` is the only client island.
+ */
+export function CrmViewerBar({
+  viewer,
+  awayUntil,
+  pagePath,
+  t,
+}: {
+  viewer: Pick<CrmViewer, "userId" | "role" | "superAdmin">;
+  /** ISO while the viewer is away, else null. */
+  awayUntil: string | null;
+  /** LOCALE-FREE path of the current page. */
+  pagePath: string;
+  t: CrmMessages;
+}) {
+  const superAdmin = viewer.role === "admin" && viewer.superAdmin === true;
+  const staff = viewer.role !== "admin";
+  if (!superAdmin && !staff) return null;
+  return (
+    <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+      {superAdmin && <SuperAdminBadge label={t.superAdmin.badge} title={t.superAdmin.badgeLabel} />}
+      {staff && <AwayToggle userId={viewer.userId} awayUntil={awayUntil} pagePath={pagePath} t={{ away: t.away, common: t.common, errors: t.errors }} />}
+    </div>
+  );
 }

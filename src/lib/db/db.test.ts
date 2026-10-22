@@ -89,7 +89,7 @@ describe("openDatabase / migrate", () => {
       .all()
       .map((row) => String(row.name));
     // Feature tables (src/lib/db/features, M6) carry their feature prefix and are tested by their owners.
-    const core = tables.filter((name) => !/^(predictor|mocktest|ask|planner|mcp|crm)_/.test(name));
+    const core = tables.filter((name) => !/^(predictor|mocktest|ask|planner|mcp|crm|qb|superadmin|page_layout)_/.test(name));
     expect(core).toEqual(["audit_log", "login_attempts", "parent_links", "sessions", "users"]);
   });
 
@@ -99,7 +99,7 @@ describe("openDatabase / migrate", () => {
       .all()
       .map((row) => String(row.name));
     const known = new Set(["audit_log", "login_attempts", "parent_links", "sessions", "users"]);
-    expect(tables.filter((name) => !known.has(name) && !/^(predictor|mocktest|ask|planner|mcp|crm)_/.test(name))).toEqual([]);
+    expect(tables.filter((name) => !known.has(name) && !/^(predictor|mocktest|ask|planner|mcp|crm|qb|superadmin|page_layout)_/.test(name))).toEqual([]);
   });
 
   it("enforces foreign keys and rolls back failed transactions", () => {

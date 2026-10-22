@@ -1,4 +1,11 @@
-import type { LeadGateForgetData, LeadGateMode, LeadGateUsageData, LeadGateUsageInput, LeadGateVia } from "@/lib/lead-gate/contract";
+import type {
+  LeadGateForgetData,
+  LeadGateMode,
+  LeadGatePrefill,
+  LeadGateUsageData,
+  LeadGateUsageInput,
+  LeadGateVia,
+} from "@/lib/lead-gate/contract";
 
 import {
   fetchLeadGateStatus,
@@ -27,6 +34,10 @@ import {
  *   plainly. Null until a status answer arrives; it never opens or locks anything. `loadSample()`
  *   retries a failed answer (SAMPLE_RETRY_MS, at most SAMPLE_MAX_REQUESTS per page) so the honest
  *   line is hard to lose on the demo site.
+ * - `prefill` mirrors the server's `prefill` (owner decision 22 Oct 2026): a signed-in student or
+ *   parent account is asked once like a visitor, with its name and role pre-filled in
+ *   <LeadGateForm> (editable). Null for guests, staff and admins. Kept from any status answer
+ *   (also `loadSample`'s); never opens or locks anything.
  */
 
 export type LeadGateStatus = "unknown" | "checking" | "open" | "locked";
@@ -42,6 +53,8 @@ export interface LeadGateState {
   unlockSeq: number;
   /** Results on this site currently use sample data (GET /api/lead-gate `sample`); null = not known yet. */
   sample: boolean | null;
+  /** What the form pre-fills for a signed-in student or parent account (GET /api/lead-gate `prefill`); null = nothing. */
+  prefill: LeadGatePrefill | null;
 }
 
 export interface LeadGateUnlockEvent {
@@ -67,6 +80,7 @@ export const INITIAL_LEAD_GATE_STATE: LeadGateState = Object.freeze({
   recordsUse: false,
   unlockSeq: 0,
   sample: null,
+  prefill: null,
 });
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -255,6 +269,7 @@ export class LeadGateStore {
         }
         const data = outcome.data;
         const sample = data.sample === true;
+        const prefill = data.prefill ?? null;
         if (data.unlocked) {
           if (data.via === "pass" && data.expiresAt) {
             const expiresAt = Date.parse(data.expiresAt);
@@ -263,15 +278,15 @@ export class LeadGateStore {
           } else {
             this.remove(HINT_KEY);
           }
-          this.set({ status: "open", mode: data.mode, via: data.via, recordsUse: data.via === "pass" && data.recordsUse, sample });
+          this.set({ status: "open", mode: data.mode, via: data.via, recordsUse: data.via === "pass" && data.recordsUse, sample, prefill });
           return true;
         }
         this.remove(HINT_KEY);
         if (data.mode === "optional" && this.readSkip()) {
-          this.set({ status: "open", mode: data.mode, via: "skipped", recordsUse: false, sample });
+          this.set({ status: "open", mode: data.mode, via: "skipped", recordsUse: false, sample, prefill });
           return true;
         }
-        this.set({ status: "locked", mode: data.mode, via: null, recordsUse: false, sample });
+        this.set({ status: "locked", mode: data.mode, via: null, recordsUse: false, sample, prefill });
         return false;
       });
     this.inflight = run;
@@ -281,7 +296,7 @@ export class LeadGateStore {
   /**
    * <LeadGateForm> needs `sample` when this page never had a status answer (a hint opened the
    * store, then an enforced tool got the gate 401 → markRequired). One GET, of which only `sample`
-   * is kept: the gate state stays as it is (the 401 was the truth). No-op while known, while a
+   * (and a missing `prefill`) is kept: the gate state stays as it is (the 401 was the truth). No-op while known, while a
    * status request is in flight (it brings `sample`), while its own request or retry is pending, or
    * after SAMPLE_MAX_REQUESTS. A failed answer (429, 5xx, timeout) is retried after
    * SAMPLE_RETRY_MS; once those run out, the form asks again when the family starts typing.
@@ -297,7 +312,7 @@ export class LeadGateStore {
       .then((outcome) => {
         if (outcome.kind === "ok") {
           this.sampleBusy = false;
-          if (this.state.sample === null) this.set({ sample: outcome.data.sample === true });
+          if (this.state.sample === null) this.set({ sample: outcome.data.sample === true, prefill: this.state.prefill ?? outcome.data.prefill ?? null });
           return;
         }
         const wait: number | undefined = SAMPLE_RETRY_MS[attempt - 1];
@@ -346,7 +361,7 @@ export class LeadGateStore {
     const now = this.deps.now();
     if (!Number.isFinite(expiresAt)) return;
     this.write(HINT_KEY, { until: Math.min(expiresAt, now + HINT_MAX_AGE_MS), recordsUse: outcome.data.recordsUse, mode: outcome.data.mode });
-    this.set({ mode: outcome.data.mode, recordsUse: outcome.data.recordsUse, sample: outcome.data.sample === true });
+    this.set({ mode: outcome.data.mode, recordsUse: outcome.data.recordsUse, sample: outcome.data.sample === true, prefill: outcome.data.prefill ?? null });
   }
 
   /** "Continue without sharing" (optional mode only), remembered for 30 days. */

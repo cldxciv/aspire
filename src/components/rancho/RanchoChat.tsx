@@ -968,7 +968,6 @@ export function RanchoChat(props: RanchoChatProps) {
             variant="compact"
             headingLevel={3}
             privacyHref={links.privacy}
-            signInHref={links.signIn}
           />
         </div>
       )}

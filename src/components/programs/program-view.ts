@@ -15,31 +15,28 @@ export function programCardMessages(locale: Locale): ProgramDirectoryMessages {
 }
 
 /**
- * Track-appropriate licensed stock photos for a program page (D-030): hero, the overview split,
- * the highlights / schedule split and the closing call to action. People shown are never Aspire
+ * Track-appropriate licensed stock photos for a program page (D-030): the overview split, the
+ * highlights / schedule split and the closing call to action (the hero is the navy B frame with the
+ * program's facts since the 2026-10-22 hero redesign, without a photo). People shown are never Aspire
  * students; no program page names a student, so person photos never sit beside a real name.
  */
-const TRACK_PHOTOS: Record<ExamTrack, { hero: ImageAsset; aside: ImageAsset; highlights: ImageAsset; cta: ImageAsset }> = {
+const TRACK_PHOTOS: Record<ExamTrack, { aside: ImageAsset; highlights: ImageAsset; cta: ImageAsset }> = {
   JEE: {
-    hero: stockImages.physicsWhiteboard,
     aside: stockImages.teacherChalkboard,
     highlights: stockImages.notebookSolutions,
     cta: stockImages.pocketWatchWorksheet,
   },
   NEET: {
-    hero: stockImages.stethoscopeTextbooks,
     aside: stockImages.plantCellMicrograph,
     highlights: stockImages.chemistryGlassware,
     cta: stockImages.labPipette,
   },
   Foundation: {
-    hero: stockImages.youngStudentNotebook,
     aside: stockImages.youngStudentWriting,
     highlights: stockImages.notebookSolutions,
     cta: stockImages.booksAndNotebook,
   },
   Integrated: {
-    hero: stockImages.studentsTakingNotes,
     aside: stockImages.classroomDesks,
     highlights: stockImages.notebookPlanning,
     cta: stockImages.tableDiscussion,
@@ -74,13 +71,9 @@ export function trackPhotos(
     used.add(image.src);
     return localizeImage(image, locale);
   };
-  // The program's own image may equal a track photo: reserve it first so the hero never repeats it.
   const ownImage = programImage && !used.has(programImage.src) ? programImage : undefined;
-  if (ownImage) used.add(ownImage.src);
-  const hero = pick(photos.hero, photos.aside, photos.highlights);
-  if (ownImage) used.delete(ownImage.src);
   const aside = pick(ownImage, photos.aside, photos.highlights);
   const highlights = pick(photos.highlights, photos.aside);
   const cta = pick(photos.cta);
-  return { hero, aside, highlights, cta };
+  return { aside, highlights, cta };
 }

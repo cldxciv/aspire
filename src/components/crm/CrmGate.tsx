@@ -6,10 +6,21 @@ import { getCentres } from "@/lib/data";
 import type { Locale } from "@/i18n/config";
 import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages } from "@/i18n/server";
-import { LEAD_CLASSES, LEAD_PROGRAMS, PUBLIC_LEAD_SOURCES, MANUAL_LEAD_SOURCES, type CrmPermissions, type CrmViewer } from "@/lib/crm/types";
+import {
+  INTAKE_SOURCES,
+  LEAD_CLASSES,
+  LEAD_PROGRAMS,
+  PUBLIC_LEAD_SOURCES,
+  MANUAL_LEAD_SOURCES,
+  type CrmPermissions,
+  type CrmViewer,
+} from "@/lib/crm/types";
 import { requireCrmPage } from "@/lib/crm/page";
-import { CrmPageHeader, NotAllowed } from "./CrmBlocks";
+import { findAvailability } from "@/lib/crm/repo/staff-ops";
+import { getDb } from "@/lib/db/connection";
+import { CrmPageHeader, CrmViewerBar, NotAllowed } from "./CrmBlocks";
 import type { CrmMessages } from "./format";
+import { SlaAlertStrip } from "./sla/SlaAlertStrip";
 import type { Option } from "./types";
 
 export type CrmAccess = { viewer: CrmViewer; permissions: CrmPermissions };
@@ -54,7 +65,8 @@ async function Gate({
   t: CrmMessages;
   children: (access: CrmAccess) => ReactNode;
 }) {
-  const access = await requireCrmPage(await path, locale);
+  const pagePath = await path;
+  const access = await requireCrmPage(pagePath, locale);
   if (access.kind === "no_membership") {
     return (
       <>
@@ -63,7 +75,24 @@ async function Gate({
       </>
     );
   }
-  return <>{children({ viewer: access.viewer, permissions: access.permissions })}</>;
+  const { viewer } = access;
+  // Lead routing (§20): the viewer bar (super-admin chip, "Away until …") and the first-call
+  // alert strip sit under the CRM header on every page.
+  const availability = viewer.role === "admin" ? null : findAvailability(getDb(), viewer.userId);
+  const awayUntil = availability && availability.awayUntil > (await requestTime()) ? new Date(availability.awayUntil).toISOString() : null;
+  return (
+    <>
+      <CrmViewerBar viewer={viewer} awayUntil={awayUntil} pagePath={pagePath} t={t} />
+      <SlaAlertStrip
+        locale={locale}
+        role={viewer.role}
+        superAdmin={viewer.superAdmin === true}
+        pagePath={pagePath}
+        t={{ strip: t.speed.strip, errors: t.errors }}
+      />
+      {children({ viewer, permissions: access.permissions })}
+    </>
+  );
 }
 
 function GateFallback({ label }: { label: string }) {
@@ -93,7 +122,16 @@ export function programOptions(t: CrmMessages): Option[] {
 }
 
 export function sourceOptions(t: CrmMessages): Option[] {
-  return [...PUBLIC_LEAD_SOURCES, ...MANUAL_LEAD_SOURCES].map((value) => ({ value, label: t.sources[value] }));
+  return [...PUBLIC_LEAD_SOURCES, ...MANUAL_LEAD_SOURCES, ...INTAKE_SOURCES].map((value) => ({ value, label: t.sources[value] }));
+}
+
+/** Inbox area filter options (lead routing §21): "No area", "Tool sign-ups", then every active area. */
+export function areaOptions(t: CrmMessages, locale: Locale, areas: readonly { id: string; en: string; hi: string; active: boolean }[]): Option[] {
+  return [
+    { value: "none", label: t.inbox.areaNone },
+    { value: "tool_signups", label: t.inbox.areaToolSignups },
+    ...areas.filter((area) => area.active).map((area) => ({ value: area.id, label: locale === "hi" ? area.hi || area.en : area.en })),
+  ];
 }
 
 /** Sources staff can choose when adding an enquiry (walk-in, phone call, referral, other). */

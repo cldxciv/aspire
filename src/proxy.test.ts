@@ -182,6 +182,21 @@ describe("preview gate (D-027)", () => {
     expect(proxy(withAuth("/api/admin/mcp-tokens")).status).toBe(401);
   });
 
+  it("never gates exactly the Meta webhook and the loopback sync (they authenticate their callers)", () => {
+    vi.stubEnv("PREVIEW_ACCESS_PASSWORD", "test-secret");
+    for (const path of ["/api/integrations/meta/webhook", "/api/integrations/meta/sync"]) {
+      for (const authorization of [undefined, "Bearer synthetic-cron-token"]) {
+        const response = proxy(withAuth(path, authorization));
+        expect(response.status, path).not.toBe(401);
+        expect(response.headers.get("www-authenticate")).toBeNull();
+      }
+    }
+    // Exact paths only: neighbours and the CRM settings API stay behind the gate.
+    for (const path of ["/api/integrations/meta", "/api/integrations/meta/webhook/x", "/api/integrations/meta/syncs", "/api/crm/integrations/meta"]) {
+      expect(proxy(withAuth(path)).status, path).toBe(401);
+    }
+  });
+
   it("lets the right password through, then applies the normal locale and portal rules", () => {
     vi.stubEnv("PREVIEW_ACCESS_PASSWORD", "test-secret");
     previewOn();

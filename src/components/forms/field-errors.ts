@@ -32,6 +32,8 @@ export function localizeFieldError(field: string, message: string, t: FieldError
       return t.programInterest;
     case "preferredCentre":
       return t.preferredCentre;
+    case "district":
+      return t.district;
     case "classOrExam":
       return t.classOrExam;
     case "topic":

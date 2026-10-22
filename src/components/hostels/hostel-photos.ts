@@ -8,16 +8,11 @@ import type { StockImageKey } from "@/content/images";
  */
 
 /**
- * Hero carousel, in slide order: residence life (evening study, a room, a meal, a desk lamp late
- * at night). This is all a visitor sees in production until hostel details are verified, so the
- * residence photos live here rather than beside the (preview-only) room and menu lists.
+ * Hero collage while no hostel details are published (production today): residence life, a room
+ * (large) and a meal (small). With hostel details the hero shows its facts card instead and no
+ * photo, so these two are never on the page beside the body photos below.
  */
-export const HOSTEL_HERO_KEYS = [
-  "studyThroughWindow",
-  "bunkBedRoom",
-  "steelThali",
-  "deskLampEvening",
-] as const satisfies readonly StockImageKey[];
+export const HOSTEL_HERO_KEYS = ["bunkBedRoom", "steelThali"] as const satisfies readonly StockImageKey[];
 
 /** Beside the empty state ("talk to a counsellor") when no hostel details are publishable. */
 export const HOSTEL_EMPTY_PHOTO: StockImageKey = "mentoringConversation";

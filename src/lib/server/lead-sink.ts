@@ -4,6 +4,7 @@ import type { Locale } from "@/i18n/config";
 import { stripLocale } from "@/i18n/paths";
 import type { EnquiryContext, EnquirySource } from "@/lib/contracts/enquiry";
 import { captureLead, leadContextFromEnquiry, leadInputFromEnquiry, type CaptureLeadInput, type LeadContext } from "@/lib/crm";
+import { DISTRICT_INPUT_VALUES } from "@/lib/crm/lead-ops-types";
 
 import type { ConsentRecord } from "./enquiry-consent";
 
@@ -37,6 +38,11 @@ export interface LeadCaptureInput {
   programInterest?: string;
   /** Centre slug or "not-sure" (already checked against the published centres). */
   preferredCentre?: string;
+  /**
+   * Lead routing (docs/lead-routing-plan.md §13.8): one of Himachal's 12 district ids or
+   * `outside-hp` (hero, admissions, contact). Routes the lead to that district's team.
+   */
+  district?: string;
   topic?: string;
   /** Legacy quick form only: "enquiry" | "scholarship". */
   intent?: string;
@@ -91,13 +97,20 @@ export function toLeadContext(context: EnquiryContext | undefined, locale?: Loca
  * attribution context with the page language and the predictor's exam + band.
  */
 export function toCaptureLeadInput(input: LeadCaptureInput): CaptureLeadInput {
-  const base = leadInputFromEnquiry(input, {
+  // The server re-checks the district against the contract's values; anything else is dropped.
+  const district = isDistrictValue(input.district) ? input.district : null;
+  const base = leadInputFromEnquiry({ ...input, district }, {
     consentTextVersion: input.consent.version,
     consentAt: Date.parse(input.consent.givenAt),
     context: toLeadContext(input.context, input.locale) ?? { locale: input.locale },
     reference: input.reference,
   });
   return { ...base, consent: { ...base.consent, locale: input.consent.locale, text: input.consent.text } };
+}
+
+/** An HP district id or `outside-hp` (the enquiry contract's `district` values). */
+export function isDistrictValue(value: unknown): value is string {
+  return typeof value === "string" && (DISTRICT_INPUT_VALUES as readonly string[]).includes(value);
 }
 
 /** The CRM lead store (CRM-CORE `captureLead`, D-037 – D-040): synchronous SQLite, dedupes by phone. */

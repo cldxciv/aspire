@@ -9,10 +9,16 @@ const contact = {
     description:
       "Contact the Aspire IIT & Medical team with questions about programs, admissions, scholarships or centres.",
   },
+  /** E · centre finder hero (2026-10-22 hero redesign); the finder's labels come from `centres.finder`. */
   hero: {
     title: "Talk to the Aspire team",
+    /** Phrase of `title` set in gold; must appear in it exactly. */
+    highlight: "Aspire team",
     crumb: "Contact",
+    /** While no centre can be shown (production until the records are verified). */
     lead: "Ask about programs, admissions, scholarships or the nearest centre.",
+    /** Above the district finder. */
+    finderLead: "Ask about programs, admissions or scholarships. Choose your district to see how to reach the centre that serves it.",
   },
   form: {
     title: "Send an enquiry",

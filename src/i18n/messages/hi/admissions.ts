@@ -11,9 +11,20 @@ const admissions: Messages<"admissions"> = {
       "IIT JEE, NEET, फ़ाउंडेशन या एकीकृत प्रोग्राम के लिए Aspire IIT & Medical में प्रवेश संबंधी पूछताछ शुरू करें, और जानें कि आगे क्या होता है।",
   },
   hero: {
+    eyebrow: "IIT JEE · NEET · फ़ाउंडेशन",
     title: "Aspire के साथ अपनी यात्रा शुरू करें",
+    highlight: "अपनी यात्रा",
     crumb: "प्रवेश",
     lead: "हमें विद्यार्थी के लक्ष्यों के बारे में बताएँ। पूछताछ पहला कदम है — इसके बाद प्रवेश टीम काउंसलिंग और आगे के चरणों में आपका मार्गदर्शन कर सकती है।",
+    primaryCta: "पूछताछ भेजें",
+    secondaryCta: "प्रवेश कैसे होता है",
+    statsLabel: "आँकड़ों में Aspire",
+    resultBadge: "Aspire का परिणाम",
+    batch: {
+      eyebrow: "अगला बैच",
+      centres: "केंद्र वाले ज़िले",
+      action: "शुरू होने की तारीख़ पूछें",
+    },
   },
   enquiry: {
     title: "प्रवेश पूछताछ",

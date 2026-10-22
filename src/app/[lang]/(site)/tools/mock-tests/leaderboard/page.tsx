@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { LeaderboardView, ProfileForm, type LeaderboardTest } from "@/components/mocktest/LeaderboardView";
-import { ButtonLink, DemoBadge, EmptyState, PageHero, Section } from "@/components/ui";
+import { RankedBoards } from "@/components/mocktest/RankedBoards";
+import { DemoBadge, PageHero, Section } from "@/components/ui";
 import { stockImages } from "@/content/images";
 import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
@@ -20,6 +21,10 @@ export async function generateMetadata(): Promise<Metadata> {
  * Opt-in PRACTICE leaderboards (D-034, QA-SEC-M6): weekly tests only, per window, by district and by
  * school (aggregate), timed by the server. Data comes from GET /api/mocktest/leaderboard (nicknames
  * only). Signed-in students manage their profile here.
+ *
+ * Exam-pattern mocks add their monthly ranked boards ("bp-<slot>-ranked", docs/question-bank-plan.md
+ * §B10.3) under `<Suspense>` (the bank is read at request time): same paper for everyone in a month,
+ * official tie-break, no time criterion, ranks indicative. "Coming soon" only when neither exists.
  */
 export default async function MockTestLeaderboardPage() {
   const [locale, t, tc, tTools] = await Promise.all([getLocale(), getMessages("mocktest"), getMessages("common"), getMessages("tools")]);
@@ -53,11 +58,9 @@ export default async function MockTestLeaderboardPage() {
       />
       <Section aria-label={t.leaderboard.title}>
         {tests.length === 0 ? (
-          <EmptyState
-            title={t.comingSoon.title}
-            description={t.comingSoon.body}
-            action={<ButtonLink href={localePath("/admissions#enquiry", locale)}>{t.comingSoon.cta}</ButtonLink>}
-          />
+          <Suspense fallback={<p className="text-sm text-muted">{t.leaderboard.loading}</p>}>
+            <RankedBoards t={t} locale={locale} weeklyCount={0} />
+          </Suspense>
         ) : (
           <div className="space-y-8">
             <div className="rounded-control border border-[#d7e7fb] bg-[#eef5ff] px-4 py-3">
@@ -66,6 +69,9 @@ export default async function MockTestLeaderboardPage() {
             </div>
             <Suspense fallback={<p className="text-sm text-muted">{t.leaderboard.loading}</p>}>
               <LeaderboardView tests={tests} t={t} />
+            </Suspense>
+            <Suspense fallback={null}>
+              <RankedBoards t={t} locale={locale} weeklyCount={tests.length} />
             </Suspense>
             <ProfileForm t={t} />
           </div>

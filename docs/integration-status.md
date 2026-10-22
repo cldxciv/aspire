@@ -23,6 +23,68 @@ Owner: Orchestrator. Updated after each merge. Only commands actually run are li
 | Mobile menu (browser, dev) | Escape closes from toggle and from panel; focus returns to toggle |
 | Images (browser, dev) at 360 / 768 / 1280 on `/`, `/about`, `/programs`, `/programs/iit-jee`, `/resources`, article, `/admissions`, `/contact` | all load, no broken images, no horizontal overflow; hero served via `/_next/image` (~235 KB at 1920w) |
 
+## Next release — lead routing: super admin, areas, the 1-hour call rule, Meta and CSV leads (integrated 2026-10-22)
+Base: live release `3394b3d` **plus the uncommitted working tree** (lead gate, contact-form change, heroes/carousels, homepage tools; the question-bank workflow is still running beside it). Everything here is **uncommitted**. Plan: `docs/lead-routing-plan.md` (D-044 – D-048) · owner questions: `docs/aspire-approval-checklist.md` §19 (LR-1 – LR-8) · contract: `docs/crm.md` §12.
+
+Owner requests (2026-10-22): areas assigned to area heads and executives by a super admin; calling hours and the rest super-admin-only; a 1-hour first call; 12 Himachal districts; Meta leads without Zapier.
+
+| Workstream | Owner | Status | Notes |
+|---|---|---|---|
+| Super admin, schema (`superadmin`, `crm_intake`), arrival pipeline, seams, settings, secret box, CRM core UI (SA chip, Away, SLA chip, area column / filters, Change area, call-return prompt), settings hub, privacy notice | LR-CORE | complete (fixer pass done) | |
+| Districts, resolver, seed, pools, areas admin, availability, reassign, change area, enquiry `district` field | LR-ROUTING | complete (fixer pass done) | |
+| Calling hours, clocks, tiers, retry tasks, alert strip, Call now, dashboard | LR-SLA | complete (fixer pass done) | |
+| CSV / TSV import (decode, parse, map, Excel damage, chunks, consent basis, history) | LR-IMPORT | complete (fixer pass done) | |
+| Meta Lead Ads (webhook, inbox, Graph client, mapping, secrets, actions, test mode, sync cron, setup checklist) | LR-META | complete (fixer pass done) | Fake Graph only; no real Meta call was made |
+| Integrate: type check, full suite, lint, cross-package fixes, integration test, live smoke, docs | Integrate | complete | see below |
+
+| Check (Integrate, 2026-10-22) | Result |
+|---|---|
+| `npx next typegen` + `npx tsc --noEmit` | pass, 0 errors (before and after the integrate fixes) |
+| `npx vitest run --maxWorkers=2` | 188 files, 3,626 tests: 3,625 pass; the 1 failure is `src/components/home/home-page.test.ts` "placeholder names" (the hero form's district list now contains the real district **Solan**, which the test's mock-up filler list forbids; owned by the finished homepage work, left for its owner: strip the district `<select>` before that check) |
+| eslint on every lead-routing file and folder | 0 problems |
+| New integration test `src/app/api/crm/lead-routing-integration.test.ts` (plan §25.5, real handlers and seams, fake Graph, fixed clock) | 9 / 9 pass: CLI bootstrap + ordinary admin refused; 12 areas + Set up from centre; signed webhook → Kangra, the less-loaded Dharamshala executive, due +1 working hour, redelivery adds nothing; Solan borrowed by Shimla (head sees it, not Kangra's); CSV twice / overlapping / lost family attached; erase → `erased_family`; `no_answer` retry task + `connected` reached; overdue digest for the head; Meta silence alert |
+| Live smoke on the local dev server (synthetic data, then erased / disabled / removed through the APIs) | pass: CLI `list`; 12 areas; Set up from centre (Dharamshala → Kangra + Chamba) with a TEST head and 2 TEST executives; alias mapping + resolver; calling hours + 60-minute rule saved; ordinary admin: every settings page read-only and 14 write APIs → 403; CSV in Meta's export format (5 rows: 3 created and routed to Kangra, 1 invalid phone, 1 in-file duplicate; re-import → 0 created); signed webhook → held (integration off, so no Graph call), redelivery → still one inbox row, tampered → 401; an enquiry older than one working hour → overdue in the head's area queue, digest, inbox `sla=overdue` and both dashboards; headless Chrome: 10 CRM pages × 360 / 1280 px, no console errors, no horizontal overflow |
+
+### Lead-routing release conditions
+- **Before deploying:** set `INTEGRATIONS_SECRET` in the server `.env` (deploy/README.md, "Integrations key").
+- **Right after deploying:** `docker compose exec app npm run auth:super-admin -- list` (then `grant` if it says no super admin). Until a super admin exists, nobody can create staff logins or change the new settings.
+- **Behaviour change at deploy:** areas mode is the default; with no area members yet, enquiries still follow the old rules, but free-tool sign-ups with no district wait in **Tool sign-ups** instead of being auto-assigned. Every new lead gets a 1-working-hour first-call clock (in-app alerts only).
+- **Optional:** the Meta sync cron needs the owner's approval, `INTEGRATIONS_CRON_TOKEN` and the header file (deploy/README.md step 4). No nginx change.
+- **Owner steps after deploy:** Settings → Areas & people (heads and executives per centre), Calling hours & speed (defaults: Mon–Sat 09–19, Sun 10–13, 60 minutes), then Meta: the setup checklist on the Integrations page (plan Part 2); until Meta allows the live link, import the Leads Center CSV twice a day.
+- Hindi: every new string is a machine draft (`docs/hindi-review-register.md` → LEAD-ROUTING); the privacy lines also need legal review.
+
+## Next release — question bank and exam-pattern mock tests (in progress 2026-10-22)
+Base: live release `3394b3d` **plus the uncommitted working tree** (including the lead-gate work below and the 22 Oct 2026 contact-form change). Everything here is **uncommitted**: not yet type-checked as a whole, built, committed or deployed. Plan: `docs/question-bank-plan.md` (v2) · decisions D-050 – D-058 · operator guide: `docs/question-bank.md` · owner and counsel questions: `docs/aspire-approval-checklist.md` §18 (QB-1 – QB-17) · public routes: `docs/api.md` → "Exam-pattern mock papers" · Hindi: `docs/hindi-review-register.md` → QUESTION-BANK · deployment: `deploy/README.md` → "Question bank".
+
+Owner request (22 Oct 2026): a question bank built from the last 10 years of official papers, which staff extend in the admin panel; questions sorted into easy, medium and hard; a new paper for every mock attempt with the right weight from each category, as close as possible to the real pattern. Owner decisions: sources are both official papers with answer keys (PDF) and Aspire's own files (Excel, Word, PDF, CSV), AI-extracted and staff-reviewed before use; exams JEE Main, NEET UG, JEE Advanced and Aspire BOH (pattern unknown: a staff-editable placeholder).
+
+| Workstream | Owner | Status | Notes |
+|---|---|---|---|
+| Foundations: dependencies (`katex`, `pdf-lib`, `read-excel-file`, `mammoth`), `qb_*` schema, types, patterns, generator, rich text, fingerprints, calibration maths, request schemas | QB-CORE-A | in progress (parallel build) | |
+| Services: access, questions, pool, taxonomy, figures, blueprints, windows, papers, stats, corrections, reports, search, import hooks | QB-CORE-B | in progress (parallel build) | |
+| Seed: official unit names (cited), NCERT-aligned chapters, four draft blueprints, sample questions (demo mode only) | QB-SEED | in progress (parallel build) | Must not create any official or "past year" question |
+| Mock-test integration: scoring (partial, ranges, integer), paper routes, ranked windows and boards, key-correction re-scoring, figure route; JEE sample numerical marking −1 (D-058) | QB-MOCKTEST-API | in progress (parallel build) | Keeps the working-tree lead-gate behaviour of `/score` |
+| Student pages: `/tools/mock-tests/exam/[slot]`, generated runner, result extras | QB-MOCKTEST-UI | in progress (parallel build) | Must not edit `src/components/home/**` (another workflow is redesigning the homepage tools) |
+| Admin APIs `/api/admin/qb/**` (except imports) | QB-ADMIN-API | in progress (parallel build) | |
+| Admin screens `/admin/questions/**`, portal nav and staff access | QB-ADMIN-UI | in progress (parallel build) | |
+| Import pipeline (PDF / DOCX via Claude, CSV / XLSX template), import APIs and screens | QB-IMPORT | in progress (parallel build) | Fake client only; no real Claude calls before Integrate |
+| Operator guide, decisions, checklist §18, Hindi register, API doc, `.env.example`, deploy notes, `backup.sh` optional `KEEP_LOCAL_*` / `FIGURE_SYNC` | QB-DOCS | complete (written to the plan's contracts; fixer pass re-checked against the code that had landed by about 03:50 IST, 22 Oct, by reading the source) | Corrected: admin API table (`docs/question-bank.md` §15), paper-token transport and result timing (`docs/api.md`), AI-only import switch, official-site list, CSV template and key columns, import-file retention, nginx limit scoped to the import route, calibration thresholds fixed in code. Import routes and admin screens had not landed: re-check at Integrate |
+
+| Check | Result |
+|---|---|
+| Per-package vitest (`--maxWorkers=1`) + eslint on touched files | run by each package; results in each package's report (QB-DOCS: docs only, plus `bash -n deploy/backup.sh`, which passed) |
+| `tsc` / full test suite / `next build` / browser smoke / at most 2 real extraction calls on a 1-page original test PDF | **not run yet**; due in the Integrate stage (machine limits: one heavy run at a time) |
+
+### Question-bank release conditions
+- **Nothing reaches students before an admin publishes a blueprint**, and nothing can be imported for an exam before its syllabus list is confirmed. The bank starts empty: the exam pages show "coming soon", or labelled shorter or sample papers (sample only in demo mode).
+- **Owner actions before deployment:** nginx `client_max_body_size 10m;` in a `location ^~ /api/admin/qb/imports` block only (not site-wide), the data folders `/opt/aspire-web/data/qb-imports` and `qb-figures` owned by uid 1000, `QB_IMPORT_ENABLED=0` in `.env` until AI import is approved (QB-7; it stops AI imports only, CSV / XLSX template imports still work), the backup choices (QB-11), and a manual check that the source-PDF viewer opens in Chrome (`deploy/README.md` → Question bank).
+- **Rights first:** no official paper is imported before Aspire answers QB-1; no third-party material until the rights are confirmed.
+- **BOH** cannot be published until an admin confirms its pattern and adds BOH chapters (QB-4).
+- **Integrate stage:** record and retire or archive every item the browser smoke creates in the owner's dev database; check FTS5 in the Docker image; set the `QB_IMPORT_EFFORT` default and the estimate constants from the two test calls; re-check `docs/question-bank.md`, `docs/api.md` and the Hindi register against the code; run the home-tools and learner-tools tests to confirm the catalog contract.
+- **Follow-ups once the parallel workflows land:** a "Question bank" link on the CRM's no-membership panel for bank-only staff; optionally, the homepage widget lists the exam-pattern mocks; document staff access to `/admin/questions` in `docs/auth-and-portals.md`.
+- **Known gap, out of scope:** the existing fixed weekly sample test can reveal per-question results during an open week, the same answer-key leak the ranked papers close; reported to the mock-test owner.
+- Hindi: every new string is a machine draft (`docs/hindi-review-register.md` → QUESTION-BANK); official instruction wording should be copied from NTA's Hindi documents.
+
 ## Next release — lead gate: contact details before free tools' results (in progress 2026-10-21)
 Base: release `806a938` (being deployed 2026-10-21). Everything below is **uncommitted in the working tree**: not yet type-checked as a whole, built, committed or deployed. Plan: `docs/lead-gate-plan.md` (D-043) · owner and counsel questions: `docs/aspire-approval-checklist.md` §17 (TG-1–TG-9, LG-2) · public routes: `docs/api.md` → "Lead gate" · CRM: `docs/crm.md` §11 · MCP: `docs/mcp.md`.
 
@@ -181,6 +243,10 @@ Full report: `docs/homepage-implementation-report.md` · QA: `docs/visual-qa-rep
 | Rancho official artwork: head / avatar ≥ 512 × 512 and waving / half-body ≥ 1024 px tall, transparent PNG / WebP / SVG, with confirmation of ownership | Replacing the temporary mascot stand-in | Aspire to send the files (checklist RA-2) |
 | Hosting / domain / deployment target | Launch | Aspire — no deployment without approval |
 | Legal counsel's answers on the lead gate: verifiable parental consent (DPDP s.9), "required" vs "optional" (s.6), DND calling, notice gaps | Keeping the contact step lawful while it is live | Aspire's legal adviser (checklist §17: TG-2, TG-1, TG-4, TG-8) |
+| Rights to use official NTA / IIT papers and keys, and any third-party material in Aspire's files | Importing official questions into the question bank | Aspire's legal adviser (checklist §18 QB-1) |
+| Official paper and answer-key files (older JEE Main shifts may only be in candidates' logins), Aspire's own question files | Filling the question bank | Aspire to collect from the official sites (nta.ac.in and subdomains, *.nic.in, NTA's government CDN *.s3waas.gov.in, jeeadv.ac.in and IIT sites; NMC and NCERT for syllabi; checklist QB-1(d)) and its own archives (never coaching websites) |
+| The BOH pattern and chapter list; the question-bank team (authors, reviewers); approval of AI import and its daily cap | BOH mocks; reviewing imports; running imports | Aspire (checklist §18 QB-4, QB-7, QB-8) |
+| More VPS disk (about 2 GB free) before the ten-year backfill, or fewer local backup copies | Room for the full bank, its figures and backups | Owner (checklist §18 QB-11) |
 
 ## Deferred technical items
 - Content-Security-Policy with nonces.
@@ -192,3 +258,4 @@ Full report: `docs/homepage-implementation-report.md` · QA: `docs/visual-qa-rep
 - Admin MCP tool descriptions (`src/lib/mcp/tools/status.ts`, `progress.ts`) still say "Ask Aspire"; rename to Rancho in a later release (checklist RA-6).
 - No git repository yet (owner hasn't requested one).
 - Lead gate: retention purge for unconverted leads (CRM-3), a do-not-contact list that survives erase, a one-tap "Request a call back" for pass holders; limiters and the flood breaker are in memory (single instance) — `docs/lead-gate-plan.md` §9.
+- Question bank, phase 2 (`docs/question-bank-plan.md` §B17): JEE Advanced ranked pair with a combined board, pattern variants once 2024–2025 are verified, easier / typical / tougher mix presets, an expected-time budget, option shuffling for Aspire questions, "freeze a preview as a fixed paper", part-syllabus slots, more BOH slots, a PDF figure cropper, IRT, a strength summary across a student's papers, the homepage widget listing, certificates for generated papers. The Message Batches path is tested with fakes only until the owner's pilot; generator and report rate limits are in memory (single instance).

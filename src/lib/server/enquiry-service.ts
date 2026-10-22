@@ -3,6 +3,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 
 import type { Enquiry } from "@/lib/contracts/enquiry";
+import { DISTRICT_INPUT_VALUES } from "@/lib/crm/lead-ops-types";
 import { getCentres } from "@/lib/data";
 
 import type { EnquiryDestination, EnquiryPayload, ForwardedEnquiry } from "./destinations";
@@ -24,6 +25,18 @@ export async function checkPreferredCentre(enquiry: Enquiry): Promise<Record<str
   if (!value || value === PREFERRED_CENTRE_NOT_SURE) return null;
   const centres = await getCentres();
   return centres.some((centre) => centre.slug === value) ? null : { preferredCentre: [PREFERRED_CENTRE_ERROR] };
+}
+
+/**
+ * The family's district (lead routing §13.8, D-045) when the enquiry carries a valid one: one of
+ * Himachal's 12 district ids or `outside-hp`, on the hero, admissions and contact forms. Empty,
+ * absent or anything else → undefined (the contract already rejects other values; this re-check
+ * keeps the lead store's input clean whatever the caller).
+ */
+export function enquiryDistrict(enquiry: Enquiry): string | undefined {
+  if (enquiry.source !== "hero" && enquiry.source !== "admissions" && enquiry.source !== "contact") return undefined;
+  const value = enquiry.district;
+  return typeof value === "string" && (DISTRICT_INPUT_VALUES as readonly string[]).includes(value) ? value : undefined;
 }
 
 /** Crockford base32 (no I, L, O, U) — readable over the phone. 32 symbols, so `byte & 31` is unbiased. */

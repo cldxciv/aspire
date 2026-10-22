@@ -14,7 +14,9 @@ type Context = { params: Promise<{ userId: string }> };
  * 200 `{ user, temporaryPassword }`: a new server-generated temporary password, returned
  * ONCE. The user's sessions are all revoked, any sign-in lockout is lifted and they must
  * choose a new password at next sign-in. Admins cannot reset their own password here
- * (403; use /api/auth/change-password). Audited.
+ * (403; use /api/auth/change-password). Super admin (D-044, H1): a non-super-admin gets 403
+ * `super_admin_target` for a super admin and `super_admin_only` for a staff account (recovery for
+ * a lost super-admin password: `npm run auth:super-admin -- reset-password`). Audited.
  */
 export async function POST(request: NextRequest, ctx: Context) {
   try {
@@ -25,9 +27,16 @@ export async function POST(request: NextRequest, ctx: Context) {
 
     const result = await adminResetPassword(auth.session, userId);
     if (!result.ok) {
-      return result.error === "self_reset"
-        ? portalApiError("forbidden", AUTH_MESSAGES.selfReset)
-        : portalApiError("not_found", AUTH_MESSAGES.userNotFound);
+      switch (result.error) {
+        case "self_reset":
+          return portalApiError("forbidden", AUTH_MESSAGES.selfReset);
+        case "super_admin_target":
+          return portalApiError("forbidden", AUTH_MESSAGES.superAdminTarget);
+        case "super_admin_only":
+          return portalApiError("forbidden", AUTH_MESSAGES.staffSuperAdminOnly);
+        default:
+          return portalApiError("not_found", AUTH_MESSAGES.userNotFound);
+      }
     }
     authLog({ action: "admin_users", outcome: "success" });
     return portalApiItem({

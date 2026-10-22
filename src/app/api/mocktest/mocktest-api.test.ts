@@ -64,7 +64,7 @@ function browser(ip?: string): Browser {
 }
 
 async function signedIn(
-  role: "student" | "parent" | "admin",
+  role: "student" | "parent" | "admin" | "staff",
   loginId: string,
   displayName?: string,
 ): Promise<{ b: Browser; userId: string }> {
@@ -313,13 +313,31 @@ describe("lead gate on POST /api/mocktest/score (docs/lead-gate-plan.md §5.7)",
     expect(toolUses()).toEqual([]);
   });
 
-  it("signed-in students and parents skip the gate, and nothing is noted for account holders", async () => {
+  // Owner decision 22 Oct 2026: being signed in no longer opens the gate (staff and admins are asked
+  // like visitors; students and parents unless their account has a mobile on file, and none has).
+  it("refuses a signed-in admin (and staff, students, parents) without a pass: the gate 401, nothing scored or noted", async () => {
     gateOn();
-    for (const role of ["student", "parent"] as const) {
+    for (const role of ["admin", "staff", "student", "parent"] as const) {
       const { b } = await signedIn(role, `${role}.gate`);
-      expect((await b.send(score.POST, SCORE, { body: neet({ record: true }) })).status).toBe(200);
+      const response = await b.send(score.POST, SCORE, { body: neet({ record: true }) });
+      expect(response.status, role).toBe(401);
+      expect(isLeadGateResponse(response), role).toBe(true);
+      expect(await response.json()).not.toHaveProperty("data");
     }
     expect(toolUses()).toEqual([]);
+  });
+
+  it("a signed-in admin or student who shared details once is scored, and the pass notes the test like a guest's", async () => {
+    gateOn();
+    for (const role of ["admin", "student"] as const) {
+      const { b } = await signedIn(role, `${role}.unlocked`);
+      await unlock(b);
+      const response = await b.send(score.POST, SCORE, { body: neet({ record: true }) });
+      expect(response.status, role).toBe(200);
+      expect((await json<ScoredAttempt>(response)).data.result.score).toBe(35);
+    }
+    expect(toolUses()).toHaveLength(2);
+    expect(toolUses()[0]).toMatchObject({ tool: "mock-test", key: NEET.id, scoreBand: "pct-20-29" });
   });
 
   it("earlier attempts are never gated: a start before LEAD_GATE_SINCE is scored; a later or unknown one is not", async () => {
@@ -379,6 +397,151 @@ describe("lead gate on POST /api/mocktest/score (docs/lead-gate-plan.md §5.7)",
     expect(response.status).toBe(401);
     expect(response.headers.getSetCookie().join("\n")).toMatch(/aspire_tool_pass=;.*Max-Age=0/i);
     expect(b.jar.has("aspire_tool_pass")).toBe(false);
+  });
+});
+
+// Saving scores the attempt, so POST /api/mocktest/attempts follows the /score rule: a signed-in
+// student posting a new attempt directly gets the gate unless the result was already shown here.
+describe("lead gate on POST /api/mocktest/attempts (the /score rule)", () => {
+  const ATTEMPTS = "/api/mocktest/attempts";
+  /** 09:30 IST on the test day: IN_WINDOW is half an hour later. */
+  const SINCE = "2026-10-21T04:00:00Z";
+  let phoneCounter = 0;
+
+  function gateOn(extra: Record<string, string> = {}) {
+    vi.stubEnv("LEAD_GATE", "required");
+    vi.stubEnv("LEAD_GATE_SECRET", "mocktest-gate-secret-0123456789abcdefghij");
+    for (const [name, value] of Object.entries(extra)) vi.stubEnv(name, value);
+  }
+
+  async function unlock(b: Browser) {
+    phoneCounter += 1;
+    const response = await b.send(leadGate.POST, "/api/lead-gate", {
+      body: {
+        studentName: "Mock Save Student",
+        phone: `98100 4${String(phoneCounter).padStart(4, "0")}`,
+        currentClass: "class-12",
+        submittedBy: "student",
+        consent: true,
+        consentVersion: LEAD_GATE_CONSENT_VERSION,
+        tool: "mock-test",
+        website: "",
+      },
+    });
+    expect(response.status).toBe(201);
+    expect(b.jar.has("aspire_tool_pass")).toBe(true);
+  }
+
+  const neet = (extra: Record<string, unknown> = {}) => body(NEET.id, neetAnswers(10, 5), extra);
+  const toolUseCount = () => (getDb().prepare("SELECT COUNT(*) AS n FROM crm_activities WHERE type = 'tool_use'").get() as { n: number }).n;
+
+  it("a signed-in student without a pass: the gate 401, nothing saved, the start left unused; after sharing once it saves and counts", async () => {
+    gateOn();
+    const s = await signedIn("student", "student.save.gate");
+    const { token } = await startToken(s.b);
+    vi.setSystemTime(Date.now() + 10 * MINUTE);
+    const payload = body(WEEKLY.id, weeklyAnswers(4), { startToken: token });
+    for (const attempt of [payload, neet()]) {
+      const refused = await s.b.send(attempts.POST, ATTEMPTS, { body: attempt });
+      expect(refused.status).toBe(401);
+      expect(isLeadGateResponse(refused)).toBe(true);
+      expect(refused.headers.get("cache-control")).toBe("no-store");
+      const refusedBody = (await refused.json()) as Record<string, unknown>;
+      expect(refusedBody).toMatchObject({ ok: false, error: "unauthenticated", gate: "lead" });
+      expect(refusedBody).not.toHaveProperty("data");
+    }
+    expect(listAttemptsForStudent(s.userId)).toEqual([]);
+
+    await unlock(s.b);
+    const saved = await s.b.send(attempts.POST, ATTEMPTS, { body: payload });
+    expect(saved.status).toBe(201);
+    expect((await json<Saved>(saved)).data.attempt).toMatchObject({ leaderboard: true, practiceReason: null, score: 16 });
+    // The result page's /score notes tool use; a save never does.
+    expect(toolUseCount()).toBe(0);
+  });
+
+  it("never gated, as on /score: a result already shown here (`seen`) and a start before LEAD_GATE_SINCE", async () => {
+    for (const [i, extra] of ([{}, { LEAD_GATE_SINCE: SINCE }] as Record<string, string>[]).entries()) {
+      gateOn(extra);
+      const s = await signedIn("student", `student.save.seen${i}`);
+      const later = { startedAt: IN_WINDOW - 10 * MINUTE };
+      const seen = await s.b.send(attempts.POST, ATTEMPTS, { body: neet({ ...later, seen: true }) });
+      expect(seen.status).toBe(201);
+      expect((await json<Saved>(seen)).data.attempt.score).toBe(35);
+      // Not shown yet: the gate. A malformed flag is ignored, never a 422.
+      expect((await s.b.send(attempts.POST, ATTEMPTS, { body: neet(later) })).status).toBe(401);
+      expect((await s.b.send(attempts.POST, ATTEMPTS, { body: neet({ ...later, seen: "yes" }) })).status).toBe(401);
+    }
+    const s = await signedIn("student", "student.save.early");
+    expect((await s.b.send(attempts.POST, ATTEMPTS, { body: neet({ startedAt: IN_WINDOW - 45 * MINUTE }) })).status).toBe(201);
+    expect((await s.b.send(attempts.POST, ATTEMPTS, { body: neet({ startedAt: IN_WINDOW - 10 * MINUTE }) })).status).toBe(401);
+    expect(toolUseCount()).toBe(0);
+  });
+
+  it("a retried save of an attempt this student already saved comes back without contact details; nobody else's", async () => {
+    gateOn();
+    const s = await signedIn("student", "student.save.retry");
+    await unlock(s.b);
+    const payload = neet();
+    expect((await s.b.send(attempts.POST, ATTEMPTS, { body: payload })).status).toBe(201);
+    s.b.jar.delete("aspire_tool_pass");
+    const retry = await s.b.send(attempts.POST, ATTEMPTS, { body: payload });
+    expect(retry.status).toBe(200);
+    expect((await json<Saved>(retry)).data.attempt.score).toBe(35);
+    // Other answers under the saved id: the STORED attempt and its own scoring, never a scoring of the new answers.
+    const changed = await s.b.send(attempts.POST, ATTEMPTS, { body: { ...payload, answers: neetAnswers(40) } });
+    expect(changed.status).toBe(200);
+    const changedData = (await json<Saved>(changed)).data;
+    expect(changedData.attempt.score).toBe(35);
+    expect(changedData.scored.result.score).toBe(35);
+    // The saved id with another test is not a retry: the gate, nothing scored or saved.
+    const otherTest = await s.b.send(attempts.POST, ATTEMPTS, { body: { ...body(WEEKLY.id, weeklyAnswers(4)), attemptId: payload.attemptId } });
+    expect(otherTest.status).toBe(401);
+    expect(isLeadGateResponse(otherTest)).toBe(true);
+    // A new attempt is asked for again …
+    expect((await s.b.send(attempts.POST, ATTEMPTS, { body: neet() })).status).toBe(401);
+    // … and another student cannot borrow the saved attempt's id.
+    const other = await signedIn("student", "student.save.other");
+    expect((await other.b.send(attempts.POST, ATTEMPTS, { body: payload })).status).toBe(401);
+    expect(listAttemptsForStudent(s.userId)).toHaveLength(1);
+    expect(listAttemptsForStudent(other.userId)).toEqual([]);
+  });
+
+  it("order: same-origin, sign-in, the student role and the body first; the gate before an unknown test; a dead pass cookie is cleared", async () => {
+    gateOn();
+    const guest = await browser().send(attempts.POST, ATTEMPTS, { body: neet() });
+    expect(guest.status).toBe(401);
+    expect(isLeadGateResponse(guest)).toBe(false);
+    const parent = await signedIn("parent", "parent.save.gate");
+    expect((await parent.b.send(attempts.POST, ATTEMPTS, { body: neet() })).status).toBe(403);
+    const s = await signedIn("student", "student.save.order");
+    expect((await s.b.send(attempts.POST, ATTEMPTS, { body: neet(), origin: "https://evil.example" })).status).toBe(403);
+    expect((await s.b.send(attempts.POST, ATTEMPTS, { body: "x", contentType: "text/plain" })).status).toBe(415);
+    expect(isLeadGateResponse(await s.b.send(attempts.POST, ATTEMPTS, { body: body("nope", []) }))).toBe(true);
+    expect((await s.b.send(attempts.POST, ATTEMPTS, { body: body("nope", [], { seen: true }) })).status).toBe(404);
+    expect((await s.b.send(attempts.POST, ATTEMPTS, { body: neet({ seen: true, answers: [0] }) })).status).toBe(422);
+    s.b.jar.set("aspire_tool_pass", "lg1.not-a-real-pass.1999999999.c2ln");
+    const dead = await s.b.send(attempts.POST, ATTEMPTS, { body: neet() });
+    expect(dead.status).toBe(401);
+    expect(dead.headers.getSetCookie().join("\n")).toMatch(/aspire_tool_pass=;.*Max-Age=0/i);
+    expect(s.b.jar.has("aspire_tool_pass")).toBe(false);
+  });
+
+  it("the session is read once, with the gate: a session due for renewal gets its cookie re-issued", async () => {
+    const s = await signedIn("student", "student.save.renew");
+    vi.setSystemTime(Date.now() + 61 * MINUTE);
+    const response = await s.b.send(attempts.POST, ATTEMPTS, { body: neet() });
+    expect(response.status).toBe(201);
+    expect(response.headers.getSetCookie().join("\n")).toMatch(/aspire_session=[^;]+;/);
+  });
+
+  it("gate off or optional: saved exactly as before", async () => {
+    gateOn({ LEAD_GATE: "" });
+    const s = await signedIn("student", "student.save.off");
+    expect((await s.b.send(attempts.POST, ATTEMPTS, { body: neet() })).status).toBe(201);
+    gateOn({ LEAD_GATE: "optional" });
+    expect((await s.b.send(attempts.POST, ATTEMPTS, { body: neet() })).status).toBe(201);
+    expect(listAttemptsForStudent(s.userId)).toHaveLength(2);
   });
 });
 

@@ -34,17 +34,46 @@ import "server-only";
  *   gateDailyCounts(viewer, { from, to })                    → GateDayCount[] (lead-gate forms per IST day)
  *   exportLeadsCsv(viewer, filters?, now?)                   → CrmResult<{ csv, rows, filename }> (audited)
  *   eraseLead(viewer, leadId, now?, { reason? }?)            → CrmResult<{ leadId, erasedAt }>   (admin)
- *   listStaff(viewer) / upsertStaff(viewer, userId, StaffInput, now?)
- *   getAssignmentRules(viewer) / setAssignmentRules(viewer, rules, now?)
+ *   listStaff(viewer) / upsertStaff(viewer, userId, StaffInput, now?)   (upsert: super admin)
+ *   getAssignmentRules(viewer) / setAssignmentRules(viewer, rules, now?) (set: super admin)
+ *   Lead routing (docs/lead-routing-plan.md §14): onLeadArrival(db, LeadArrival) → ArrivalResult (inside a
+ *     transaction); createFollowUpTask(db, …) (system retry tasks); settings readers / writers; slaStateOf.
+ *     Seams: @/lib/crm/routing, @/lib/crm/sla, @/lib/crm/meta (stubs owned by ROUTING / SLA / META).
  */
 
 export * from "./types";
-export { canSeeLead, CRM_AUDIT, leadScopeFor, resolveCrmViewer, scopeCovers } from "./access";
+// Lead routing, the 1-hour call rule and Meta (docs/lead-routing-plan.md §11 – §19; LR-CORE).
+export * from "./lead-ops-types";
+export {
+  assignableMember,
+  canSeeLead,
+  canSetAvailability,
+  CRM_AUDIT,
+  leadFilterForbidden,
+  leadScopeFor,
+  resolveCrmViewer,
+  scopeCovers,
+} from "./access";
+export { onLeadArrival } from "./arrival";
+export {
+  getAreasSeed,
+  getCallingHours,
+  getMetaConfig,
+  getMetaStatus,
+  getRoutingSettings,
+  getSpeedRule,
+  readSetting,
+  validateCallingHours,
+  validateSpeedRule,
+  writeSetting,
+} from "./settings";
+export { minutesToDue, slaClockView, slaStateOf } from "./sla-state";
 export { pickAssignee } from "./assignment";
 export { captureLead, createManualLead, leadContextFromEnquiry, leadInputFromEnquiry } from "./capture";
 export {
   addNote,
   assignLead,
+  autoAssign,
   changeStage,
   DEFAULT_PAGE_SIZE,
   getLead,
@@ -55,7 +84,7 @@ export {
   updateLead,
   type LeadPatch,
 } from "./leads";
-export { completeTask, createTask, isTaskRange, myTasks, TASK_TITLE_MAX } from "./tasks";
+export { completeTask, createFollowUpTask, createTask, isTaskRange, myTasks, TASK_TITLE_MAX } from "./tasks";
 export { EXPORT_MAX_ROWS, exportLeadsCsv, funnelReport, gateDailyCounts, reportRange } from "./reports";
 export {
   eraseLead,

@@ -504,7 +504,7 @@ describe("/api/ask behind the lead gate", () => {
     expect(b.jar.has(LEAD_GATE_COOKIE)).toBe(true);
   }
 
-  async function signedIn(role: "student" | "parent", ip: string, options: { mustChangePassword?: boolean } = {}) {
+  async function signedIn(role: "student" | "parent" | "admin" | "staff", ip: string, options: { mustChangePassword?: boolean } = {}) {
     const user = await createTestUser({ role, loginId: `gate.${role}.${ip.split(".").at(-1)}`, password: "pass-word-2026", ...options });
     const b = browser(ip);
     b.jar.set("aspire_session", createSession(user.id).token);
@@ -622,26 +622,56 @@ describe("/api/ask behind the lead gate", () => {
     expect(toolUses()).toEqual([]);
   });
 
-  it("signed-in accounts skip the gate and note nothing; a must-change-password session skips it on the guest allowance", async () => {
-    const student = await signedIn("student", "203.0.113.115");
+  // Owner decision 22 Oct 2026: being signed in no longer opens the gate. Staff and admins are asked
+  // like visitors; students and parents too unless their account has a mobile on file (none has).
+  it.each(["admin", "staff"] as const)("refuses a signed-in %s without a pass: the gate 401 before the body, nothing reserved or sent", async (role) => {
+    const member = await signedIn(role, role === "admin" ? "203.0.113.119" : "203.0.113.120");
+    const request = member.request("/api/ask", { body: { question: "Find the height", language: "en" } });
+    cookieState.jar = member.jar;
+    const response = await ask.POST(request);
+    expect(response.status).toBe(401);
+    expect(isLeadGateResponse(response)).toBe(true);
+    expect(await response.json()).toMatchObject({ ok: false, error: "unauthenticated", gate: "lead" });
+    expect(request.bodyUsed).toBe(false);
+    expect(sdk.calls).toHaveLength(0);
+    expect(await askStatus(member)).toMatchObject({ access: "gate_required", account: "member" });
+    expect(Number(getDb().prepare("SELECT COUNT(*) AS n FROM ask_usage").get()?.n)).toBe(0);
+    expect(loggedLines().join("\n")).toContain('"account":"member"');
+
+    // After sharing details once, the same signed-in account is answered (testing matches reality).
+    await unlock(member);
+    const answered = await post(member, { question: "q", language: "en" });
+    expect(answered.status).toBe(200);
+    await answered.text();
+    expect(await askStatus(member)).toMatchObject({ access: "open", account: "member" });
+  });
+
+  it("signed-in students and parents without a mobile on file are asked like guests; after sharing, a student keeps the student allowance and Rancho use is noted", async () => {
+    for (const [role, ip] of [
+      ["student", "203.0.113.115"],
+      ["parent", "203.0.113.116"],
+    ] as const) {
+      const account = await signedIn(role, ip);
+      expect((await post(account, { question: "q", language: "en" })).status).toBe(401);
+      expect(await askStatus(account)).toMatchObject({ access: "gate_required" });
+    }
+
+    const student = await signedIn("student", "203.0.113.121");
+    await unlock(student, { ...UNLOCK, submittedBy: "student", phone: "98100 54321" });
     const answered = await post(student, { question: "q", language: "en" });
     expect(answered.status).toBe(200);
     await answered.text();
     expect(await askStatus(student)).toMatchObject({ access: "open", account: "student", limit: 3, used: 1 });
+    expect(toolUses()).toEqual([expect.objectContaining({ tool: "ask", key: "rancho", uses: 1 })]);
 
-    const parent = await signedIn("parent", "203.0.113.116");
-    const parentAnswer = await post(parent, { question: "q", language: "en" });
-    expect(parentAnswer.status).toBe(200);
-    await parentAnswer.text();
-
+    // A must-change-password session is asked too, and stays on the guest allowance once unlocked.
     const temporary = await signedIn("student", "203.0.113.117", { mustChangePassword: true });
+    expect((await post(temporary, { question: "q", language: "en" })).status).toBe(401);
+    await unlock(temporary, { ...UNLOCK, submittedBy: "student", phone: "98100 54322" });
     const temporaryAnswer = await post(temporary, { question: "q", language: "en" });
     expect(temporaryAnswer.status).toBe(200);
     await temporaryAnswer.text();
     expect(await askStatus(temporary)).toMatchObject({ access: "open", account: "guest", limit: 2, used: 1 });
-
-    expect(toolUses()).toEqual([]);
-    expect(Number(getDb().prepare("SELECT COUNT(*) AS n FROM crm_leads").get()?.n)).toBe(0);
   });
 
   it("optional mode and off: never a 401; GET reports gate_optional / open", async () => {

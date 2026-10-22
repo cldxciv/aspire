@@ -1,8 +1,9 @@
 "use client";
 
-import { Ban, CircleCheck, Copy, KeyRound, Link2, LoaderCircle, Pencil, RefreshCw, TriangleAlert, UserPlus } from "lucide-react";
+import { Ban, CircleCheck, Copy, KeyRound, Link2, LoaderCircle, Pencil, RefreshCw, ShieldCheck, ShieldOff, TriangleAlert, UserPlus } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { describedBy, inputClasses } from "@/components/auth/fields";
+import { SuperAdminBadge } from "@/components/crm/SuperAdminBadge";
 import { Badge, Button, Notice } from "@/components/ui";
 import { useLocale } from "@/i18n/client";
 import { htmlLang } from "@/i18n/config";
@@ -13,6 +14,7 @@ import { DISPLAY_NAME_MAX_LENGTH, LOGIN_ID_PATTERN } from "@/lib/auth/identifier
 import { buildChangePasswordHref, buildLoginHref } from "@/lib/auth/paths";
 import { ROLES, type Role } from "@/lib/auth/roles";
 import { cn } from "@/lib/cn";
+import { SUPER_ADMIN_CLI, type SuperAdminEntry, type SuperAdminList } from "@/lib/crm/lead-ops-types";
 
 /** What the admin API returns for each account (`PublicUser`): never a password or hash. */
 export type AdminUserView = {
@@ -37,6 +39,7 @@ export type UserManagerMessages = {
 type UsersT = UserManagerMessages["users"];
 type TempPassword = { name: string; loginId: string; password: string };
 type Confirmation = { kind: "disable" | "reset"; user: AdminUserView };
+type SuperAdminChange = { user: AdminUserView; grant: boolean };
 type RoleFilter = "all" | Role;
 type StatusFilter = "all" | "active" | "disabled";
 
@@ -115,7 +118,26 @@ export function UserManager({
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; value: string; error?: string } | null>(null);
   const [linkChoice, setLinkChoice] = useState<Record<string, string>>({});
+  // Super admins (D-044): who they are, and whether the viewer is one (decides what is offered;
+  // the server enforces the same rules on every call).
+  const [superAdmins, setSuperAdmins] = useState<SuperAdminList | null>(null);
+  const [saChange, setSaChange] = useState<SuperAdminChange | null>(null);
   const filterIds = useId();
+  const sa = t.superAdmin;
+  const youAreSuperAdmin = superAdmins?.youAreSuperAdmin === true;
+  // Every ACTIVE grant, effective or not: a disabled account with a live grant is protected too (H1)
+  // and its grant can still be revoked by a super admin.
+  const grants = useMemo(() => new Map((superAdmins?.items ?? []).map((item) => [item.userId, item])), [superAdmins]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void callApi<SuperAdminList>("/api/admin/super-admins").then((result) => {
+      if (!cancelled && result.ok) setSuperAdmins(result.data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const byId = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
   const students = useMemo(() => users.filter((user) => user.role === "student"), [users]);
@@ -213,6 +235,13 @@ export function UserManager({
     await refresh();
   }
 
+  function grantLine(entry: SuperAdminEntry): string {
+    const date = dateFormat.format(new Date(entry.grantedAt));
+    if (entry.via === "bootstrap") return format(sa.setAutomatically, { name: entry.displayName, date });
+    if (entry.via === "cli" || !entry.grantedBy) return format(sa.grantedOnServer, { name: entry.displayName, date });
+    return format(sa.grantedBy, { name: entry.displayName, by: entry.grantedBy.displayName, date });
+  }
+
   async function confirmAction() {
     const current = confirmation;
     setConfirmation(null);
@@ -223,8 +252,33 @@ export function UserManager({
 
   return (
     <div className="grid gap-6">
+      {superAdmins && (
+        <section aria-labelledby="admin-super-admins" className="rounded-card border border-[#f2dfa0] bg-[#fffdf5] p-5 shadow-soft md:p-6">
+          <h2 id="admin-super-admins" className="flex flex-wrap items-center gap-2 text-lg font-extrabold text-navy">
+            <ShieldCheck aria-hidden="true" className="size-5 text-[#7a5600]" />
+            {sa.listTitle}
+          </h2>
+          <p className="mt-1 text-sm text-muted">{sa.listIntro}</p>
+          {superAdmins.bootstrapPending ? (
+            <Notice variant="warning" className="mt-3">
+              {format(sa.noneBanner, { command: SUPER_ADMIN_CLI })}
+            </Notice>
+          ) : (
+            <ul className="mt-3 space-y-1 text-sm">
+              {superAdmins.items
+                .filter((item) => item.effective)
+                .map((item) => (
+                  <li key={item.userId}>{grantLine(item)}</li>
+                ))}
+            </ul>
+          )}
+          {!youAreSuperAdmin && <p className="mt-3 text-sm text-muted">{sa.staffOnlySuperAdmin}</p>}
+        </section>
+      )}
+
       <CreateUserForm
         m={m}
+        allowStaff={superAdmins === null || youAreSuperAdmin}
         onCreated={async (user, password) => {
           setTemp({ name: user.displayName, loginId: user.loginId, password });
           succeed(format(t.announce.created, { name: user.displayName }));
@@ -320,6 +374,11 @@ export function UserManager({
               const linkedParents = (user.linkedParentIds ?? []).map((id) => byId.get(id)).filter(isUser);
               const available = students.filter((student) => !(user.linkedStudentIds ?? []).includes(student.id));
               const choiceId = `${filterIds}-link-${user.id}`;
+              const grant = grants.get(user.id);
+              // Staff logins and super admins' accounts are changed by super admins only (D-044, Q7, H1).
+              const protectedTarget = superAdmins !== null && !youAreSuperAdmin && (user.role === "staff" || (grant !== undefined && !self));
+              // Grant: enabled admins only. Revoke: any live grant, including a disabled account's.
+              const canToggleSuperAdmin = youAreSuperAdmin && user.role === "admin" && (grant !== undefined || !user.disabled);
               return (
                 <li key={user.id} className={cn("rounded-control border border-line p-4", user.disabled ? "bg-[#f8f9fb]" : "bg-white")}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -327,6 +386,7 @@ export function UserManager({
                       <h3 className="flex flex-wrap items-center gap-2 break-words font-bold text-navy">
                         {user.displayName}
                         {self && <Badge variant="info">{t.you}</Badge>}
+                        {grant?.effective && <SuperAdminBadge label={sa.badge} />}
                       </h3>
                       <p className="mt-0.5 text-sm text-muted">
                         {t.loginId}:{" "}
@@ -444,22 +504,30 @@ export function UserManager({
                     </form>
                   )}
 
+                  {grant && <p className="mt-2 text-xs text-[#5c4a12]">{grantLine(grant)}</p>}
+                  {protectedTarget && <p className="mt-2 text-xs text-muted">{user.role === "staff" ? sa.staffOnlySuperAdmin : t.errors.superAdminTarget}</p>}
+
                   <div role="group" aria-label={format(t.actionsFor, { name: user.displayName })} className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => setRenaming({ id: user.id, value: user.displayName })}
-                    >
-                      <Pencil aria-hidden="true" className="size-4" />
-                      {t.rename}
-                    </Button>
-                    {!self && (
+                    {canToggleSuperAdmin && (
+                      <Button variant="outline" disabled={busy} onClick={() => setSaChange({ user, grant: !grant })}>
+                        {grant ? <ShieldOff aria-hidden="true" className="size-4" /> : <ShieldCheck aria-hidden="true" className="size-4" />}
+                        {grant ? sa.revoke : sa.grant}
+                      </Button>
+                    )}
+                    {!protectedTarget && (
+                      <Button variant="outline" disabled={busy} onClick={() => setRenaming({ id: user.id, value: user.displayName })}>
+                        <Pencil aria-hidden="true" className="size-4" />
+                        {t.rename}
+                      </Button>
+                    )}
+                    {!self && !protectedTarget && (
                       <Button variant="outline" disabled={busy} onClick={() => setConfirmation({ kind: "reset", user })}>
                         <KeyRound aria-hidden="true" className="size-4" />
                         {t.resetPassword}
                       </Button>
                     )}
                     {!self &&
+                      !protectedTarget &&
                       (user.disabled ? (
                         <Button variant="outline" disabled={busy} onClick={() => setDisabled(user, false)}>
                           <CircleCheck aria-hidden="true" className="size-4" />
@@ -500,6 +568,22 @@ export function UserManager({
 
       <Modal open={temp !== null} titleId="admin-temp-title" onClose={() => setTemp(null)}>
         {temp && <TempPasswordContent temp={temp} t={t} onDone={() => setTemp(null)} />}
+      </Modal>
+
+      <Modal open={saChange !== null} titleId="admin-sa-title" onClose={() => setSaChange(null)}>
+        {saChange && (
+          <SuperAdminChangeForm
+            change={saChange}
+            m={m}
+            onCancel={() => setSaChange(null)}
+            onDone={(list) => {
+              setSuperAdmins(list);
+              succeed(format(saChange.grant ? sa.granted : sa.revoked, { name: saChange.user.displayName }));
+              setSaChange(null);
+            }}
+            onFailure={fail}
+          />
+        )}
       </Modal>
     </div>
   );
@@ -608,12 +692,101 @@ function TempPasswordContent({ temp, t, onDone }: { temp: TempPassword; t: Users
   );
 }
 
+/**
+ * Grant / revoke super admin (D-044): the SA re-enters their current password; the server checks
+ * it (5 tries per 15 minutes), refuses the last super admin (409) and non-admin targets (422).
+ */
+function SuperAdminChangeForm({
+  change,
+  m,
+  onCancel,
+  onDone,
+  onFailure,
+}: {
+  change: SuperAdminChange;
+  m: UserManagerMessages;
+  onCancel: () => void;
+  onDone: (list: SuperAdminList) => void;
+  onFailure: (result: ApiFailure) => string;
+}) {
+  const t = m.users;
+  const sa = t.superAdmin;
+  const id = useId();
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!password) {
+      setError(sa.passwordRequired);
+      return;
+    }
+    setPending(true);
+    const result = await callApi<SuperAdminList>(`/api/admin/super-admins/${encodeURIComponent(change.user.id)}`, {
+      method: "PUT",
+      body: { superAdmin: change.grant, currentPassword: password },
+    });
+    setPending(false);
+    setPassword("");
+    if (result.ok) {
+      onDone(result.data);
+      return;
+    }
+    if (result.error === "validation" && "currentPassword" in result.fieldErrors) setError(t.errors.wrongPassword);
+    else setError(onFailure(result));
+  }
+
+  return (
+    <form onSubmit={onSubmit} noValidate className="p-5 md:p-6">
+      <h2 id="admin-sa-title" className="text-lg font-extrabold text-navy">
+        {format(change.grant ? sa.grantTitle : sa.revokeTitle, { name: change.user.displayName })}
+      </h2>
+      <p className="mt-2 text-muted">{change.grant ? sa.grantBody : sa.revokeBody}</p>
+      <div className="mt-4 flex flex-col gap-1.5">
+        <label htmlFor={`${id}-password`} className="text-sm font-bold text-navy">
+          {sa.password}
+        </label>
+        <input
+          id={`${id}-password`}
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy(`${id}-password`, true, Boolean(error))}
+          className={cn(inputClasses, error ? "border-danger" : "border-[#b9cbe0]")}
+        />
+        <p id={`${id}-password-hint`} className="text-xs text-muted">
+          {sa.passwordHint}
+        </p>
+        {error && (
+          <p id={`${id}-password-error`} role="alert" className="text-sm font-semibold text-danger">
+            {error}
+          </p>
+        )}
+      </div>
+      <div className="mt-5 flex flex-wrap justify-end gap-2">
+        <Button variant="outline" onClick={onCancel}>
+          {t.cancel}
+        </Button>
+        <Button type="submit" variant="dark" disabled={pending}>
+          {pending ? t.working : sa.confirm}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 function CreateUserForm({
   m,
+  allowStaff,
   onCreated,
   onFailure,
 }: {
   m: UserManagerMessages;
+  /** Staff (CRM) logins are a super-admin action (D-044, Q7). */
+  allowStaff: boolean;
   onCreated: (user: AdminUserView, temporaryPassword: string) => Promise<void>;
   onFailure: (result: ApiFailure) => string;
 }) {
@@ -688,7 +861,7 @@ function CreateUserForm({
             onChange={(event) => setRole(event.target.value as Role)}
             className={cn(inputClasses, "border-[#b9cbe0]")}
           >
-            {ROLES.map((option) => (
+            {ROLES.filter((option) => allowStaff || option !== "staff").map((option) => (
               <option key={option} value={option}>
                 {m.roles[option]}
               </option>

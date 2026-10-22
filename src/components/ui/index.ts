@@ -21,5 +21,5 @@ export {
 } from "./ImageCarousel";
 export { Container, HERO_PANEL, SECTION_GUTTERS, SECTION_PANEL, Section, SectionHeading, type SectionTone } from "./Layout";
 export { MediaSplit, PhotoStrip } from "./MediaSplit";
-export { PageHero, type Crumb } from "./PageHero";
+export { PageHero, type Crumb, type PageHeroProps, type QuietPageHeroProps, type RichPageHeroProps } from "./PageHero";
 export { PhotoBand, StickyMediaLayout } from "./PhotoBand";

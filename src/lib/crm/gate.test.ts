@@ -26,6 +26,7 @@ import {
   type GateUnlockInput,
 } from "./index";
 import { resetGateSweepForTests } from "./gate";
+import { writeSetting } from "./settings";
 
 // Lead gate, CRM side (docs/lead-gate-plan.md §3), against a fresh in-memory database per test.
 const NOW = Date.UTC(2026, 9, 21, 6, 0, 0); // 11:30 IST
@@ -100,6 +101,8 @@ afterEach(() => {
 
 describe("unlockGateLead", () => {
   it("creates a source `tool` lead with the gate consent, the submitter, the tool's attribution and a pass (hash only)", () => {
+    // Legacy routing keeps today's rule (a gate lead goes to the counsellor); areas mode is below.
+    writeSetting(getDb(), "routing", { mode: "legacy" }, { expectedVersion: null, actorId: null, now: NOW, audit: false });
     const result = unlock();
     expect(result).toMatchObject({ ok: true, isNew: true, captured: true });
     const lead = detail(result.leadId);
@@ -131,6 +134,17 @@ describe("unlockGateLead", () => {
       recordUse: true,
     });
     expect(listAudit(getDb(), { limit: 20 }).find((e) => e.action === "crm.lead_capture")?.details).toMatchObject({ source: "tool", isNew: true });
+  });
+
+  it("areas mode (the default): a gate lead with no area is not auto-assigned and waits in Tool sign-ups (lead routing A2)", () => {
+    const result = unlock();
+    expect(result).toMatchObject({ ok: true, isNew: true, captured: true });
+    const lead = detail(result.leadId);
+    expect(lead).toMatchObject({ source: "tool", studentName: "Gate Student", consentTextVersion: GATE_CONSENT });
+    expect(lead.assignee).toBeNull();
+    expect(rows("SELECT area_id, gate_only FROM crm_lead_routing WHERE lead_id = ?", result.leadId)).toEqual([
+      expect.objectContaining({ area_id: null, gate_only: 1 }),
+    ]);
   });
 
   it("LEAD_GATE_ASSIGN=none: a new gate lead stays in the Unassigned queue", () => {

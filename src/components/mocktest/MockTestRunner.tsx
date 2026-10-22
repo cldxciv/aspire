@@ -618,7 +618,8 @@ function QuestionBody({
   );
 }
 
-function SubmitDialog({
+/** "Submit the test?" with the palette counts and the time left (also used by the generated-paper runner). */
+export function SubmitDialog({
   open,
   t,
   counts,

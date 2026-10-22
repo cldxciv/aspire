@@ -137,7 +137,8 @@ describe("question bank (sample content, D-032)", () => {
       } else {
         expect(Number.isFinite(q.answer), q.id).toBe(true);
         expect(q.exam, q.id).toBe("JEE_MAIN");
-        expect(q.marking, q.id).toEqual({ correct: 4, wrong: 0 });
+        // JEE (Main) 2026 Information Bulletin §2.4.2: negative marking for Section B too (was +4 / 0 until 22 Oct 2026).
+        expect(q.marking, q.id).toEqual({ correct: 4, wrong: -1 });
       }
     }
   });

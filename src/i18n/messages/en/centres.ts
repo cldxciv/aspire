@@ -12,9 +12,26 @@ const centres = {
       "Find an Aspire IIT & Medical centre in Himachal Pradesh. Addresses, phone numbers and opening hours are published only after verification.",
   },
   crumb: "Centres",
+  /** E · centre finder hero (2026-10-22 hero redesign). */
   hero: {
-    title: "Find Aspire near you",
+    title: "Find your nearest Aspire centre",
+    /** Phrase of `title` set in gold; must appear in it exactly. */
+    highlight: "Aspire centre",
+    /** While no centre can be shown (production until the records are verified). */
     lead: "A centre directory for families across Himachal Pradesh. Only verified locations are published as confirmed centres.",
+    /** Above the district finder. */
+    finderLead: "Choose your district to see which Aspire centre serves it.",
+  },
+  /** The hero's district finder (also used on /contact). Head campus, Call and Directions come from `card`. */
+  finder: {
+    district: "Your district",
+    centreFor: "Aspire centre for {district}",
+    mapLabel: "Illustrative map of Aspire's {count} centres in Himachal Pradesh: {names}",
+    mapNote: "Illustrative map, not to scale",
+    page: "See centre details",
+    whatsapp: "WhatsApp",
+    /** Heading of the centre list shown instead of the finder without JavaScript. */
+    listTitle: "Our centres",
   },
   directory: {
     title: "Centre directory",

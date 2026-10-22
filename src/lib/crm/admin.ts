@@ -4,15 +4,19 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { getDb, withTransaction } from "@/lib/db/connection";
 import { findUserById } from "@/lib/db/users";
+import { keyedHash, secretBoxStatus } from "@/lib/server/secret-box";
 
 import { CRM_AUDIT, CRM_MESSAGES, crmAudit, fail, ok } from "./access";
 import { deleteGateDataForLead } from "./gate";
 import { cleanSlug, toIso } from "./pure";
 import { insertActivity, scrubActivities } from "./repo/activities";
+import { wipeRoutingInput } from "./repo/areas-core";
+import { upsertSuppression } from "./repo/intake";
 import { findLeadById, openLeadCounts, updateLead } from "./repo/leads";
 import { listRules, replaceRules } from "./repo/rules";
 import { findStaff, listStaffRows, upsertStaffRow, type StaffRow } from "./repo/staff";
 import { scrubTasks } from "./repo/tasks";
+import { closeSlaClock } from "./sla";
 import {
   CRM_ROLES,
   crmPermissions,
@@ -64,23 +68,42 @@ const KEEP_META_KEYS = [
   // Staff-entered families: how they agreed to be contacted (proof of consent, not personal data).
   "consentMethod",
   "reason",
+  // Lead routing (docs/lead-routing-plan.md §14.2): import / Meta bookkeeping (ids and flags only).
+  "attached",
+  "importBatch",
+  "metaCreatedAt",
+  "formId",
+  "adId",
+  "campaignId",
+  "consentConfirmed",
 ] as const;
 
 export const ERASED_TASK_TITLE = "[erased]";
 
+/** Fixed-code log line for erase bookkeeping (never ids, names or phones). */
+function eraseLog(reason: "no_suppression_key"): void {
+  console.warn(JSON.stringify({ ts: new Date().toISOString(), level: "warn", event: "crm", route: "erase", outcome: "degraded", reason }));
+}
+
 /**
  * Wipes a lead's personal data and keeps an anonymised stub (stage, source, centre, program, class,
  * dates, assignee) so funnel counts stay right. Admin only. Idempotent.
+ * Lead routing (§12, M5): also wipes the family's typed place from the routing row, closes the
+ * open first-call clock (`erased`) and writes the erase suppression (keyed hash of the phone) so
+ * an old list or Meta lead cannot bring the family back; without INTEGRATIONS_SECRET the erase
+ * still runs but writes no suppression (a fixed-code log line says so). Meta / CSV refs are kept.
  * Lead gate: also deletes the lead's passes (every browser is asked again) and all its `tool_use`
  * entries (not needed for funnel counts); the audit row carries the two counts.
  * `options.reason` (one of ERASE_REASONS, from the admin's erase dialog) is kept on the erase
- * entry and in the audit row; an unknown value is ignored.
+ * entry and in the audit row; an unknown value is ignored. `options.suppress: false` (system use
+ * only: the 24-hour erase of Meta TEST leads, whose phone is the super admin's own test number)
+ * skips the suppression row.
  */
 export function eraseLead(
   viewer: CrmViewer,
   leadId: string,
   now: number = Date.now(),
-  options: { reason?: EraseReason | null } = {},
+  options: { reason?: EraseReason | null; suppress?: boolean } = {},
 ): CrmResult<{ leadId: string; erasedAt: string }> {
   if (!crmPermissions(viewer).canErase) return fail("forbidden", CRM_MESSAGES.forbidden);
   const reason = (ERASE_REASONS as readonly unknown[]).includes(options.reason) ? (options.reason as EraseReason) : null;
@@ -89,6 +112,16 @@ export function eraseLead(
     const lead = findLeadById(db, leadId);
     if (!lead) return fail("not_found", CRM_MESSAGES.notFound);
     if (lead.erasedAt !== null) return ok({ leadId, erasedAt: toIso(lead.erasedAt) });
+    let suppressed = false;
+    if (lead.phoneE164 && options.suppress !== false) {
+      const box = secretBoxStatus();
+      if (box.configured && box.keyId) {
+        upsertSuppression(db, { phoneHash: keyedHash("phone", lead.phoneE164), keyId: box.keyId, erasedAt: now });
+        suppressed = true;
+      } else {
+        eraseLog("no_suppression_key");
+      }
+    }
     updateLead(db, leadId, {
       studentName: null,
       guardianName: null,
@@ -106,13 +139,15 @@ export function eraseLead(
     const gate = deleteGateDataForLead(db, leadId);
     scrubActivities(db, leadId, KEEP_META_KEYS);
     scrubTasks(db, leadId, ERASED_TASK_TITLE, now);
+    wipeRoutingInput(db, leadId);
+    closeSlaClock(db, { leadId, resolution: "erased", at: now });
     insertActivity(db, { leadId, type: "erase", meta: reason ? { reason } : {}, actorId: viewer.userId, at: now });
     crmAudit(db, {
       actorId: viewer.userId,
       action: CRM_AUDIT.leadErase,
       target: leadId,
       // ("pass…" keys would be dropped by the audit sanitiser)
-      details: { gateBrowsers: gate.passesRevoked, toolUsesDeleted: gate.toolUsesDeleted, ...(reason ? { reason } : {}) },
+      details: { gateBrowsers: gate.passesRevoked, toolUsesDeleted: gate.toolUsesDeleted, ...(suppressed ? { suppressed } : {}), ...(reason ? { reason } : {}) },
       now,
     });
     return ok({ leadId, erasedAt: toIso(now) });
@@ -191,7 +226,7 @@ export function writeStaffMembership(
   });
 }
 
-/** Creates or changes a staff member's CRM role, centre scope and active flag. Admin only. */
+/** Creates or changes a staff member's CRM role, centre scope and active flag. Super admin only (D-044, Q7). */
 export function upsertStaff(
   viewer: CrmViewer,
   userId: string,
@@ -232,7 +267,7 @@ export function getAssignmentRules(viewer: CrmViewer): CrmResult<AssignmentRule[
   return ok(listRules(getDb()));
 }
 
-/** Replaces every rule (order = priority among equally specific rules). Admin only. Audited. */
+/** Replaces every rule (order = priority among equally specific rules). Super admin only (D-044). Audited. */
 export function setAssignmentRules(
   viewer: CrmViewer,
   rules: readonly Partial<AssignmentRuleInput>[],

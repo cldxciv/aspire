@@ -2,6 +2,7 @@ import { createElement, type FunctionComponent, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import { accountLinkLabel, toolUseSummary } from "@/components/crm/format";
 import { LocaleProvider } from "@/i18n/client";
 import type { Locale } from "@/i18n/config";
 import { messagesFor } from "@/i18n/messages";
@@ -251,6 +252,31 @@ describe("LeadGateStore", () => {
     expect(capped.getSnapshot()).toMatchObject({ status: "locked", sample: null });
   });
 
+  it("keeps the server's `prefill` (a signed-in student / parent account) from any status answer; it never opens anything", async () => {
+    const prefill = { studentName: "Asha Thakur", submittedBy: "student" as const };
+    const { deps } = fakeDeps({ fetchStatus: vi.fn(async () => ({ kind: "ok" as const, data: { ...LOCKED, prefill } })) });
+    const store = new LeadGateStore(deps);
+    expect(store.getSnapshot().prefill).toBeNull();
+    expect(await store.ensure()).toBe(false);
+    expect(store.getSnapshot()).toMatchObject({ status: "locked", via: null, prefill });
+
+    // A hint opened the page, then the enforced tool's 401: loadSample brings the pre-fill too.
+    const hinted = fakeDeps({ fetchStatus: vi.fn(async () => ({ kind: "ok" as const, data: { ...LOCKED, prefill } })) });
+    hinted.map.set(HINT_KEY, JSON.stringify({ until: NOW + 1000, recordsUse: true, mode: "required" }));
+    const other = new LeadGateStore(hinted.deps);
+    expect(await other.ensure()).toBe(true);
+    other.markRequired();
+    expect(other.getSnapshot().prefill).toBeNull();
+    other.loadSample();
+    await flush();
+    expect(other.getSnapshot()).toMatchObject({ status: "locked", prefill });
+
+    // Guests, staff and admins: nothing pre-filled.
+    const guest = new LeadGateStore(fakeDeps().deps);
+    await guest.ensure();
+    expect(guest.getSnapshot().prefill).toBeNull();
+  });
+
   it("skip works only in optional mode and is remembered (no nagging)", async () => {
     const required = new LeadGateStore(fakeDeps().deps);
     await required.ensure();
@@ -310,6 +336,28 @@ describe("LeadGateStore", () => {
   });
 });
 
+describe("what counsellors read in the CRM (owner decision 22 Oct 2026)", () => {
+  it("the homepage countdown note reads “Study planner · exam countdown · JEE Main”, apart from a plan", () => {
+    const en = messagesFor("en", "crm");
+    const countdown = { tool: "planner", key: "countdown-jee-main", exam: "jee-main", feature: "countdown", uses: 1 };
+    expect(toolUseSummary(en, countdown, null)).toBe("Study planner · exam countdown · JEE Main");
+    expect(toolUseSummary(en, { tool: "planner", key: "jee-main", exam: "jee-main", uses: 1 }, null)).toBe("Study planner · JEE Main");
+    expect(toolUseSummary(en, { ...countdown, tool: "predictor" }, null)).not.toContain(en.lead.toolUse.countdown);
+    expect(toolUseSummary(messagesFor("hi", "crm"), countdown, null)).toContain("परीक्षा काउंटडाउन");
+  });
+
+  it("a submission sent while signed in to a student or parent account says so; other values say nothing", () => {
+    for (const locale of ["en", "hi"] as const) {
+      const t = messagesFor(locale, "crm");
+      expect(accountLinkLabel(t, "student")).toBe(t.lead.gate.signedIn.student);
+      expect(accountLinkLabel(t, "parent")).toBe(t.lead.gate.signedIn.parent);
+      expect(accountLinkLabel(t, "admin")).toBeNull();
+      expect(accountLinkLabel(t, null)).toBeNull();
+    }
+    expect(messagesFor("en", "crm").lead.gate.signedIn.student).toBe("Sent while signed in to a student account");
+  });
+});
+
 describe("transport", () => {
   const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
     vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } }));
@@ -320,6 +368,13 @@ describe("transport", () => {
     const older = { mode: "required", unlocked: false, via: null, recordsUse: false, expiresAt: null }; // a server from before `sample`: never claim sample data
     expect(await fetchLeadGateStatus(json(200, { ok: true, data: older }))).toEqual({ kind: "ok", data: { ...LOCKED, sample: false } });
     expect(await fetchLeadGateStatus(json(200, { ok: true, data: { mode: "loud" } }))).toEqual({ kind: "failed" });
+    // A signed-in student / parent account's pre-fill (22 Oct 2026); a malformed one is dropped, never a failure.
+    const prefill = { studentName: "Asha Thakur", submittedBy: "student" };
+    expect(await fetchLeadGateStatus(json(200, { ok: true, data: { ...LOCKED, prefill } }))).toEqual({ kind: "ok", data: { ...LOCKED, prefill } });
+    expect(await fetchLeadGateStatus(json(200, { ok: true, data: { ...LOCKED, prefill: null } }))).toEqual({ kind: "ok", data: { ...LOCKED, prefill: null } });
+    const odd = await fetchLeadGateStatus(json(200, { ok: true, data: { ...LOCKED, prefill: { studentName: 7, submittedBy: "teacher" } } }));
+    expect(odd).toMatchObject({ kind: "ok", data: { mode: "required", unlocked: false } });
+    expect(odd.kind === "ok" ? (odd.data.prefill ?? null) : "failed").toBeNull();
     expect(await fetchLeadGateStatus(json(429, { ok: false, error: "rate_limited", message: "x" }))).toEqual({ kind: "failed" });
     expect(await fetchLeadGateStatus(vi.fn(async () => Promise.reject(new TypeError("offline"))))).toEqual({ kind: "failed" });
   });
@@ -434,9 +489,14 @@ describe("components (static render)", () => {
   it.each(["en", "hi"] as const)("%s: LeadGateForm has visible labels, required state, an unticked consent with its version, a honeypot, one form", (locale) => {
     const t = messagesFor(locale, "leadGate");
     const html = render(locale, createElement(LeadGateForm, { tool: "predictor", messages: t, focusOnMount: false }));
-    for (const label of [t.heading, t.fields.studentName, t.fields.phone, t.fields.currentClass, t.fields.submittedBy, t.fields.student, t.fields.parent, t.submit.predictor, t.signInLink]) {
+    for (const label of [t.heading, t.fields.studentName, t.fields.phone, t.fields.currentClass, t.fields.submittedBy, t.fields.student, t.fields.parent, t.submit.predictor]) {
       expect(html, label).toContain(esc(label));
     }
+    // Owner decision 22 Oct 2026: signing in does not skip the step, so the form never offers it.
+    expect(html).not.toContain(`href="${locale === "hi" ? "/hi/login" : "/login"}"`);
+    expect(html).not.toContain(esc(t.accountNote));
+    expect(html).not.toContain(esc(t.fields.studentNameFromAccount));
+    expect(html).not.toMatch(/name="studentName"[^>]*value=|value="[^"]*"[^>]*name="studentName"/);
     expect(html.match(/<form\b/g)).toHaveLength(1);
     expect(html).toMatch(/<h2 id="[^"]+" tabindex="-1"/);
     expect(html).toMatch(/<section aria-labelledby="[^"]+"/);
@@ -451,7 +511,6 @@ describe("components (static render)", () => {
     expect(html.match(/<input type="radio"[^>]*name="submittedBy"/g)).toHaveLength(2);
     expect(html).not.toMatch(/checked=""/);
     expect(html).toContain(`href="${locale === "hi" ? "/hi/privacy" : "/privacy"}"`);
-    expect(html).toContain(`href="${locale === "hi" ? "/hi/login" : "/login"}"`);
     expect(html).toContain('role="status"');
     expect(html).not.toContain(esc(t.skip)); // mode unknown: no skip
     expect(html).not.toContain(esc(t.continueWithoutSaving));
@@ -479,6 +538,41 @@ describe("components (static render)", () => {
       expect(plain).not.toContain(esc(t.sampleData));
       expect(plain).not.toMatch(/<button type="submit"[^>]*aria-describedby=/);
     }
+  });
+
+  it.each(["en", "hi"] as const)("%s: a signed-in student account gets its name pre-filled (editable, with a hint) and its role pre-selected; consent stays unticked", (locale) => {
+    const t = messagesFor(locale, "leadGate");
+    const store = storeWith({ mode: "required", status: "locked", prefill: { studentName: "Asha Thakur", submittedBy: "student" } });
+    const html = render(locale, createElement(LeadGateForm, { tool: "mock-test", messages: t, store, focusOnMount: false }));
+    const nameTag = html.match(/<input[^>]*name="studentName"[^>]*>/)?.[0] ?? "";
+    expect(nameTag).toContain('value="Asha Thakur"');
+    expect(nameTag).not.toMatch(/readonly|disabled/i);
+    expect(nameTag).toMatch(/aria-describedby="[^"]+"/);
+    expect(html).toContain(esc(t.fields.studentNameFromAccount));
+    expect(html).toContain(esc(t.accountNote));
+    const radios = html.match(/<input type="radio"[^>]*name="submittedBy"[^>]*>/g) ?? [];
+    expect(radios.find((tag) => tag.includes('value="student"'))).toMatch(/checked=""/);
+    expect(radios.find((tag) => tag.includes('value="parent"'))).not.toMatch(/checked/);
+    expect(html).toContain(esc(t.fields.phoneHintStudent)); // the hint follows the pre-selected role
+    expect(html.match(/<input[^>]*type="checkbox"[^>]*>/)?.[0]).not.toMatch(/checked/i);
+  });
+
+  it("a signed-in parent account with no single linked learner: role pre-selected, name left empty, no name hint", () => {
+    const t = messagesFor("en", "leadGate");
+    const store = storeWith({ mode: "required", status: "locked", prefill: { studentName: null, submittedBy: "parent" } });
+    const html = render("en", createElement(LeadGateForm, { tool: "ask", messages: t, store, enforced: true, focusOnMount: false }));
+    expect(html.match(/<input[^>]*name="studentName"[^>]*>/)?.[0]).not.toContain("value=");
+    expect(html).not.toContain(esc(t.fields.studentNameFromAccount));
+    expect(html).toContain(esc(t.accountNote));
+    expect((html.match(/<input type="radio"[^>]*name="submittedBy"[^>]*>/g) ?? []).find((tag) => tag.includes('value="parent"'))).toMatch(/checked=""/);
+    expect(html).toContain(esc(t.fields.phoneHintParent));
+  });
+
+  it("the homepage countdown (planner, usageKey countdown) gets its own button label", () => {
+    const t = messagesFor("hi", "leadGate");
+    const html = render("hi", createElement(LeadGateForm, { tool: "planner", usageKey: "countdown", messages: t, store: storeWith({ mode: "required" }), focusOnMount: false }));
+    expect(html).toContain(t.submitFor.countdown);
+    expect(html).not.toContain(t.submit.planner);
   });
 
   it("offers “Continue without sharing” only in optional mode", () => {
@@ -519,7 +613,30 @@ describe("components (static render)", () => {
       return null;
     }
     render("en", createElement(Host));
-    expect(captured).toMatchObject({ status: "unknown", sample: null, gateOpen: false, formProps: { tool: "planner", enforced: false, store } });
+    expect(captured).toMatchObject({ status: "unknown", sample: null, prefill: null, gateOpen: false, formProps: { tool: "planner", enforced: false, store } });
     expect(typeof (captured as unknown as ReturnType<typeof useLeadGate>).formProps.hostId).toBe("string");
+    expect((captured as unknown as ReturnType<typeof useLeadGate>).formProps).not.toHaveProperty("usageKey");
+  });
+
+  it("useLeadGate for the homepage countdown: tool planner + usageKey countdown → the form's label and the record's key", () => {
+    const store = storeWith({});
+    const sent = vi.spyOn(store, "recordUse").mockImplementation(() => undefined);
+    let countdown: ReturnType<typeof useLeadGate> | null = null;
+    let predictor: ReturnType<typeof useLeadGate> | null = null;
+    function Host() {
+      countdown = useLeadGate({ tool: "planner", usageKey: "countdown", store });
+      predictor = useLeadGate({ tool: "predictor", usageKey: "countdown", store }); // ignored: planner only
+      return null;
+    }
+    render("en", createElement(Host));
+    const gate = countdown as unknown as ReturnType<typeof useLeadGate>;
+    expect(gate.formProps).toMatchObject({ tool: "planner", usageKey: "countdown" });
+    gate.recordUse({ exam: "jee-main", page: "/" });
+    expect(sent).toHaveBeenLastCalledWith({ tool: "planner", exam: "jee-main", key: "countdown", page: "/" });
+    const other = predictor as unknown as ReturnType<typeof useLeadGate>;
+    expect(other.formProps).not.toHaveProperty("usageKey");
+    other.recordUse({ exam: "neet", band: "score-600-609" });
+    expect(sent).toHaveBeenLastCalledWith({ tool: "predictor", exam: "neet", band: "score-600-609" });
+    expect(sent.mock.lastCall?.[0]).not.toHaveProperty("key");
   });
 });

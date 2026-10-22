@@ -1,20 +1,25 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { stockImages } from "@/content/images";
 import { imageAltHi } from "@/content/hi/images";
 import enCommon from "@/i18n/messages/en/common";
 import hiCommon from "@/i18n/messages/hi/common";
 import type { ImageAsset } from "@/lib/types";
+import { isFocusRestore, isSidewaysInput, scrollTrackTo, startAutoplay, stepRail } from "./carousel-env";
 import { carouselLabelsFor } from "./carousel-labels";
 import {
+  AUTOPLAY_MS,
   autoplayDelay,
   carouselAspectClass,
+  carouselReducer,
   clampIndex,
   coverSizes,
   indexForKey,
+  initialCarouselState,
   isPlaying,
   liveMode,
   nearestIndex,
@@ -22,10 +27,12 @@ import {
   prevIndex,
   railEdges,
   railNextIndex,
-  REDUCED_MOTION_MIN_DELAY,
   scrollBehaviorFor,
+  settleAction,
+  settledIndex,
   shouldAutoRotate,
   wrapIndex,
+  type CarouselState,
   type CarouselSlide,
 } from "./carousel-utils";
 import { heroSlides } from "./hero-slides";
@@ -83,15 +90,15 @@ describe("carousel helpers", () => {
     expect(shouldAutoRotate({ count: 3, playing: isPlaying({ autoPlay: true, choice: "auto" }) })).toBe(true);
   });
 
-  it("swaps instantly and a little less often under reduced motion, smoothly otherwise", () => {
-    expect(scrollBehaviorFor(true)).toBe("instant");
+  it("moves every 5 s (owner) and swaps instantly under reduced motion at the same pace", () => {
+    expect(AUTOPLAY_MS).toBe(5000);
+    expect(autoplayDelay()).toBe(5000);
+    // `auto` is an instant jump on the tracks (no CSS scroll-behavior there) and every browser accepts it.
+    expect(scrollBehaviorFor(true)).toBe("auto");
     expect(scrollBehaviorFor(false)).toBe("smooth");
-    expect(REDUCED_MOTION_MIN_DELAY).toBe(8000);
-    expect(autoplayDelay(6000, true)).toBe(8000);
-    expect(autoplayDelay(4000, true)).toBe(8000);
-    expect(autoplayDelay(12000, true)).toBe(12000);
-    expect(autoplayDelay(Number.NaN, true)).toBe(8000);
-    expect(autoplayDelay(6000, false)).toBe(6000);
+    // No reduced-motion minimum any more (it used to stretch every step to 8 s).
+    expect(autoplayDelay(4000)).toBe(4000);
+    expect(autoplayDelay(12000)).toBe(12000);
   });
 
   it("steps a multi-card rail one card at a time and wraps from the end to the first card", () => {
@@ -113,29 +120,32 @@ describe("carousel helpers", () => {
     expect(railNextIndex(0, 0, false)).toBe(0);
   });
 
-  it("rotates only when playing, 2+ slides, visible and not hovered / focused", () => {
+  it("rotates whenever it shows the playing state, 2+ slides, in a visible tab and on screen (hover is no input)", () => {
     expect(shouldAutoRotate({ count: 3, playing: true })).toBe(true);
     expect(shouldAutoRotate({ count: 1, playing: true })).toBe(false);
     expect(shouldAutoRotate({ count: 3, playing: false })).toBe(false);
-    expect(shouldAutoRotate({ count: 3, playing: true, hovered: true })).toBe(false);
-    expect(shouldAutoRotate({ count: 3, playing: true, focusWithin: true })).toBe(false);
+    // Only pauses nobody can see: a hidden tab, or the carousel fully off screen.
     expect(shouldAutoRotate({ count: 3, playing: true, pageHidden: true })).toBe(false);
     expect(shouldAutoRotate({ count: 3, playing: true, inView: false })).toBe(false);
+    // Mouse hover and keyboard focus are no inputs (the type has no such fields): hover never
+    // pauses, and keyboard focus pauses by setting the visitor's choice to "paused", so the toggle
+    // shows "Play" (APG) instead of a hidden pause behind a "Pause" label.
+    const playingAfterKeyboardFocus = isPlaying({ autoPlay: true, choice: "paused" });
+    expect(playingAfterKeyboardFocus).toBe(false);
+    expect(shouldAutoRotate({ count: 3, playing: playingAfterKeyboardFocus })).toBe(false);
   });
 
   it("is a polite live region whenever it is not actually rotating (APG)", () => {
     expect(liveMode(shouldAutoRotate({ count: 3, playing: true }))).toBe("off");
-    // Paused by hover or keyboard focus while the visitor's choice is still "playing".
-    expect(liveMode(shouldAutoRotate({ count: 3, playing: true, hovered: true }))).toBe("polite");
-    expect(liveMode(shouldAutoRotate({ count: 3, playing: true, focusWithin: true }))).toBe("polite");
     expect(liveMode(shouldAutoRotate({ count: 3, playing: false }))).toBe("polite");
+    expect(liveMode(shouldAutoRotate({ count: 3, playing: true, inView: false }))).toBe("polite");
   });
 
   it("guards the autoplay delay and clamps a stale index", () => {
     expect(autoplayDelay(6000)).toBe(6000);
     expect(autoplayDelay(500)).toBe(2000);
-    expect(autoplayDelay(Number.NaN)).toBe(6000);
-    expect(autoplayDelay(Number.POSITIVE_INFINITY)).toBe(6000);
+    expect(autoplayDelay(Number.NaN)).toBe(5000);
+    expect(autoplayDelay(Number.POSITIVE_INFINITY)).toBe(5000);
     expect(clampIndex(4, 3)).toBe(2);
     expect(clampIndex(-1, 3)).toBe(0);
     expect(clampIndex(2, 0)).toBe(0);
@@ -175,6 +185,179 @@ describe("carousel helpers", () => {
     expect(heroSlides([wb], "x", "hi")[0].image.alt).toBe(imageAltHi[wb.src]);
     expect(heroSlides([wb], "x", "hi")[0].image.src).toBe(wb.src);
     expect(heroSlides([wb], "x", "en")[0].image.alt).toBe(wb.alt);
+  });
+});
+
+/**
+ * A scroller stand-in for node (no DOM here): `scrollTo` records each call and, with `moves`, jumps
+ * there; it never fires a scroll or scrollend event.
+ */
+function fakeScroller({ clientWidth, scrollWidth, moves }: { clientWidth: number; scrollWidth: number; moves: boolean }) {
+  const calls: number[] = [];
+  const behaviors: (ScrollBehavior | undefined)[] = [];
+  const el = {
+    scrollLeft: 0,
+    clientWidth,
+    scrollWidth,
+    scrollTo({ left = 0, behavior }: ScrollToOptions) {
+      calls.push(left);
+      behaviors.push(behavior);
+      if (moves) el.scrollLeft = Math.min(Math.max(left, 0), scrollWidth - clientWidth);
+    },
+  };
+  return { el, calls, behaviors, asElement: el as unknown as HTMLElement };
+}
+
+/** `n` rail cards `width` px apart (snap points), after the rail's 4 px start padding. */
+const fakeItems = (n: number, width: number) =>
+  Array.from({ length: n }, (_, i) => ({ offsetLeft: 4 + i * width }) as unknown as HTMLElement);
+
+describe("autoplay never waits for a scroll event", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("keeps advancing an ImageCarousel every 5 s over several intervals when the track never reports a scroll", () => {
+    vi.useFakeTimers();
+    // ImageCarousel's wiring: the interval dispatches "step" and the index → track effect scrolls
+    // the track there. This track moves but never fires a scroll / scrollend event, which used to
+    // leave the old one-shot timer un-armed for good while the button still said "Pause".
+    const track = fakeScroller({ clientWidth: 600, scrollWidth: 1800, moves: true });
+    let state: CarouselState = initialCarouselState;
+    const shown: number[] = [];
+    const stop = startAutoplay(autoplayDelay(), () => {
+      state = carouselReducer(state, { type: "step", count: 3 });
+      scrollTrackTo(track.asElement, state.index, false);
+      shown.push(state.index);
+    });
+    vi.advanceTimersByTime(AUTOPLAY_MS - 1);
+    expect(shown).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(shown).toEqual([1]);
+    vi.advanceTimersByTime(AUTOPLAY_MS * 5);
+    expect(shown).toEqual([1, 2, 0, 1, 2, 0]);
+    expect(track.calls).toEqual([600, 1200, 0, 600, 1200, 0]);
+    expect(track.behaviors.every((b) => b === "smooth")).toBe(true);
+    expect(state.moves).toBe(0);
+    // Pause (or a hidden tab, or off screen) stops the interval; nothing fires afterwards.
+    stop();
+    vi.advanceTimersByTime(AUTOPLAY_MS * 3);
+    expect(shown).toHaveLength(6);
+  });
+
+  // The live-site freeze: the mouse resting on the photo or on the Pause / Play button stopped
+  // rotation with no time limit while the button still said "Pause". Node has no DOM to hover, so
+  // this source check is the guard (the browser pass confirms it on the real pages).
+  it("never pauses on hover: no carousel, the results rail or the marquee wires a hover handler or the any-key pause", () => {
+    for (const file of [
+      "./ImageCarousel.tsx",
+      "./carousel-env.ts",
+      "../home/ResultRail.tsx",
+      "../results/ResultMarqueeFrame.tsx",
+    ]) {
+      const source = readFileSync(fileURLToPath(new URL(file, import.meta.url)), "utf8");
+      expect(source, file).not.toMatch(/on(Pointer|Mouse)(Enter|Leave|Over|Out)\b|"(pointer|mouse)(enter|leave|over|out)"/);
+      // The old key handler that turned any key (Space, PageDown, ↓ after clicking a photo) into a pause.
+      expect(source, file).not.toContain("noteKey");
+    }
+  });
+
+  it("does not treat focus the browser restores after a tab switch as the visitor moving focus", () => {
+    const photo = {} as EventTarget;
+    const next = {} as EventTarget;
+    // Window / tab blurred with the photo focused, then focus given back to it: not a pause.
+    expect(isFocusRestore({ target: photo, relatedTarget: null }, photo)).toBe(true);
+    // Focus moved by the visitor (Tab from another control, or onto a different element).
+    expect(isFocusRestore({ target: photo, relatedTarget: next }, photo)).toBe(false);
+    expect(isFocusRestore({ target: next, relatedTarget: null }, photo)).toBe(false);
+    expect(isFocusRestore({ target: photo, relatedTarget: null }, null)).toBe(false);
+  });
+
+  it("counts only sideways input as the visitor moving a track (never a click, an up / down wheel or a page key)", () => {
+    expect(isSidewaysInput({ type: "wheel", deltaX: 0 })).toBe(false);
+    expect(isSidewaysInput({ type: "wheel", deltaX: 24 })).toBe(true);
+    expect(isSidewaysInput({ type: "wheel", deltaX: 0, shiftKey: true })).toBe(true);
+    for (const key of ["ArrowDown", "ArrowUp", "PageDown", "PageUp", " ", "Tab", "Enter"]) {
+      expect(isSidewaysInput({ type: "keydown", key })).toBe(false);
+    }
+    for (const key of ["ArrowLeft", "ArrowRight", "Home", "End"]) expect(isSidewaysInput({ type: "keydown", key })).toBe(true);
+    expect(isSidewaysInput({ type: "pointerdown" })).toBe(false);
+  });
+
+  it("keeps advancing the index even when every scroll is lost (the track never moves)", () => {
+    vi.useFakeTimers();
+    const track = fakeScroller({ clientWidth: 600, scrollWidth: 1800, moves: false });
+    let state: CarouselState = initialCarouselState;
+    const stop = startAutoplay(autoplayDelay(), () => {
+      state = carouselReducer(state, { type: "step", count: 3 });
+      scrollTrackTo(track.asElement, state.index, true);
+    });
+    vi.advanceTimersByTime(AUTOPLAY_MS * 4);
+    // 0 → 1 → 2 → 0 → 1: the dots and counter follow the timer, and each step scrolls again
+    // (slide 0 is skipped because this stuck track already sits there). Reduced motion: instant jumps.
+    expect(state.index).toBe(1);
+    expect(track.calls).toEqual([600, 1200, 600]);
+    expect(track.behaviors).toEqual(["auto", "auto", "auto"]);
+    stop();
+  });
+
+  it("adopts a swipe, redoes a cut-short step, and counts only manual moves", () => {
+    expect(settledIndex(1210, 600, 3)).toBe(2);
+    expect(settledIndex(250, 600, 3)).toBe(0);
+    expect(settledIndex(5000, 600, 3)).toBe(2);
+    expect(settledIndex(600, 0, 3)).toBeNull();
+    expect(settleAction({ settled: 1, index: 1, userGesture: true })).toBe("none");
+    expect(settleAction({ settled: 1, index: 1, userGesture: false })).toBe("none");
+    expect(settleAction({ settled: 2, index: 1, userGesture: true })).toBe("adopt");
+    // A programmatic step that the browser cancelled or cut short: scroll back to the index.
+    expect(settleAction({ settled: 0, index: 1, userGesture: false })).toBe("resync");
+
+    // Autoplay steps keep the interval running; a manual move (`moves`) restarts it.
+    let state = carouselReducer(initialCarouselState, { type: "step", count: 3 });
+    expect(state).toEqual({ index: 1, moves: 0 });
+    state = carouselReducer(state, { type: "go", index: 2, count: 3 });
+    expect(state).toEqual({ index: 2, moves: 1 });
+    state = carouselReducer(state, { type: "step", count: 3 });
+    expect(state).toEqual({ index: 0, moves: 1 });
+    expect(carouselReducer(state, { type: "go", index: -1, count: 3 })).toEqual({ index: 2, moves: 2 });
+    // Slides shrank under a stale index: the next step starts from the clamped one.
+    expect(carouselReducer({ index: 7, moves: 0 }, { type: "step", count: 3 }).index).toBe(0);
+  });
+
+  it("only scrolls a track that has a width and is not already there", () => {
+    const track = fakeScroller({ clientWidth: 600, scrollWidth: 1800, moves: true });
+    track.el.scrollLeft = 1200.5;
+    scrollTrackTo(track.asElement, 2, false);
+    expect(track.calls).toEqual([]);
+    const hidden = fakeScroller({ clientWidth: 0, scrollWidth: 0, moves: true });
+    scrollTrackTo(hidden.asElement, 1, false);
+    expect(hidden.calls).toEqual([]);
+  });
+
+  it("keeps stepping the result rail every 5 s from its live position, with no scroll events", () => {
+    vi.useFakeTimers();
+    // 5 cards 300 px apart in a 600 px rail: the last snap point is 900 (last two cards in view),
+    // from where it wraps back to the first card.
+    const rail = fakeScroller({ clientWidth: 600, scrollWidth: 1500, moves: true });
+    const items = fakeItems(5, 300);
+    const stop = startAutoplay(autoplayDelay(), () => stepRail(rail.asElement, items, false));
+    vi.advanceTimersByTime(AUTOPLAY_MS * 5);
+    expect(rail.calls).toEqual([300, 600, 900, 0, 300]);
+    stop();
+  });
+
+  it("retries a rail step whose scroll was lost instead of stopping, and skips a rail that fits", () => {
+    vi.useFakeTimers();
+    const rail = fakeScroller({ clientWidth: 600, scrollWidth: 1500, moves: false });
+    const items = fakeItems(5, 300);
+    const stop = startAutoplay(autoplayDelay(), () => stepRail(rail.asElement, items, true));
+    vi.advanceTimersByTime(AUTOPLAY_MS * 3);
+    expect(rail.calls).toEqual([300, 300, 300]);
+    expect(rail.behaviors).toEqual(["auto", "auto", "auto"]);
+    stop();
+    const fits = fakeScroller({ clientWidth: 1500, scrollWidth: 1500, moves: true });
+    expect(stepRail(fits.asElement, items, false)).toBeNull();
+    expect(stepRail(rail.asElement, items.slice(0, 1), false)).toBeNull();
   });
 });
 

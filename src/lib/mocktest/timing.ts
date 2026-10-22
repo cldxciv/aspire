@@ -133,6 +133,45 @@ export function evaluateAttempt(input: { test: TimedTest; start: StartCheck; now
 }
 
 // ---------------------------------------------------------------------------------------------
+// Monthly ranked windows of generated mocks (docs/question-bank-plan.md §B9.4): one shared paper
+// per exam slot per IST calendar month, window id "month-YYYY-MM". Like the weekly windows, a window
+// ends one second before the next one starts.
+
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+const MONTH_WINDOW_ID = /^month-(\d{4})-(0[1-9]|1[0-2])$/;
+
+function istIso(utcMs: number): string {
+  return `${new Date(utcMs + IST_OFFSET_MS).toISOString().slice(0, 19)}+05:30`;
+}
+
+function monthWindowOf(year: number, monthIndex: number): TestWindow {
+  const start = Date.UTC(year, monthIndex, 1) - IST_OFFSET_MS;
+  const next = Date.UTC(year, monthIndex + 1, 1) - IST_OFFSET_MS;
+  const id = `month-${istIso(start).slice(0, 7)}`;
+  return { id, startsAt: istIso(start), endsAt: istIso(next - 1000) };
+}
+
+/** The IST month window containing `now`. */
+export function monthWindowAt(now: number): TestWindow {
+  const ist = new Date(now + IST_OFFSET_MS);
+  return monthWindowOf(ist.getUTCFullYear(), ist.getUTCMonth());
+}
+
+/** The window for an id such as "month-2026-11"; null for anything else. */
+export function monthWindowFromId(id: string): TestWindow | null {
+  const match = MONTH_WINDOW_ID.exec(id);
+  return match ? monthWindowOf(Number(match[1]), Number(match[2]) - 1) : null;
+}
+
+/** The last `count` month windows up to and including the current one, oldest first. */
+export function recentMonthWindows(now: number, count: number): TestWindow[] {
+  const ist = new Date(now + IST_OFFSET_MS);
+  const year = ist.getUTCFullYear();
+  const month = ist.getUTCMonth();
+  return Array.from({ length: Math.max(0, count) }, (_, i) => monthWindowOf(year, month - (count - 1 - i)));
+}
+
+// ---------------------------------------------------------------------------------------------
 // Certificate verification (L7)
 
 export const SCORE_BANDS = ["below-0", "0-9", "10-19", "20-29", "30-39", "40-49", "50-59", "60-69", "70-79", "80-89", "90-100"] as const;

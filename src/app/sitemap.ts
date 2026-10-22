@@ -1,4 +1,6 @@
 import type { MetadataRoute } from "next";
+import { connection } from "next/server";
+import { examPatternServesPaper, loadExamPatternItems } from "@/components/mocktest/exam-pattern-items";
 import { siteConfig } from "@/config/site";
 import { SYLLABUS_STATUS } from "@/content/planner/syllabus";
 import { locales } from "@/i18n/config";
@@ -44,6 +46,18 @@ function availableToolRoutes(): string[] {
   return tools.filter(([, available]) => available).map(([path]) => path);
 }
 
+/**
+ * Exam-pattern mock pages (/tools/mock-tests/exam/[slot]) whose exam can serve a paper right now —
+ * full length or a labelled shorter set — by the same check as the list on /tools/mock-tests. The
+ * bank is read at request time (`connection()` first, as on the list), so the sitemap is dynamic;
+ * if the bank cannot be read, no exam page is listed.
+ */
+async function availableExamRoutes(): Promise<string[]> {
+  await connection();
+  const items = await loadExamPatternItems({ placeholderMode: showPlaceholderContent() });
+  return (items ?? []).filter(examPatternServesPaper).map((item) => `/tools/mock-tests/exam/${item.slot}`);
+}
+
 /** Absolute URL for a public href (`/` → the bare origin, matching the previous sitemap). */
 function absolute(href: string): string {
   return href === "/" ? siteConfig.url : `${siteConfig.url}${href}`;
@@ -54,10 +68,11 @@ function absolute(href: string): string {
  * once per locale (English unprefixed, Hindi under /hi) with hreflang alternates (D-028).
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [programs, articles] = await Promise.all([getPrograms(), getArticles()]);
+  const [programs, articles, examRoutes] = await Promise.all([getPrograms(), getArticles(), availableExamRoutes()]);
   const pages: { path: string; lastModified?: string }[] = [
     ...staticRoutes.map((path) => ({ path })),
     ...availableToolRoutes().map((path) => ({ path })),
+    ...examRoutes.map((path) => ({ path })),
     ...programs.map((p) => ({ path: `/programs/${p.slug}`, lastModified: p.updatedAt })),
     ...articles.map((a) => ({ path: `/resources/${a.slug}`, lastModified: a.publishedAt })),
   ];

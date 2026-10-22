@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ForgotPasswordPage from "@/app/[lang]/(site)/forgot-password/page";
 import LoginPage from "@/app/[lang]/(site)/login/page";
-import ToolsPage from "@/app/[lang]/(site)/tools/page";
 import { stockImages, type StockImageKey } from "@/content/images";
 import { LocaleProvider } from "@/i18n/client";
 import type { Locale } from "@/i18n/config";
@@ -14,10 +13,11 @@ import { setTestLang, withTestLang } from "@/test/root-params-stub";
 import { AuthSplit } from "./AuthSplit";
 
 /**
- * Hero carousels on /login, /forgot-password and the /tools hub (en + hi, both content modes):
- * one h1, one named carousel whose slides are labelled stock photos with alt text in the page
- * locale, slide 1 at high fetch priority, no photo twice on a page, no landscapes (D-031), and
- * no person photo beside the login card, which can show a signed-in visitor's real name (D-019).
+ * Hero carousels on /login and /forgot-password (en + hi, both content modes): one h1, one named
+ * carousel whose slides are labelled stock photos with alt text in the page locale, slide 1 at high
+ * fetch priority, no photo twice on a page, no landscapes (D-031), and no person photo beside the
+ * login card, which can show a signed-in visitor's real name (D-019). (The /tools hub has the B
+ * editorial hero since the 2026-10-22 redesign: src/app/[lang]/(site)/tools/tools-hero.test.ts.)
  */
 
 // The login card reads the session cookie under <Suspense>; the hero does not depend on it.
@@ -46,11 +46,6 @@ const PAGES: { name: string; render: () => Promise<ReactNode>; hero: StockImageK
     name: "forgot-password",
     render: () => ForgotPasswordPage(),
     hero: ["mentoringConversation", "signingForm", "studyThroughWindow", "booksAndNotebook"],
-  },
-  {
-    name: "tools",
-    render: () => ToolsPage(),
-    hero: ["laptopStudy", "studyThroughWindow", "physicsWhiteboard", "booksAndNotebook"],
   },
 ];
 

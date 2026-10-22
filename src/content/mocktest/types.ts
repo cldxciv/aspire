@@ -31,11 +31,22 @@ export interface Bilingual {
 export interface Marking {
   correct: number;
   wrong: number;
+  /**
+   * One-or-more-correct questions only (JEE Advanced 2026, Paper 1 and 2, Section 2): when every
+   * chosen option is correct but not all correct options are chosen, +1 per chosen option
+   * (+3 / +2 / +1); full marks only when exactly the correct options are chosen; `wrong` otherwise.
+   */
+  partial?: "per_correct_option";
 }
 
-/** JEE Main pattern used by the samples: MCQ +4 / −1, numerical-value +4 / 0 (as briefed). */
+/**
+ * JEE Main 2026 pattern used by the samples: MCQ +4 / −1, numerical-value +4 / −1. The NTA
+ * JEE (Main) 2026 Information Bulletin §2.4.2 says "There will be negative marking for Section B"
+ * (numerical-value questions). Until 22 Oct 2026 the samples used +4 / 0 (as first briefed);
+ * attempts saved before the fix keep their stored scores (see scoreForTest's `legacyNumericalMarking`).
+ */
 export const JEE_MCQ_MARKING: Marking = { correct: 4, wrong: -1 };
-export const JEE_NUMERICAL_MARKING: Marking = { correct: 4, wrong: 0 };
+export const JEE_NUMERICAL_MARKING: Marking = { correct: 4, wrong: -1 };
 /** NEET-UG: +4 / −1. */
 export const NEET_MARKING: Marking = { correct: 4, wrong: -1 };
 

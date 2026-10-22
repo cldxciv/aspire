@@ -1,7 +1,7 @@
 "use client";
 
-import { Calculator, LoaderCircle } from "lucide-react";
-import { useEffect, useId, useRef, useState, type FormEvent, type Ref } from "react";
+import { Calculator, Gauge, LoaderCircle, LockKeyhole, PencilLine } from "lucide-react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type Ref } from "react";
 import { LeadGateForm } from "@/components/lead-gate/LeadGateForm";
 import { LeadGateIdentity } from "@/components/lead-gate/LeadGateIdentity";
 import { LeadGateNote } from "@/components/lead-gate/LeadGateNote";
@@ -23,8 +23,32 @@ import {
   type PredictorExam,
   type RankBandPrediction,
 } from "@/lib/predictor/engine";
-import { miniEstimate, miniGateStep, miniGateSummary, miniResultSlot, revealMiniResult, type MiniGateEffect } from "./home-tools";
+import {
+  miniEstimate,
+  miniGateStep,
+  miniGateSummary,
+  miniResultSlot,
+  parseScoreInput,
+  revealMiniResult,
+  toolGateLayout,
+  type MiniGateEffect,
+} from "./home-tools";
 import { AskRanchoLink } from "./HomeToolsAskRancho";
+import {
+  controlClass,
+  controlErrorClass,
+  HI_SMALL,
+  labelClass,
+  OUTLINE_EDGE,
+  SelectField,
+  STAGE_INFO,
+  STAGE_INFO_LABEL,
+  ToolPanel,
+  ToolStage,
+} from "./HomeToolsPanel";
+
+const SUBMIT_LAYOUT =
+  "mt-1.5 w-full aria-disabled:cursor-wait aria-disabled:opacity-70 @min-[22rem]:col-start-2 @min-[22rem]:row-start-1 @min-[22rem]:mt-0 @min-[22rem]:w-auto";
 
 /** Strings from the `predictor` namespace (form + result) and `home.tools.predictor`, picked on the server. */
 export interface HomeToolsPredictorMessages {
@@ -41,6 +65,12 @@ export interface HomeToolsPredictorMessages {
   /** Submit label while the lead gate is asked whether the band may show (predictor.form.checking). */
   pending: string;
   empty: string;
+  /** "How this works" and its first steps (predictor.how), shown under the empty band from `md`. */
+  how: { title: string; steps: string[] };
+  /** Recap above the contact form ({exam}, {value}). */
+  ready: Record<InputMode, string>;
+  /** The recap's button: closes the form, focus back to the value field. */
+  change: Record<InputMode, string>;
   crl: Record<PredictorExam, string>;
   range: string;
   percentileBand: string;
@@ -56,38 +86,42 @@ export interface HomeToolsPredictorMessages {
   askRanchoSample: string;
 }
 
-export const controlClass =
-  "block min-h-11 w-full min-w-0 rounded-control border border-[#b9cbe0] bg-white px-3 py-2 text-[15px] text-ink transition-colors focus:border-blue";
-export const labelClass = "mb-1.5 block text-[13px] font-bold text-[#354b66]";
-
 /**
- * Mini rank predictor (homepage tools widget): exam + score or percentile → the estimated rank
+ * Mini rank predictor (homepage tools card): exam + score or percentile → the estimated rank
  * band, computed in the browser by the predictor's pure engine on the tables the server allowed
  * (`data`: score tables only). Inputs have no `name`, so nothing typed can end up in a URL even if
  * the form were submitted before hydration. Like the full tool, the result updates live after the
- * first "Predict" (live edits are never re-gated).
+ * first "Predict" (live edits are never re-gated). Renders its own ToolPanel (the stage depends on
+ * its state); `head` and `exits` come from the server.
  *
  * Lead gate (docs/lead-gate-plan.md §8.2): a valid "Predict" asks `useLeadGate` first; while the
- * browser has not shared contact details, the compact <LeadGateForm> takes the result slot (its
- * own <form>, outside this one) and the band shows once it unlocks. Sample tables are gated too
- * (owner decision 21 Oct 2026; the form says the results use sample data). Only the exam and the
- * score band (never the exact value) go with the details and, once per "Predict" that ends in a
- * band, to the tool-use note (with the page path; sent only for a pass that records use). The
- * up-front note sits under the inputs (it reads the gate's status, GET /api/lead-gate, when the
- * page loads); "Not you?" under the band. The gate's client state is browser-only, so the server
- * HTML (and the static homepage) is unchanged. Steps: `miniGateStep` (home-tools.ts).
+ * browser has not shared contact details, the stage shows a recap of what was entered ("Change
+ * score" closes the form) and the <LeadGateForm> (its own <form>, outside the inputs), and the
+ * band shows once it unlocks. Sample tables are gated too (owner decision 21 Oct 2026; the form
+ * says the results use sample data). Only the exam and the score band (never the exact value) go
+ * with the details and, once per "Predict" that ends in a band, to the tool-use note (with the
+ * page path; sent only for a pass that records use). The up-front note sits under the inputs
+ * (hidden while the form itself shows); "Not you?" under the band. Layout per state:
+ * `toolGateLayout` (one gold action per state). The gate's client state is browser-only, so the
+ * server HTML (and the static homepage) is unchanged. Steps: `miniGateStep` (home-tools.ts).
  */
 export function HomeToolsPredictor({
   data,
   locale,
   messages: t,
   gateMessages,
+  head,
+  exits,
 }: {
   data: PredictorData;
   locale: Locale;
   messages: HomeToolsPredictorMessages;
   /** The `leadGate` namespace, picked on the server. */
   gateMessages: Messages<"leadGate">;
+  /** Server-built PanelHead (title, tagline, sample tag, lead). */
+  head: ReactNode;
+  /** Server-built exit links. */
+  exits: ReactNode;
 }) {
   const ids = useId();
   const exams = loadedExams(data);
@@ -103,8 +137,11 @@ export function HomeToolsPredictor({
   const [identityKey, setIdentityKey] = useState(0);
   /** The gate's status request is in flight (first "Predict" on this page). */
   const [pending, setPending] = useState(false);
+  /** Bumped to guarantee a render after which `focusTarget` is applied. */
+  const [, setFocusTick] = useState(0);
   const asking = useRef(false);
-  const focusAfterUnlock = useRef(false);
+  /** Where focus goes after the next render (the field may be display:none until then). */
+  const focusTarget = useRef<"result" | "input" | null>(null);
   const valueInput = useRef<HTMLInputElement>(null);
   /** The band's first line (the rank-list label): where focus goes after this widget's own form unlocks. */
   const bandLabel = useRef<HTMLParagraphElement>(null);
@@ -121,13 +158,18 @@ export function HomeToolsPredictor({
     },
   });
 
+  function focusAfterRender(target: "result" | "input") {
+    focusTarget.current = target;
+    setFocusTick((tick) => tick + 1);
+  }
+
   /** Runs one gate step: show the band, note the use (the store sends it only for a pass that records use), move focus. */
   function apply(effect: MiniGateEffect) {
     if (effect.reveal) reveal();
     if (effect.note) gate.recordUse({ ...effect.note, page: window.location.pathname });
-    if (effect.focus === "value") valueInput.current?.focus();
-    // The band is not rendered yet: focus it once it is (the form that held focus is going).
-    if (effect.focus === "result") focusAfterUnlock.current = true;
+    // The band (or the field, hidden below `md` while the form shows) is not rendered yet: focus it once it is.
+    if (effect.focus === "result") focusAfterRender("result");
+    if (effect.focus === "value") focusAfterRender("input");
   }
 
   function reveal() {
@@ -138,10 +180,17 @@ export function HomeToolsPredictor({
     }
   }
 
+  /** The recap's "Change score": close the form (what was typed in it is dropped) and edit the value. */
+  function change() {
+    gate.closeGate();
+    focusAfterRender("input");
+  }
+
   useEffect(() => {
-    if (!focusAfterUnlock.current) return;
-    focusAfterUnlock.current = false;
-    (bandLabel.current ?? valueInput.current)?.focus();
+    const target = focusTarget.current;
+    if (!target) return;
+    focusTarget.current = null;
+    (target === "result" ? (bandLabel.current ?? valueInput.current) : valueInput.current)?.focus();
   });
 
   if (!exam || !table) return null;
@@ -149,6 +198,7 @@ export function HomeToolsPredictor({
   const range = valueRange(table, effectiveMode);
   const outcome = submitted ? miniEstimate(exam, effectiveMode, value, data) : null;
   const slot = miniResultSlot({ outcome, revealed, gateOpen: gate.gateOpen });
+  const layout = toolGateLayout(slot);
   const band = slot === "result" && outcome?.status === "ok" ? outcome.band : null;
   const gateSummary = outcome?.status === "ok" ? miniGateSummary(outcome.band, table) : undefined;
   const error =
@@ -191,44 +241,47 @@ export function HomeToolsPredictor({
     const decision = await revealMiniResult(current, gate.requestAccess);
     asking.current = false;
     if (checking) setPending(false);
-    // "gated": the contact form now takes the result slot; `onUnlocked` finishes the step.
+    // "gated": the contact form now takes the stage; `onUnlocked` finishes the step.
     apply(miniGateStep({ kind: "predict", decision }, current, table));
   }
 
-  return (
-    <div>
-      <form onSubmit={onSubmit} noValidate className="grid gap-3 @sm:grid-cols-2">
-        <div className={cn("min-w-0", !supportsPercentile && "@sm:col-span-2")}>
-          <label htmlFor={examId} className={labelClass}>
-            {t.exam}
-          </label>
-          <select id={examId} value={exam} onChange={(event) => setExam(event.target.value as PredictorExam)} className={controlClass}>
-            {exams.map((option) => (
-              <option key={option} value={option}>
-                {t.exams[option]}
-              </option>
-            ))}
-          </select>
-        </div>
-        {supportsPercentile && (
-          <div className="min-w-0">
-            <label htmlFor={modeId} className={labelClass}>
-              {t.mode}
+  const controls = (
+    <>
+      <form onSubmit={onSubmit} noValidate>
+        <div className="grid gap-3 @min-[20rem]:grid-cols-2">
+          <div className={supportsPercentile ? "min-w-0" : "min-w-0 @min-[20rem]:col-span-2"}>
+            <label htmlFor={examId} className={labelClass}>
+              {t.exam}
             </label>
-            <select id={modeId} value={effectiveMode} onChange={(event) => setMode(event.target.value as InputMode)} className={controlClass}>
-              {(["score", "percentile"] as const).map((option) => (
+            <SelectField id={examId} value={exam} onChange={(event) => setExam(event.target.value as PredictorExam)}>
+              {exams.map((option) => (
                 <option key={option} value={option}>
-                  {t.modes[option]}
+                  {t.exams[option]}
                 </option>
               ))}
-            </select>
+            </SelectField>
           </div>
-        )}
-        <div className="min-w-0 @sm:col-span-2">
+          {supportsPercentile && (
+            <div className="min-w-0">
+              <label htmlFor={modeId} className={labelClass}>
+                {t.mode}
+              </label>
+              <SelectField id={modeId} value={effectiveMode} onChange={(event) => setMode(event.target.value as InputMode)}>
+                {(["score", "percentile"] as const).map((option) => (
+                  <option key={option} value={option}>
+                    {t.modes[option]}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
+          )}
+        </div>
+        <div className="mt-3 min-w-0">
           <label htmlFor={valueId} className={labelClass}>
             {effectiveMode === "percentile" ? t.percentile : t.score}
           </label>
-          <div className="flex flex-col gap-3 @md:flex-row">
+          {/* DOM order: input, its hint and error, then the button (beside the input from 22rem). */}
+          <div className="grid gap-x-3 gap-y-1.5 @min-[22rem]:grid-cols-[minmax(0,1fr)_auto]">
             <input
               ref={valueInput}
               id={valueId}
@@ -244,13 +297,21 @@ export function HomeToolsPredictor({
               aria-describedby={[`${valueId}-hint`, error ? `${valueId}-error` : null].filter(Boolean).join(" ")}
               value={value}
               onChange={(event) => setValue(event.target.value)}
-              className={cn(controlClass, "@md:flex-1", error && "border-danger bg-danger-soft/40")}
+              className={cn(error ? controlErrorClass : controlClass, "@min-[22rem]:col-start-1 @min-[22rem]:row-start-1")}
             />
+            <p id={`${valueId}-hint`} className={cn("text-xs text-muted @min-[22rem]:col-start-1", HI_SMALL)}>
+              {hint}
+            </p>
+            {error && (
+              <p id={`${valueId}-error`} className="text-xs font-semibold text-danger @min-[22rem]:col-start-1">
+                {error}
+              </p>
+            )}
             <Button
               type="submit"
-              variant="dark"
+              variant={layout.submitVariant}
               aria-disabled={pending || undefined}
-              className="shrink-0 aria-disabled:cursor-wait aria-disabled:opacity-70"
+              className={layout.submitVariant === "outline" ? `${SUBMIT_LAYOUT} ${OUTLINE_EDGE}` : SUBMIT_LAYOUT}
             >
               {pending ? (
                 <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
@@ -260,61 +321,106 @@ export function HomeToolsPredictor({
               {pending ? t.pending : t.submit}
             </Button>
           </div>
-          <p id={`${valueId}-hint`} className="mt-1.5 text-xs text-muted">
-            {hint}
-          </p>
-          {error && (
-            <p id={`${valueId}-error`} className="mt-1 text-xs font-semibold text-danger">
-              {error}
-            </p>
-          )}
         </div>
       </form>
-      {/* Up-front disclosure from the live gate mode (nothing while unknown, off or already satisfied). */}
-      <LeadGateNote messages={gateMessages} className="mt-3" />
+      {/* Up-front disclosure from the live gate mode (nothing while unknown, off or already satisfied); the form's own lead says it while the form shows. */}
+      {layout.note && <LeadGateNote messages={gateMessages} className="mt-3" />}
+    </>
+  );
 
+  const stage = (
+    <ToolStage tone={layout.stageTone}>
+      {slot === "gate" ? (
+        <>
+          {/* Local values only; not a live region (the form's heading takes focus). Hidden while the value is invalid (its own error shows). */}
+          {layout.recap && outcome?.status === "ok" && (
+            <div className="flex flex-wrap items-center gap-3 rounded-[14px] bg-surface p-3 sm:p-4">
+              <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-full bg-navy text-gold">
+                <LockKeyhole className="size-4" />
+              </span>
+              <p className="min-w-0 flex-1 basis-48 text-sm leading-snug font-semibold text-navy">
+                {format(t.ready[effectiveMode], { exam: t.exams[exam], value: formatNumber(parseScoreInput(value), locale, 2) })}
+              </p>
+              <Button variant="outline" className={`w-full sm:w-auto ${OUTLINE_EDGE}`} onClick={change}>
+                <PencilLine aria-hidden="true" className="size-4" />
+                {t.change[effectiveMode]}
+              </Button>
+            </div>
+          )}
+          {/* Its own <form>, outside the inputs; never inside a live region. */}
+          <LeadGateForm {...gate.formProps} messages={gateMessages} summary={gateSummary} variant="panel" headingLevel={3} className="mt-3" />
+        </>
+      ) : band ? (
+        <>
+          <HomeToolsBand band={band} locale={locale} messages={t} labelRef={bandLabel} />
+          {/* Exam, score range and rank band only (predictor/rancho.ts), like the full predictor. */}
+          <AskRanchoLink
+            href={localePath("/tools/ask", locale)}
+            detail={predictorRanchoDetail(band, table, locale, t)}
+            size="md"
+            variant="light"
+            className="mt-3 self-start"
+          >
+            {t.askRancho}
+          </AskRanchoLink>
+        </>
+      ) : (
+        <>
+          {/* A greyed outline of the band to come, at the band's own size (decorative). */}
+          <div aria-hidden="true" className="rounded-control bg-navy/[0.05] p-5">
+            <div className="h-3 w-32 max-w-full rounded-full bg-navy/10" />
+            <div className="mt-2.5 h-9 w-52 max-w-full rounded-md bg-navy/10" />
+            <div className="mt-2.5 h-3 w-40 max-w-full rounded-full bg-navy/10" />
+          </div>
+          <p className="mt-3 flex items-center gap-2 text-sm text-muted">
+            <Gauge aria-hidden="true" className="size-4 shrink-0 text-blue" />
+            {t.empty}
+          </p>
+          {/* From `md` the stage is a tall column: say what happens to the score (phones keep it short). */}
+          <div className={`${STAGE_INFO} max-md:hidden`}>
+            <p className={STAGE_INFO_LABEL}>{t.how.title}</p>
+            <ol className="mt-2.5 grid gap-2">
+              {t.how.steps.map((step, index) => (
+                <li key={step} className="flex items-center gap-2.5 text-sm leading-snug text-ink">
+                  <span
+                    aria-hidden="true"
+                    className="grid size-6 shrink-0 place-items-center rounded-full bg-white text-xs font-bold text-blue ring-1 ring-[#d3e2f5]"
+                  >
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0">{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </>
+      )}
+      {/* "Not you?" / "Stop Aspire contacting me" (renders only for a pass, or with its own confirmation). */}
+      {(revealed || forgotten) && (
+        <LeadGateIdentity
+          key={identityKey}
+          messages={gateMessages}
+          className="mt-3"
+          onForgotten={() => {
+            setRevealed(false);
+            setForgotten(true);
+            // The pressed button goes with the pass: keep focus in the widget (the confirmation
+            // line stays and is announced by its own status region).
+            focusAfterRender("input");
+          }}
+        />
+      )}
+    </ToolStage>
+  );
+
+  return (
+    <>
+      {/* Out of flow (sr-only is absolutely positioned), so it takes no cell in the tab panel's grid. */}
       <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {announcement}
       </p>
-      <div className="mt-4">
-        {slot === "gate" ? (
-          // Its own <form>, outside the inputs above; never inside the live region.
-          <LeadGateForm {...gate.formProps} messages={gateMessages} summary={gateSummary} variant="compact" headingLevel={3} />
-        ) : band ? (
-          <div>
-            <HomeToolsBand band={band} locale={locale} messages={t} labelRef={bandLabel} />
-            {/* Exam, score range and rank band only (predictor/rancho.ts), like the full predictor. */}
-            <AskRanchoLink
-              href={localePath("/tools/ask", locale)}
-              detail={predictorRanchoDetail(band, table, locale, t)}
-              size="sm"
-              className="mt-3"
-            >
-              {t.askRancho}
-            </AskRanchoLink>
-          </div>
-        ) : (
-          <p className="flex min-h-[6.5rem] items-center rounded-control border border-dashed border-[#cbd8e7] bg-[#f8fbff] p-4 text-sm text-muted">
-            {t.empty}
-          </p>
-        )}
-        {/* "Not you?" / "Stop Aspire contacting me" (renders only for a pass, or with its own confirmation). */}
-        {(revealed || forgotten) && (
-          <LeadGateIdentity
-            key={identityKey}
-            messages={gateMessages}
-            className="mt-3"
-            onForgotten={() => {
-              setRevealed(false);
-              setForgotten(true);
-              // The pressed button goes with the pass: keep focus in the widget (the confirmation
-              // line stays and is announced by its own status region).
-              valueInput.current?.focus();
-            }}
-          />
-        )}
-      </div>
-    </div>
+      <ToolPanel gated={layout.gated} head={head} controls={controls} stage={stage} exits={exits} />
+    </>
   );
 }
 
@@ -334,22 +440,22 @@ export function HomeToolsBand({
   const percentileLabel = band.input.mode === "percentile" ? t.percentileYours : t.percentileBand;
   return (
     <div>
-      <div className="rounded-control bg-navy p-4 text-white" data-surface="dark">
+      <div className="rounded-control bg-navy p-5 text-white" data-surface="dark">
         <p ref={labelRef} tabIndex={labelRef ? -1 : undefined} className="text-xs font-bold text-[#d3e1f3]">
           {t.crl[band.exam]}
         </p>
-        <p className="mt-0.5 text-[clamp(1.6rem,4.5vw,2.1rem)] leading-tight font-extrabold text-gold">
+        <p className="mt-1 text-[clamp(1.75rem,3.4vw,2.5rem)] leading-tight font-extrabold text-gold">
           {formatRankRange(band.crl, locale, t.range)}
         </p>
-        <p className="mt-1 text-xs text-[#d3e1f3]">
+        <p className={cn("mt-1 text-xs text-[#d3e1f3]", HI_SMALL)}>
           {percentileLabel}: {formatPercentileRange(band.percentile, locale, t.range)}
         </p>
       </div>
       {/* D-032: sample tables never read as official data. */}
-      <p className="mt-2 text-xs font-semibold text-muted">
+      <p className={cn("mt-2 text-xs font-semibold text-muted", HI_SMALL)}>
         {format(band.sample ? t.basedOnSample : t.basedOn, { exam: t.exams[band.exam], year: band.year })}
       </p>
-      <p className="mt-1 text-xs leading-relaxed text-muted">{t.bandNote}</p>
+      <p className={cn("mt-1 text-xs leading-relaxed text-muted", HI_SMALL)}>{t.bandNote}</p>
     </div>
   );
 }

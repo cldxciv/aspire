@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { createElement } from "react";
+import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -14,8 +14,12 @@ import { getPredictorData } from "@/lib/predictor/data";
 import { predictRankBand, type RankBandPrediction } from "@/lib/predictor/engine";
 import { setTestLang, withTestLang } from "@/test/root-params-stub";
 import {
+  countdownShowsDays,
+  countdownSlot,
   examCountdown,
+  HOME_ASK_EXAMPLES,
   HOME_TOOL_KEYS,
+  homeToolOrder,
   homeToolPanelId,
   homeToolTabId,
   miniEstimate,
@@ -23,10 +27,13 @@ import {
   parseScoreInput,
   splitTemplate,
   tabTargetIndex,
+  toolGateLayout,
+  type ExamCountdown,
 } from "./home-tools";
 import { getHomeToolsData, HOME_MOCK_TEST_LIMIT } from "./home-tools-data";
 import { HomeTools } from "./HomeTools";
 import { CountdownView } from "./HomeToolsPlanner";
+import { ToolPanel } from "./HomeToolsPanel";
 import { HomeToolsBand } from "./HomeToolsPredictor";
 
 // The homepage order test renders whole pages: allow for a loaded full run.
@@ -48,13 +55,28 @@ function renderTools(locale: Locale, placeholders: boolean): string {
   return renderToStaticMarkup(createElement(HomeTools, { tools: getHomeToolsData(), locale }));
 }
 
-/** Markup of one panel (up to the next panel or the end of the card). */
-function panel(html: string, key: (typeof HOME_TOOL_KEYS)[number]): string {
-  const start = html.indexOf(`id="${homeToolPanelId(key)}"`);
-  expect(start, `panel ${key}`).toBeGreaterThan(-1);
-  const next = html.indexOf('role="tabpanel"', start + 1);
-  return html.slice(start, next === -1 ? undefined : next);
+/** Markup of the element that starts at `start` (an opening `<div`), up to its matching `</div>`. */
+function divAt(html: string, start: number): string {
+  const tags = /<div\b|<\/div>/g;
+  tags.lastIndex = start;
+  let depth = 0;
+  for (let match = tags.exec(html); match; match = tags.exec(html)) {
+    depth += match[0] === "</div>" ? -1 : 1;
+    if (depth === 0) return html.slice(start, match.index + match[0].length);
+  }
+  throw new Error("unbalanced markup");
 }
+
+/** Markup of one tab panel (the whole element, so the card's footer bar is never part of the last panel). */
+function panel(html: string, key: (typeof HOME_TOOL_KEYS)[number]): string {
+  const at = html.indexOf(`id="${homeToolPanelId(key)}"`);
+  expect(at, `panel ${key}`).toBeGreaterThan(-1);
+  return divAt(html, html.lastIndexOf("<div", at));
+}
+
+/** The tile (tab button) of one tool. */
+const tabOf = (html: string, key: (typeof HOME_TOOL_KEYS)[number]) =>
+  html.match(new RegExp(`<button[^>]*id="${homeToolTabId(key)}"[\\s\\S]*?</button>`))?.[0] ?? "";
 
 const hrefsOf = (html: string) => [...html.matchAll(/<a\b[^>]*\shref="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
 const attr = (tag: string, name: string) => tag.match(new RegExp(`\\s${name}="([^"]*)"`))?.[1];
@@ -148,6 +170,51 @@ describe("home tools helpers", () => {
     expect(splitTemplate("{exam} में {days} दिन बाकी", "days")).toEqual(["{exam} में ", " दिन बाकी"]);
     expect(splitTemplate("no token", "days")).toEqual(["no token", ""]);
   });
+
+  it("orders the tiles working tools first, so the section never opens on 'Coming soon'", () => {
+    const all = { predictor: true, mockTests: true, ask: true, planner: true };
+    expect(homeToolOrder(all)).toEqual(["predictor", "mockTests", "ask", "planner"]);
+    // Production today: no predictor tables and no published tests; Ask and the countdown work.
+    expect(homeToolOrder({ predictor: false, mockTests: false, ask: true, planner: true })).toEqual(["ask", "planner", "predictor", "mockTests"]);
+    expect(homeToolOrder({ ...all, predictor: false })).toEqual(["mockTests", "ask", "planner", "predictor"]);
+  });
+
+  it("lays out a gated tool per slot: one gold action, no duplicate note while the form shows", () => {
+    const open = { note: true, recap: false, gated: false, extras: true, stageTone: "default" };
+    expect(toolGateLayout("empty")).toEqual({ ...open, submitVariant: "primary" });
+    expect(toolGateLayout("invalid")).toEqual({ ...open, submitVariant: "primary" });
+    expect(toolGateLayout("gate")).toEqual({ note: false, recap: true, gated: true, extras: false, stageTone: "bare", submitVariant: "outline" });
+    expect(toolGateLayout("result")).toEqual({ ...open, submitVariant: "outline" });
+  });
+
+  it("knows when the countdown shows days", () => {
+    expect(countdownShowsDays({ kind: "days", days: 3 })).toBe(true);
+    expect(countdownShowsDays({ kind: "today" })).toBe(true);
+    expect(countdownShowsDays({ kind: "tomorrow" })).toBe(true);
+    for (const kind of ["empty", "past", "tooFar"] as const) expect(countdownShowsDays({ kind }), kind).toBe(false);
+  });
+
+  it("picks the countdown's slot: form while open, prompt before the first press, notice for a bad date, days once revealed", () => {
+    const days: ExamCountdown = { kind: "days", days: 164 };
+    const cases: [ExamCountdown, boolean, boolean, boolean, string][] = [
+      // countdown, submitted, revealed, gateOpen → slot
+      [days, false, false, true, "gate"],
+      [{ kind: "past" }, true, true, true, "gate"],
+      [days, false, false, false, "empty"],
+      [days, false, true, false, "empty"],
+      [{ kind: "past" }, false, false, false, "empty"],
+      [{ kind: "empty" }, true, false, false, "invalid"],
+      [{ kind: "past" }, true, false, false, "invalid"],
+      [{ kind: "tooFar" }, true, true, false, "invalid"],
+      [days, true, false, false, "empty"],
+      [days, true, true, false, "result"],
+      [{ kind: "today" }, true, true, false, "result"],
+      [{ kind: "tomorrow" }, true, true, false, "result"],
+    ];
+    for (const [countdown, submitted, revealed, gateOpen, slot] of cases) {
+      expect(countdownSlot({ countdown, submitted, revealed, gateOpen }), JSON.stringify({ countdown, submitted, revealed, gateOpen })).toBe(slot);
+    }
+  });
 });
 
 describe("home tools data", () => {
@@ -195,6 +262,11 @@ describe("HomeTools section", () => {
       expect(attr(tab, "tabindex")).toBe(index === 0 ? "0" : "-1");
       expect(attr(tab, "type")).toBe("button");
       expect(html).toContain(`>${esc(t.tabs[key])}</span>`);
+      // Phone label: visual only (the full label stays the accessible name); tagline: the tab's description.
+      const tile = tabOf(html, key);
+      expect(tile).toMatch(new RegExp(`<span aria-hidden="true"[^>]*>${esc(t.tabsShort[key])}</span>`));
+      expect(attr(tab, "aria-describedby")).toBe(`${homeToolTabId(key)}-desc`);
+      expect(tile).toMatch(new RegExp(`<span id="${homeToolTabId(key)}-desc"[^>]*>${esc(t.taglines[key])}</span>`));
     });
 
     const panels = [...html.matchAll(/<div[^>]*role="tabpanel"[^>]*>/g)].map((m) => m[0]);
@@ -225,6 +297,12 @@ describe("HomeTools section", () => {
     expect(p).toContain(esc(tp.form.submit));
     expect(p).toContain(esc(format(tp.form.scoreHint, { min: "-75", max: "300" })));
     expect(p).toContain(esc(messagesFor("en", "home").tools.predictor.empty));
+    // The empty stage says what happens to the score (the mini predictor's two steps; colleges are the full tool's).
+    expect(p).toContain(esc(tp.how.title));
+    const steps = p.match(/<ol\b[^>]*>([\s\S]*?)<\/ol>/)?.[1] ?? "";
+    expect(steps).toContain(esc(tp.how.step1Title));
+    expect(steps).toContain(esc(tp.how.step2Title));
+    expect(steps).not.toContain(esc(tp.how.step3Title));
     // One short sr-only status, empty until "Predict"; the visible placeholder and band are not live.
     expect(p).toMatch(/<p role="status" aria-live="polite" aria-atomic="true" class="sr-only"><\/p>/);
     expect(p.match(/aria-live=/g)).toHaveLength(1);
@@ -236,6 +314,18 @@ describe("HomeTools section", () => {
       expect(p).toContain(`for="${attr(control, "id")}"`);
     }
     expect(hrefsOf(p)).toEqual(["/tools/predictor"]);
+    // The hint sits under the input it describes, before the Predict button.
+    const input = p.indexOf('type="number"');
+    const hint = p.indexOf(esc(format(tp.form.scoreHint, { min: "-75", max: "300" })));
+    const submit = p.indexOf('type="submit"');
+    expect(input).toBeGreaterThan(-1);
+    expect(hint).toBeGreaterThan(input);
+    expect(submit).toBeGreaterThan(hint);
+    // Each select sits in a wrapper with the site's decorative chevron.
+    const selects = [...p.matchAll(/<div class="relative"><select\b[^>]*>[\s\S]*?<\/select><svg\b[^>]*>/g)].map((m) => m[0]);
+    expect(selects.length).toBeGreaterThan(0);
+    expect(selects.length).toBe((p.match(/<select\b/g) ?? []).length);
+    for (const select of selects) expect(select).toMatch(/<svg\b[^>]*aria-hidden="true"[^>]*>$/);
   });
 
   it("lists up to three mock tests, each starting a real test route, plus the leaderboard", () => {
@@ -251,16 +341,26 @@ describe("HomeTools section", () => {
       expect(hrefsOf(p)).toContain(`/tools/mock-tests/${test.id}`);
     }
     if (tests.some((test) => test.sample)) expect(p).toContain(`>${esc(tm.common.sample)}<`);
+    // Each test is one whole-row link; a sample test's tag sits in that row's meta line.
+    const rows = [...p.matchAll(/<li><a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a><\/li>/g)];
+    expect(rows.map((row) => row[1])).toEqual(tests.map((test) => `/tools/mock-tests/${test.id}`));
+    rows.forEach((row, index) => {
+      expect(row[2]).toContain(esc(tests[index].title.en));
+      expect(row[2]).toContain(`>${esc(tm.list.start)}<`);
+      const meta = row[2].match(/<span class="mt-1 flex[\s\S]*$/)?.[0] ?? "";
+      expect(meta.includes(`>${esc(tm.common.sample)}<`), tests[index].id).toBe(tests[index].sample === true);
+    });
     expect(hrefsOf(p)).toContain("/tools/mock-tests/leaderboard");
     expect(hrefsOf(p)).toContain("/tools/mock-tests");
     for (const href of hrefsOf(html)) expectRealRoute(href);
   });
 
-  it("introduces Rancho, Aspire's snow leopard mascot, with plain example doubts, the AI caveat and no question text in links", () => {
+  it("introduces Rancho, Aspire's snow leopard mascot, with tappable example doubts, the AI caveat and no question text in links", () => {
     const html = renderTools("en", true);
     const p = panel(html, "ask");
     const t = messagesFor("en", "home").tools.ask;
     const ta = messagesFor("en", "ask");
+    const tools = messagesFor("en", "tools");
     expect(html).toContain(`>${esc(messagesFor("en", "home").tools.tabs.ask)}</span>`);
     expect(t.title).toBe("Ask Rancho");
     expect(t.lead).toMatch(/^Rancho, Aspire's friendly snow leopard/);
@@ -268,31 +368,47 @@ describe("HomeTools section", () => {
     expect(p).toContain(esc(t.lead));
     expect(p).not.toContain("Ask Aspire");
     for (const example of Object.values(t.examples)) expect(p).toContain(esc(example));
+    // The main button, the "AI doubt solver" tag and the AI caveat.
+    expect(p).toContain(esc(t.cta));
+    expect(p).toContain(`>${esc(tools.ranchoCaption)}<`);
     expect(p).toContain(esc(ta.answer.disclaimer));
-    expect(hrefsOf(p)).toEqual(["/tools/ask"]);
+    // The chat button and the four examples all link to plain /tools/ask (no question text in the URL); plus the Rancho app.
+    expect([...hrefsOf(p)].sort()).toEqual(["/rancho", ...Array<string>(5).fill("/tools/ask")]);
+    expect(p).toContain(esc(t.app));
+    // Phones show three examples; the fourth (physics) from `sm`.
+    expect(HOME_ASK_EXAMPLES).toHaveLength(4);
+    const items = [...p.matchAll(/<li\b([^>]*)>([\s\S]*?)<\/li>/g)];
+    expect(items).toHaveLength(4);
+    items.forEach((item, index) => {
+      expect(item[2]).toContain(esc(t.examples[HOME_ASK_EXAMPLES[index]]));
+      expect(item[1].includes("max-sm:hidden"), HOME_ASK_EXAMPLES[index]).toBe(HOME_ASK_EXAMPLES[index] === "physics");
+    });
     // No allowance numbers are hard-coded here.
     expect(p).not.toMatch(/questions left|per day|a day/i);
   });
 
-  it("shows Rancho's head as the Ask tab icon and beside the Ask title, decorative only", () => {
+  it("shows Rancho's head as the Ask tab icon and Rancho waving in the Ask panel, decorative only", () => {
     const html = renderTools("en", true);
-    const askTab = html.match(new RegExp(`<button[^>]*id="${homeToolTabId("ask")}"[\\s\\S]*?</button>`))?.[0] ?? "";
+    const askTab = tabOf(html, "ask");
     expect(askTab, "ask tab").not.toBe("");
-    const mascotIn = (markup: string) => markup.match(/<(?:svg|img)\b[^>]*data-rancho="head"[^>]*>/)?.[0] ?? "";
-    for (const [where, markup] of [
-      ["ask tab", askTab],
-      ["ask panel", panel(html, "ask")],
+    const mascotIn = (markup: string, variant = '[^"]+') => markup.match(new RegExp(`<(?:svg|img)\\b[^>]*data-rancho="${variant}"[^>]*>`))?.[0] ?? "";
+    for (const [where, markup, variant] of [
+      ["ask tab", askTab, "head"],
+      ["ask panel", panel(html, "ask"), "wave"],
     ] as const) {
-      const mascot = mascotIn(markup);
+      const mascot = mascotIn(markup, variant);
       expect(mascot, `${where} mascot`).not.toBe("");
       expect(attr(mascot, "aria-hidden"), where).toBe("true");
       expect(mascot, where).not.toMatch(/\srole="img"/);
     }
     // No accessible name: the tab is named by its label alone.
     expect(askTab).not.toMatch(/<title\b/);
-    // Only the Ask tab and panel use the mascot; the other tabs keep their icons.
+    // Only the Ask tile and panel use the mascot; the other tiles keep their icons.
     expect(html.match(/data-rancho="/g)).toHaveLength(2);
-    for (const key of HOME_TOOL_KEYS.filter((k) => k !== "ask")) expect(mascotIn(panel(html, key)), key).toBe("");
+    for (const key of HOME_TOOL_KEYS.filter((k) => k !== "ask")) {
+      expect(mascotIn(panel(html, key)), key).toBe("");
+      expect(mascotIn(tabOf(html, key)), key).toBe("");
+    }
   });
 
   it("shows the planner countdown form and features, linking to the planner", () => {
@@ -304,6 +420,19 @@ describe("HomeTools section", () => {
     for (const feature of Object.values(t.features)) expect(p).toContain(esc(feature));
     expect(p).toContain(esc(messagesFor("en", "planner").form.submit));
     expect(hrefsOf(p)).toEqual(["/tools/planner"]);
+    // "Show days left" is a real submit button (picking a date never opens the contact form).
+    expect(p).toMatch(new RegExp(`<button type="submit"[^>]*>[\\s\\S]*?${esc(t.submit)}</button>`));
+    // One live region (the countdown), never around the form; the sample tag sits beside "Build my plan".
+    expect(p.match(/aria-live=/g)).toHaveLength(1);
+    expect(p).toContain(`>${esc(messagesFor("en", "tools").status.sample)}<`);
+    // The Ask Rancho button appears only with a countdown (client state).
+    expect(p).not.toContain("data-ask-rancho");
+    // "What the planner does" sits in the stage, after the countdown's live region (it fills the tall column from `md`).
+    expect(p.indexOf(esc(t.featuresLabel))).toBeGreaterThan(p.indexOf("aria-live="));
+    for (const control of p.match(/<(?:input|select)\b[^>]*>/g) ?? []) {
+      expect(control).not.toMatch(/\sname=/);
+      expect(p).toContain(`for="${attr(control, "id")}"`);
+    }
   });
 
   it("uses no photos and stores nothing", () => {
@@ -330,8 +459,16 @@ describe("HomeTools section", () => {
     }
   });
 
-  it("falls back to honest descriptions in production (no sample tables, tests or badges)", () => {
+  it("falls back to honest descriptions in production (no sample tables, tests or badges), opening on a working tool", () => {
     const html = renderTools("en", false);
+    const tabs = [...html.matchAll(/<button[^>]*role="tab"[^>]*>/g)].map((m) => m[0]);
+    const order: (typeof HOME_TOOL_KEYS)[number][] = ["ask", "planner", "predictor", "mockTests"];
+    expect(tabs.map((tab) => attr(tab, "id"))).toEqual(order.map(homeToolTabId));
+    expect(attr(tabs[0], "aria-selected")).toBe("true");
+    expect(attr(tabs[0], "tabindex")).toBe("0");
+    const panels = [...html.matchAll(/<div[^>]*role="tabpanel"[^>]*>/g)].map((m) => m[0]);
+    expect(panels.map((tag) => attr(tag, "id"))).toEqual(order.map(homeToolPanelId));
+    expect(attr(panels[0], "data-state")).toBe("active");
     const tp = messagesFor("en", "predictor");
     const tm = messagesFor("en", "mocktest");
     const predictor = panel(html, "predictor");
@@ -383,6 +520,34 @@ describe("HomeTools results", () => {
     expect(view({ kind: "past" })).toBe(t.past);
     expect(view({ kind: "tooFar" })).toBe(tpl.form.errors.examDateFar);
     expect(view({ kind: "empty" })).toBe(t.prompt);
+    // "Show days left" without a date.
+    const submitted = renderToStaticMarkup(createElement(CountdownView, { countdown: { kind: "empty" }, exam: "JEE Main", messages, submitted: true }));
+    expect(submitted.replace(/<[^>]+>/g, "")).toBe(t.dateMissing);
+  });
+
+  it("puts a panel's exits right under its controls (or its head when it has none), never pinned to the bottom", () => {
+    const render = (controls: boolean) =>
+      renderToStaticMarkup(
+        createElement(ToolPanel, { head: "H", controls: controls ? "C" : undefined, stage: "S", exits: "E", gated: false }),
+      );
+    const exitsClass = (html: string) => html.match(/<div class="([^"]*)">E<\/div>/)?.[1] ?? "";
+    expect(render(true)).toContain("md:grid-rows-[auto_auto_1fr]");
+    expect(exitsClass(render(true))).toContain("md:row-start-3 md:self-start");
+    expect(exitsClass(render(false))).toContain("md:row-start-2 md:self-start");
+    for (const html of [render(true), render(false)]) expect(html).not.toContain("self-end");
+  });
+
+  it("makes the countdown a focus target only where a ref is passed (after this host's own unlock)", () => {
+    const t = messagesFor("en", "home").tools.planner;
+    const tpl = messagesFor("en", "planner");
+    const messages = { ...t, tomorrow: tpl.today.countdownTomorrow, tooFar: tpl.form.errors.examDateFar };
+    const shown: ExamCountdown[] = [{ kind: "days", days: 164 }, { kind: "today" }, { kind: "tomorrow" }];
+    for (const countdown of shown) {
+      const withRef = renderToStaticMarkup(createElement(CountdownView, { countdown, exam: "JEE Main", messages, resultRef: createRef<HTMLParagraphElement>() }));
+      expect(withRef).toMatch(/^<p tabindex="-1"/);
+      expect(withRef).not.toContain("outline-none");
+      expect(renderToStaticMarkup(createElement(CountdownView, { countdown, exam: "JEE Main", messages }))).not.toContain("tabindex");
+    }
   });
 });
 

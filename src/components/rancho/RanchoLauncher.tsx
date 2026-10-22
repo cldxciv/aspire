@@ -23,7 +23,10 @@ function isTypingOutsidePanel(active: Element | null): boolean {
   return active instanceof HTMLElement && active.matches(TEXT_ENTRY) && !active.closest("dialog");
 }
 
-/** Part of a page form (not the panel) lies under the button. */
+/**
+ * Part of a page form (not the panel), or of page controls marked `data-rancho-avoid` (the Results
+ * hero ribbon's Pause / Previous / Next), lies under the button.
+ */
 function isOverForm(button: HTMLElement): boolean {
   const r = button.getBoundingClientRect();
   const points: Array<[number, number]> = [
@@ -34,7 +37,9 @@ function isOverForm(button: HTMLElement): boolean {
     [r.left + r.width / 2, r.top + r.height / 2],
   ];
   return points.some(([x, y]) =>
-    document.elementsFromPoint(x, y).some((element) => !button.contains(element) && element.closest("form") && !element.closest("dialog")),
+    document
+      .elementsFromPoint(x, y)
+      .some((element) => !button.contains(element) && element.closest("form, [data-rancho-avoid]") && !element.closest("dialog")),
   );
 }
 
@@ -89,7 +94,7 @@ export function RanchoLauncher({ messages: t, gateMessages }: { messages: Messag
   }, [hidden]);
 
   // Step aside (fade out, out of the tab order) while a form is underneath the button, e.g. the
-  // home hero enquiry form on phones, and while typing in a form on touch screens, where the
+  // home hero enquiry form on phones, or controls marked `data-rancho-avoid`, and while typing in a form on touch screens, where the
   // on-screen keyboard would push the button over the field. Not while the panel is open.
   useEffect(() => {
     if (hidden || open) return;

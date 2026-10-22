@@ -54,9 +54,10 @@ function useLatest<T>(value: T) {
  * waits for contact details. The form is enforced (no "show without saving"); `onUnlocked` (this
  * form, another tool or another tab) reloads the result. If a later status answer shows the gate
  * relaxed meanwhile (the flood breaker degraded it to optional, or it was switched off), the result
- * is asked for again too, so a "paused" form never leaves the family stuck.
+ * is asked for again too, so a "paused" form never leaves the family stuck. `body` replaces the
+ * default note (a ranked paper's save: no solutions until the month closes).
  */
-export function LockedResult({ t, onUnlocked }: { t: MocktestMessages; onUnlocked: (info: MocktestUnlock) => void }) {
+export function LockedResult({ t, onUnlocked, body }: { t: MocktestMessages; onUnlocked: (info: MocktestUnlock) => void; body?: string }) {
   const tGate = useMocktestLeadGateMessages();
   const gate = useLeadGate({ tool: "mock-test", enforced: true, onUnlocked });
   const { markRequired, mode, formProps } = gate;
@@ -75,7 +76,7 @@ export function LockedResult({ t, onUnlocked }: { t: MocktestMessages; onUnlocke
   return (
     <div className="space-y-4" data-mocktest-gate="result">
       <Notice variant="success" title={t.gate.lockedTitle}>
-        <p>{t.gate.lockedBody}</p>
+        <p>{body ?? t.gate.lockedBody}</p>
       </Notice>
       {/* Appears on page load, not after a click: focus stays where the visitor is. */}
       <LeadGateForm {...formProps} messages={tGate} variant="panel" headingLevel={2} focusOnMount={false} />

@@ -73,7 +73,11 @@ describe("home page with placeholder content (development / preview)", () => {
 
   it("contains none of the design's placeholder names, numbers or claims", async () => {
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
-    const html = (await renderHome()).replace(/&nbsp;|\s+/g, " ");
+    // The enquiry form's district list names real Himachal districts (one is also a mock-up filler
+    // word), so it is left out of this scan.
+    const html = (await renderHome())
+      .replace(/<select[^>]*name="district"[^>]*>[\s\S]*?<\/select>/g, "")
+      .replace(/&nbsp;|\s+/g, " ");
     for (const filler of MOCKUP_FILLER) expect(html.toLowerCase()).not.toContain(filler.toLowerCase());
   });
 

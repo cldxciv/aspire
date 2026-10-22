@@ -77,8 +77,17 @@ export function asksBeforeFirstResult(
   return fromResult && attempt.score === undefined && !gate.open && gate.mode === "optional";
 }
 
-/** The exam as a lead-record slug ("JEE_MAIN" → "jee-main"), the same form the predictor uses. */
-export function mockExamSlug(exam: MockExam): string {
+/**
+ * Generated papers (docs/question-bank-plan.md §B10.6): like `neverGated`, but the "started before
+ * LEAD_GATE_SINCE" check uses the SERVER's record of when the paper was made (`createdAt`), never
+ * the browser's `startedAt`. `seen` stays the browser's word (it already shows a local score).
+ */
+export function neverGatedPaper(since: number | null, paper: { createdAt: number }, attempt: { seen?: boolean | null }): boolean {
+  return attempt.seen === true || startedBeforeGate(since, paper.createdAt);
+}
+
+/** The exam as a lead-record slug ("JEE_MAIN" → "jee-main", "JEE_ADV" → "jee-adv"), the same form the predictor uses. */
+export function mockExamSlug(exam: MockExam | "JEE_ADV"): string {
   return exam.toLowerCase().replace(/_/g, "-");
 }
 
@@ -99,4 +108,13 @@ export function mockTestToolUse(test: { id: string; exam: MockExam }, result: { 
     exam: mockExamSlug(test.exam),
     scoreBand: mockScoreBand(result.score, result.maxScore),
   };
+}
+
+/**
+ * A generated paper's tool-use note: keyed by the exam-pattern slot (`bp-<slot>`), never the paper
+ * id, so a family's papers of one exam on one day merge into one entry (plan §B10.6).
+ */
+export function paperToolUse(paper: { slot: string; exam: MockExam | "JEE_ADV" }, result: { score: number; maxScore: number }): MockTestToolUse {
+  const key = `bp-${paper.slot}`;
+  return { tool: "mock-test", key, testId: key, exam: mockExamSlug(paper.exam), scoreBand: mockScoreBand(result.score, result.maxScore) };
 }

@@ -1,7 +1,8 @@
 import type { NextRequest } from "next/server";
 
-import { privateApiHeaders } from "@/lib/auth/responses";
-import { exportLeadsCsv } from "@/lib/crm";
+import { portalApiError, privateApiHeaders } from "@/lib/auth/responses";
+import { exportLeadsCsv, leadFilterForbidden } from "@/lib/crm";
+import { CRM_MESSAGES } from "@/lib/crm/access";
 import { crmLog, crmResponse, crmServerError, leadFiltersFromSearch, requireCrm } from "@/lib/crm/http";
 
 const ROUTE = "export";
@@ -14,7 +15,13 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireCrm(request, { write: false, limit: "export", route: ROUTE });
     if (!auth.ok) return auth.response;
-    const result = exportLeadsCsv(auth.viewer, leadFiltersFromSearch(request.nextUrl.searchParams), Date.now());
+    const filters = leadFiltersFromSearch(request.nextUrl.searchParams);
+    // Query parameters only narrow the viewer's scope (lead routing §13.5, M2).
+    if (leadFilterForbidden(auth.viewer, filters)) {
+      crmLog(ROUTE, "forbidden", "area_outside_scope");
+      return portalApiError("forbidden", CRM_MESSAGES.forbidden);
+    }
+    const result = exportLeadsCsv(auth.viewer, filters, Date.now());
     if (!result.ok) return crmResponse(result);
     crmLog(ROUTE, "success");
     const headers = privateApiHeaders({

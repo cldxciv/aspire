@@ -1,7 +1,6 @@
 "use client";
 
 import { ArrowRight, Info, LoaderCircle } from "lucide-react";
-import Link from "next/link";
 import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { flushSync } from "react-dom";
 
@@ -13,7 +12,15 @@ import type { Messages } from "@/i18n/messages/types";
 import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
 import { CLASS_OPTIONS } from "@/lib/contracts/enquiry";
-import { LEAD_GATE_CONSENT_VERSION, LEAD_GATE_FIELDS, LEAD_GATE_ROLES, type LeadGateField, type LeadGateRole, type LeadGateTool } from "@/lib/lead-gate/contract";
+import {
+  LEAD_GATE_CONSENT_VERSION,
+  LEAD_GATE_FIELDS,
+  LEAD_GATE_ROLES,
+  type LeadGateField,
+  type LeadGateRole,
+  type LeadGateTool,
+  type LeadGateUsageKey,
+} from "@/lib/lead-gate/contract";
 
 import {
   buildLeadGatePayload,
@@ -44,6 +51,13 @@ import { useLeadGateState } from "./use-lead-gate";
  *   official data, and that Aspire will contact the family (owner decision 21 Oct 2026: gate now,
  *   with that note; TG-3 bait-and-switch). The submit button points to it (aria-describedby). Hosts
  *   never add their own copy of it. If `sample` is still unknown, focusing the form asks again.
+ * - Signed-in accounts (owner decision 22 Oct 2026): staff and admins get exactly the visitor's
+ *   form. A student or parent account (store `prefill`, from GET /api/lead-gate) gets the name
+ *   filled in from the account and its role pre-selected, all editable (a value that arrives after
+ *   the form opened fills only fields still empty / unchosen), plus a line saying the details will
+ *   be linked to the account. The consent box is never pre-ticked. There is no "sign in instead"
+ *   line: signing in no longer skips the step (only an account with a mobile number on file does,
+ *   and accounts have none yet).
  * - Copy: the `leadGate` namespace, passed in by the host's server parent (D-028).
  */
 
@@ -55,16 +69,17 @@ export interface LeadGateFormProps {
   /** From useLeadGate().formProps: the server enforces this tool (no "without saving" path). */
   enforced?: boolean;
   store?: LeadGateStore;
+  /** From useLeadGate().formProps: a planner feature (e.g. the homepage "countdown"). */
+  usageKey?: LeadGateUsageKey;
   /** Predictor: the exam + band being unlocked (attribution on the lead). */
   summary?: LeadGateSummary;
   variant?: "panel" | "compact";
   headingLevel?: 2 | 3;
-  /** Defaults to `messages.submit[tool]`. */
+  /** Defaults to `messages.submitFor[usageKey]`, else `messages.submit[tool]`. */
   submitLabel?: string;
   focusOnMount?: boolean;
-  /** Defaults to the localised /privacy and /login. */
+  /** Defaults to the localised /privacy. */
   privacyHref?: string;
-  signInHref?: string;
   className?: string;
 }
 
@@ -80,13 +95,13 @@ export function LeadGateForm({
   hostId,
   enforced = false,
   store = leadGateStore,
+  usageKey,
   summary,
   variant = "panel",
   headingLevel = 2,
   submitLabel,
   focusOnMount = true,
   privacyHref,
-  signInHref,
   className,
 }: LeadGateFormProps) {
   const locale = useLocale();
@@ -102,11 +117,28 @@ export function LeadGateForm({
   const inFlight = useRef(false);
   const [errors, setErrors] = useState<LeadGateFieldErrors>({});
   const [state, setState] = useState<FormState>({ kind: "idle" });
-  const [role, setRole] = useState<LeadGateRole | null>(null);
+  const [chosenRole, setChosenRole] = useState<LeadGateRole | null>(null);
+  // A signed-in student / parent account: name and role from the account, editable.
+  const prefill = gate.prefill;
+  const role = chosenRole ?? prefill?.submittedBy ?? null;
 
   useEffect(() => {
     if (focusOnMount) headingRef.current?.focus();
   }, [focusOnMount]);
+
+  // The pre-fill arrived after the form opened (uncontrolled fields keep their first defaults):
+  // fill only what the person has not typed or chosen yet.
+  useEffect(() => {
+    const form = formRef.current;
+    if (!prefill || !form) return;
+    const name = form.querySelector<HTMLInputElement>('input[name="studentName"]');
+    if (name && name.value === "" && prefill.studentName) name.value = prefill.studentName;
+    const radios = Array.from(form.querySelectorAll<HTMLInputElement>('input[name="submittedBy"]'));
+    if (!radios.some((radio) => radio.checked)) {
+      const match = radios.find((radio) => radio.value === prefill.submittedBy);
+      if (match) match.checked = true;
+    }
+  }, [prefill]);
 
   // Opened without a status answer on this page (hint, then the gate 401): fetch `sample` (the store retries a failure).
   useEffect(() => {
@@ -141,7 +173,7 @@ export function LeadGateForm({
     const name = target.name;
     if (name === "submittedBy") {
       const value = target.value ?? "";
-      setRole((LEAD_GATE_ROLES as readonly string[]).includes(value) ? (value as LeadGateRole) : null);
+      setChosenRole((LEAD_GATE_ROLES as readonly string[]).includes(value) ? (value as LeadGateRole) : null);
     }
     if (name && name in errors) {
       setErrors((current) => {
@@ -196,7 +228,8 @@ export function LeadGateForm({
 
   const statusText =
     state.kind === "invalid" ? t.status.invalid : state.kind === "error" ? t.status[state.reason] : "";
-  const label = submitLabel ?? t.submit[tool];
+  const label = submitLabel ?? (tool === "planner" && usageKey ? t.submitFor[usageKey] : t.submit[tool]);
+  const prefilledName = prefill?.studentName ?? undefined;
   const classOptions = CLASS_OPTIONS.map((option) => ({ value: option.value, label: t.classOptions[option.value] ?? option.label }));
   const roleError = errors.submittedBy;
   const roleErrorId = fieldId("submittedBy-error");
@@ -242,6 +275,8 @@ export function LeadGateForm({
             required
             autoComplete="off"
             maxLength={80}
+            defaultValue={prefilledName}
+            hint={prefilledName ? t.fields.studentNameFromAccount : undefined}
             error={errors.studentName}
           />
           <TextField
@@ -289,7 +324,13 @@ export function LeadGateForm({
                     roleError ? "border-danger" : "border-[#d8e2ef]",
                   )}
                 >
-                  <input type="radio" name="submittedBy" value={value} className="size-4 shrink-0 accent-navy" />
+                  <input
+                    type="radio"
+                    name="submittedBy"
+                    value={value}
+                    defaultChecked={prefill?.submittedBy === value}
+                    className="size-4 shrink-0 accent-navy"
+                  />
                   {value === "student" ? t.fields.student : t.fields.parent}
                 </label>
               ))}
@@ -309,6 +350,7 @@ export function LeadGateForm({
         <HoneypotField id={fieldId("website")} label={t.honeypotLabel} />
 
         <p className="mt-3 text-xs leading-relaxed text-muted">{t.smallPrint}</p>
+        {prefill && <p className="mt-1.5 text-xs leading-relaxed text-muted">{t.accountNote}</p>}
 
         <div className="mt-4 flex flex-col gap-2.5 sm:flex-row sm:flex-wrap">
           <Button
@@ -346,15 +388,6 @@ export function LeadGateForm({
         </p>
 
         <p className="mt-3 text-xs text-muted">{t.remember}</p>
-        <p className="mt-1.5 text-xs text-muted">
-          {formatNodes(t.signIn, {
-            link: (
-              <Link href={signInHref ?? localePath("/login", locale)} className="font-bold text-blue underline underline-offset-2 hover:text-navy">
-                {t.signInLink}
-              </Link>
-            ),
-          })}
-        </p>
       </form>
     </section>
   );

@@ -30,7 +30,10 @@ export async function GET(request: NextRequest, ctx: Context) {
 /**
  * PATCH /api/admin/users/:userId — `{ disabled?: boolean, displayName?: string }`.
  * Same-origin, admin only. Disabling signs the user out everywhere. 403 when an admin
- * tries to disable themselves or the last active admin. Audited.
+ * tries to disable themselves or the last active admin. Super admin (D-044): 403
+ * `last_super_admin` (the last super admin cannot be disabled), `super_admin_target` (only a super
+ * admin may change a super admin), `super_admin_only` (staff accounts are changed by super admins).
+ * Audited.
  */
 export async function PATCH(request: NextRequest, ctx: Context) {
   try {
@@ -58,6 +61,12 @@ export async function PATCH(request: NextRequest, ctx: Context) {
           return portalApiError("forbidden", AUTH_MESSAGES.selfDisable);
         case "last_admin":
           return portalApiError("forbidden", AUTH_MESSAGES.lastAdmin);
+        case "last_super_admin":
+          return portalApiError("forbidden", AUTH_MESSAGES.lastSuperAdmin);
+        case "super_admin_target":
+          return portalApiError("forbidden", AUTH_MESSAGES.superAdminTarget);
+        case "super_admin_only":
+          return portalApiError("forbidden", AUTH_MESSAGES.staffSuperAdminOnly);
       }
     }
     authLog({ action: "admin_users", outcome: "success" });

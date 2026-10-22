@@ -116,7 +116,8 @@ describe("PAGES-B Hindi specifics", () => {
     ];
     for (const [page, title] of titles) {
       const html = await render("hi", page);
-      expect(html).toContain(title);
+      // Visible text: a rich hero sets part of the title in its own <span> (gold / underlined phrase).
+      expect(html.replace(/<[^>]*>/g, "")).toContain(title);
       for (const english of ["Illustrative stock photo", "Demo · pending verification", "To be confirmed", "Enquire now"]) {
         expect(html).not.toContain(`>${english}<`);
       }

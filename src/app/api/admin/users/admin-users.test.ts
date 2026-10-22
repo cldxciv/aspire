@@ -14,6 +14,8 @@ vi.mock("next/server", async (importOriginal) => ({
 const { getDb, resetDatabaseForTests } = await import("@/lib/db/connection");
 const { listAudit } = await import("@/lib/db/audit");
 const { findUserById } = await import("@/lib/db/users");
+const { upsertGrant } = await import("@/lib/db/super-admins");
+const { ensureSuperAdminBootstrap } = await import("@/lib/auth/super-admin");
 const { AUTH_MESSAGES } = await import("@/lib/auth/messages");
 const { createTestUser, params, TestBrowser } = await import("@/lib/auth/testing/harness");
 const login = await import("@/app/api/auth/login/route");
@@ -217,21 +219,56 @@ describe("disable / enable", () => {
     );
   });
 
-  it("an admin cannot disable themselves, and the last active admin cannot be disabled", async () => {
+  it("an admin cannot disable themselves, and the last super admin / active admin cannot be disabled", async () => {
     const { b, adminId } = await asAdmin();
+    // The only admin is made super admin automatically (D-044); the last-super-admin rule comes first.
     const alone = await api.patch(b, adminId, { disabled: true });
     expect(alone.status).toBe(403);
-    expect((await alone.json()).message).toBe(AUTH_MESSAGES.lastAdmin);
+    expect((await alone.json()).message).toBe(AUTH_MESSAGES.lastSuperAdmin);
 
     const second = await createTestUser({ role: "admin", loginId: "admin.two", password: "admin-two-pass-1" });
     const self = await api.patch(b, adminId, { disabled: true });
     expect(self.status).toBe(403);
-    expect((await self.json()).message).toBe(AUTH_MESSAGES.selfDisable);
+    expect((await self.json()).message).toBe(AUTH_MESSAGES.lastSuperAdmin);
 
-    // Disabling the other admin is fine; afterwards admin.one is the last one again.
+    // With a second super admin, the ordinary self-disable rule applies.
+    upsertGrant(getDb(), { userId: second.id, via: "cli", by: null, now: Date.now() });
+    const selfAgain = await api.patch(b, adminId, { disabled: true });
+    expect(selfAgain.status).toBe(403);
+    expect((await selfAgain.json()).message).toBe(AUTH_MESSAGES.selfDisable);
+
+    // A super admin may disable the other super admin while one remains; afterwards admin.one is the last one again.
     expect((await api.patch(b, second.id, { disabled: true })).status).toBe(200);
     expect((await api.patch(b, adminId, { disabled: true })).status).toBe(403);
     expect(findUserById(getDb(), adminId)?.disabled).toBe(false);
+  });
+
+  it("an ordinary admin cannot rename, disable or reset a super admin, nor touch staff accounts (D-044, H1, Q7)", async () => {
+    const { b: superAdmin, adminId } = await asAdmin();
+    ensureSuperAdminBootstrap(getDb()); // the only admin becomes super admin (one-time bootstrap)
+    await createTestUser({ role: "admin", loginId: "admin.two", password: "admin-two-pass-1" });
+    const ordinary = await signedIn({ loginId: "admin.two", password: "admin-two-pass-1" });
+    const staff = await createTestUser({ role: "staff", loginId: "staff.one", password: "staff-pass-2026" });
+
+    for (const response of [await api.patch(ordinary, adminId, { disabled: true }), await api.patch(ordinary, adminId, { displayName: "Taken Over" }), await api.reset(ordinary, adminId)]) {
+      expect(response.status).toBe(403);
+      expect((await response.json()).message).toBe(AUTH_MESSAGES.superAdminTarget);
+    }
+    for (const response of [await api.patch(ordinary, staff.id, { disabled: true }), await api.reset(ordinary, staff.id)]) {
+      expect(response.status).toBe(403);
+      expect((await response.json()).message).toBe(AUTH_MESSAGES.staffSuperAdminOnly);
+    }
+    const create = await api.create(ordinary, { role: "staff", displayName: "New Staff", loginId: "staff.two" });
+    expect(create.status).toBe(403);
+    expect((await create.json()).message).toBe(AUTH_MESSAGES.staffSuperAdminOnly);
+    expect(findUserById(getDb(), adminId)?.displayName).not.toBe("Taken Over");
+
+    // The super admin keeps doing all of it.
+    expect((await api.reset(superAdmin, staff.id)).status).toBe(200);
+    expect((await api.patch(superAdmin, staff.id, { disabled: true })).status).toBe(200);
+    // Ordinary admins keep their work for students and parents.
+    const learner = await createTestUser({ role: "student", loginId: "learner.two", password: "learner-pass-2026" });
+    expect((await api.reset(ordinary, learner.id)).status).toBe(200);
   });
 
   it("404 for an unknown user, 400 for a malformed id, 422 for an empty change", async () => {

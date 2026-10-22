@@ -12,6 +12,7 @@ import {
   type LinkedStudent,
 } from "@/lib/db/links";
 import { deleteUserSessions } from "@/lib/db/sessions";
+import { hasActiveGrant } from "@/lib/db/super-admins";
 import {
   countActiveAdmins,
   findUserById,
@@ -39,6 +40,7 @@ import {
 } from "./password";
 import { STAFF_SIDE_ROLES, type Role, type Session } from "./roles";
 import { createSession, revokeSessionToken, type NewSession } from "./sessions";
+import { isLastSuperAdmin, isSuperAdmin } from "./super-admin";
 import { checkAndRecordAttempt, clearAttempts, forgiveAttempt, PASSWORD_CHANGE_LIMIT, SIGN_IN_LIMITS } from "./throttle";
 
 /**
@@ -332,7 +334,7 @@ export function adminListAudit(options: { limit?: number; target?: string } = {}
 
 export type CreateUserResult =
   | { ok: true; user: PublicUser; temporaryPassword: string }
-  | { ok: false; error: "invalid_login_id" | "invalid_display_name" | "login_id_taken" };
+  | { ok: false; error: "invalid_login_id" | "invalid_display_name" | "login_id_taken" | "super_admin_only" };
 
 class LoginIdTakenError extends Error {}
 
@@ -353,6 +355,8 @@ export async function adminCreateUser(
   if (!isValidDisplayName(displayName)) return { ok: false, error: "invalid_display_name" };
 
   const db = getDb();
+  // D-044 / Q7: staff (CRM) logins are created by a super admin only.
+  if (input.role === "staff" && !isSuperAdmin(actor.userId, db, now)) return { ok: false, error: "super_admin_only" };
   if (findUserByLoginId(db, loginId)) return { ok: false, error: "login_id_taken" };
 
   const temporaryPassword = generateTemporaryPassword();
@@ -387,12 +391,20 @@ export async function adminCreateUser(
 
 export type UpdateUserResult =
   | { ok: true; user: PublicUser; revokedSessions: number }
-  | { ok: false; error: "not_found" | "invalid_display_name" | "self_disable" | "last_admin" };
+  | {
+      ok: false;
+      error: "not_found" | "invalid_display_name" | "self_disable" | "last_admin" | "super_admin_only" | "super_admin_target" | "last_super_admin";
+    };
 
 /**
  * Enables/disables an account and/or renames it. Disabling revokes all of the user's
  * sessions. An admin cannot disable themselves, and the last active admin can never be
  * disabled. All checks run before any write; the writes share one transaction.
+ *
+ * Super admin (D-044): staff (CRM) targets need a super-admin actor (`super_admin_only`, Q7); a
+ * non-SA actor cannot rename, disable or ENABLE an account holding an active SA grant
+ * (`super_admin_target`, H1) — a disabled SA with a live grant is an SA again once re-enabled; the
+ * last effective SA can never be disabled (`last_super_admin`, checked before self_disable / last_admin).
  */
 export function adminUpdateUser(
   actor: Session,
@@ -404,6 +416,11 @@ export function adminUpdateUser(
   return withTransaction(db, (): UpdateUserResult => {
     const target = findUserById(db, targetId);
     if (!target) return { ok: false, error: "not_found" };
+    const actorIsSuperAdmin = isSuperAdmin(actor.userId, db, now);
+    if (target.role === "staff" && !actorIsSuperAdmin) return { ok: false, error: "super_admin_only" };
+    if (target.id !== actor.userId && !actorIsSuperAdmin && hasActiveGrant(db, target.id)) {
+      return { ok: false, error: "super_admin_target" };
+    }
 
     let displayName: string | undefined;
     if (changes.displayName !== undefined) {
@@ -413,6 +430,7 @@ export function adminUpdateUser(
     const disabling = changes.disabled === true && !target.disabled;
     const enabling = changes.disabled === false && target.disabled;
     if (disabling) {
+      if (isLastSuperAdmin(db, target.id)) return { ok: false, error: "last_super_admin" };
       if (target.role === "admin" && countActiveAdmins(db) <= 1) return { ok: false, error: "last_admin" };
       if (target.id === actor.userId) return { ok: false, error: "self_disable" };
     }
@@ -451,7 +469,7 @@ export function adminUpdateUser(
 
 export type ResetPasswordResult =
   | { ok: true; user: PublicUser; temporaryPassword: string; revokedSessions: number }
-  | { ok: false; error: "not_found" | "self_reset" };
+  | { ok: false; error: "not_found" | "self_reset" | "super_admin_only" | "super_admin_target" };
 
 /**
  * Issues a new temporary password (returned once), sets the must-change flag, revokes
@@ -465,7 +483,14 @@ export async function adminResetPassword(
 ): Promise<ResetPasswordResult> {
   if (targetId === actor.userId) return { ok: false, error: "self_reset" };
   const db = getDb();
-  if (!findUserById(db, targetId)) return { ok: false, error: "not_found" };
+  const existing = findUserById(db, targetId);
+  if (!existing) return { ok: false, error: "not_found" };
+  // D-044: staff (CRM) logins are reset by a super admin only (Q7); a non-SA can never reset an
+  // account holding an active SA grant, enabled or not (H1: that would hand over the account once it
+  // is re-enabled). Recovery: the server command.
+  const actorIsSuperAdmin = isSuperAdmin(actor.userId, db, now);
+  if (existing.role === "staff" && !actorIsSuperAdmin) return { ok: false, error: "super_admin_only" };
+  if (!actorIsSuperAdmin && hasActiveGrant(db, existing.id)) return { ok: false, error: "super_admin_target" };
 
   const temporaryPassword = generateTemporaryPassword();
   const passwordHash = await hashPassword(temporaryPassword);

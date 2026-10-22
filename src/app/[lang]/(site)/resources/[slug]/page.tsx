@@ -2,20 +2,12 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { HeroAction, HeroCollage, HeroFrame } from "@/components/hero";
 import { richText } from "@/components/legal/rich-text";
+import { articlePagePhotos } from "@/components/resources/article-photos";
 import { ArticleCard } from "@/components/resources/ArticleCard";
 import { formatIsoDate } from "@/components/resources/format";
-import { articlePagePhotos } from "@/components/resources/hero-slides";
-import {
-  Badge,
-  ButtonLink,
-  Card,
-  DemoBadge,
-  PageHero,
-  Section,
-  SectionHeading,
-  StickyMediaLayout,
-} from "@/components/ui";
+import { Badge, ButtonLink, Card, DemoBadge, Section, SectionHeading, StickyMediaLayout } from "@/components/ui";
 import { format } from "@/i18n/format";
 import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
@@ -66,21 +58,29 @@ export default async function ArticlePage({ params }: PageProps<"/[lang]/resourc
 
   const related = relatedArticles(article, await getArticles(locale));
   const photoLabel = tc.labels.illustrativeStockPhoto;
-  // Hero carousel: the article's cover (a licensed stock photo, alt already localised by getArticle;
-  // a neutral fallback otherwise) first, then category photos; the sticky column gets two others.
-  const photos = articlePagePhotos({ article, related, label: photoLabel, locale });
+  // Hero: the article's cover (a licensed stock photo, alt already localised by getArticle; a
+  // neutral fallback otherwise); the sticky column gets two others.
+  const photos = articlePagePhotos({ article, related, locale });
   const resourcesHref = localePath("/resources", locale);
 
   return (
     <>
-      <PageHero
+      {/* B · editorial frame (2026-10-22 hero redesign): category, headline, summary, the page's main action, cover photo. */}
+      <HeroFrame
+        art="ridges"
+        layout="editorial"
+        size="lg"
+        eyebrow={t.card.categories[article.category]}
+        eyebrowStyle="caps"
         title={article.title}
         lead={article.summary}
         crumbs={[{ label: t.hero.crumb, href: resourcesHref }, { label: article.title }]}
         homeLabel={tc.labels.home}
         homeHref={localePath("/", locale)}
-        slides={photos.slides}
-        carouselLabels={tc.carousel}
+        actions={<HeroAction href={localePath("/admissions#enquiry", locale)}>{t.article.enquire}</HeroAction>}
+        aside={
+          <HeroCollage photos={[{ image: photos.cover, label: photoLabel }]} resultBadge="" demoLabel={tc.labels.demo} />
+        }
       />
 
       {/* D-030: the article beside a sticky column of stock photos (left out below `lg`; the hero has photos). */}

@@ -13,6 +13,8 @@ Nothing on the shared server is changed without the owner's approval: every serv
 | `/opt/aspire-web/release/` | Source of the deployed commit (`git archive`) — the Docker build context |
 | `/opt/aspire-web/data/` | Auth database `aspire.sqlite` (owned by uid 1000) — backed up nightly (see [Backups](#backups)) |
 | `/opt/aspire-web/data/ops/` | Status files written by the ops scripts; the app reads them as `/data/ops/*.json` |
+| `/opt/aspire-web/data/qb-figures/` | Question-bank figures (image files, owned by uid 1000). Not in the database backup; optional `FIGURE_SYNC=1` copies them off-server (see [Question bank](#question-bank-exam-pattern-mock-tests)) |
+| `/opt/aspire-web/data/qb-imports/` | Question-bank uploads waiting to be imported (owned by uid 1000). Temporary: deleted when the import is closed, or 14 days after the last activity on it (the import is then closed automatically); never backed up |
 | `/opt/aspire-web/bin/` | Installed copies of `deploy/*.sh` (cron runs these, not `release/`, which is replaced on every release) |
 | `/opt/aspire-web/backup.env` | Backup settings, mode 600, never committed (no secret with age: only the public key) |
 | `/opt/aspire-web/backup-recipients.txt` | The backup **public** key (`age1…`). The secret key is only in the owner's password manager |
@@ -90,6 +92,94 @@ LEAD_GATE_SINCE=<ISO switch-on time, e.g. 2026-10-21T18:00:00+05:30>   # mock at
 
 Apply: `cd /opt/aspire-web && docker compose up -d` (recreate). Check: `curl -s https://aspire.thechunkmedia.com/api/lead-gate` returns `"mode":"required"` and `"sample":true`. Roll back: set `LEAD_GATE=off` (or `optional`) and recreate. Never print the secret; it lives only in the root-only `.env`.
 
+## Question bank (exam-pattern mock tests)
+
+Being built (22 Oct 2026). Operator guide: `docs/question-bank.md`; decisions D-050 – D-058; owner questions: checklist §18 (QB-1 – QB-17). Before deploying the release that contains it, the owner (or a deploy agent approved for these steps):
+
+1. **Settings** in `/opt/aspire-web/.env` (read at run time; apply with `docker compose up -d`, no rebuild):
+   ```sh
+   QB_IMPORT_ENABLED=0     # AI imports (PDF / Word) hard off until the owner approves AI import (checklist QB-7); CSV / XLSX template imports still work. Later remove the line, then switch "Import enabled" on in the admin panel
+   # optional, defaults shown: QB_IMPORT_DAILY_USD=10  QB_IMPORT_MODEL=claude-opus-5-5  QB_IMPORT_MAX_FILE_MB=9  QB_FIGURE_QUOTA_MB=150  QB_PAPER_GUEST_RETENTION_DAYS=14
+   # keep QB_IMPORT_DIR / QB_FIGURE_DIR unset: they default to /data/qb-imports and /data/qb-figures (beside AUTH_DB_PATH)
+   ```
+   AI import also needs `ANTHROPIC_API_KEY` (the same key Rancho uses). `QB_GENERATION_ENABLED=0` stops new exam-pattern papers without a rollback. Full list: `.env.example`.
+2. **Data folders**, owned by the container's user, created before the first start of the release so they never end up owned by root:
+   ```sh
+   install -d -o 1000 -g 1000 -m 750 /opt/aspire-web/data/qb-imports /opt/aspire-web/data/qb-figures
+   ```
+3. **nginx upload limit, for the import upload route only** (this site's server block; other sites are untouched). nginx refuses request bodies over 1 MB by default, which blocks most question-paper PDFs; the app itself caps uploads at 9 MB (Next.js buffers at most 10 MB of a body). Only `/api/admin/qb/imports` needs more: figure uploads are 200 KB at most and every other route stays under the current limit. Raising the limit for the whole site would let every public route receive bodies of up to 10 MB, which the app's request proxy may buffer, in a container capped at `mem_limit: 768m` on a shared server; so scope it to this one location. Check first: `grep -n -e client_max_body_size -e 'location' /etc/nginx/sites-available/aspire.thechunkmedia.com`. Then add, inside the `server { … }` block, a location that copies the proxy lines of the existing `location / { … }` block (its `proxy_pass http://127.0.0.1:3011;` and any `proxy_set_header`, `proxy_hide_header` or buffering lines) and adds the limit:
+   ```nginx
+   location ^~ /api/admin/qb/imports {
+       client_max_body_size 10m;
+       # copy the proxy_pass / proxy_set_header / proxy_hide_header lines of `location /` here unchanged
+       proxy_pass http://127.0.0.1:3011;
+   }
+   ```
+   `nginx -t && systemctl reload nginx`. Leave any existing site-wide value as it is (an earlier note suggested `6m` for Rancho photo questions on `/api/ask`; that, too, is better set in its own location). After the reload, a PDF of a few MB must upload from the admin panel, and a large body sent to any other route must still get 413.
+4. **After the deploy, by hand:**
+   - open an import's source PDF from the admin panel in Chrome: it must display inline (the route deliberately sends no sandbox CSP, because Chrome's PDF viewer refuses sandboxed documents);
+   - check the app log after the first start for the question bank's search-mode line: SQLite full-text search (FTS5) or the slower fallback (`docker compose logs app`). node:sqlite bundles its own SQLite, so this is a check of the Docker image.
+5. **Disk and backups** (owner decision, checklist QB-11). Free space today is about 2 GB. A full ten-year bank adds about 120–150 MB of database and 100–200 MB of figures, and each nightly backup grows by about 35 MB, multiplied by the number of local copies (about 26 today). Options in `/opt/aspire-web/backup.env` (nothing changes unless they are set; the values below are examples, the owner chooses):
+   ```sh
+   # keep fewer copies on this server; the remote keeps KEEP_DAILY / KEEP_WEEKLY / KEEP_MANUAL (14 / 8 / 6)
+   KEEP_LOCAL_DAILY=3
+   KEEP_LOCAL_WEEKLY=2
+   KEEP_LOCAL_MANUAL=3
+   # after each backup, also copy the figures folder to $RCLONE_REMOTE/qb-figures (incremental; never deletes on the remote)
+   FIGURE_SYNC=1
+   # FIGURE_DIR=/opt/aspire-web/data/qb-figures    (default: $DATA_DIR/qb-figures, the host side of the app's QB_FIGURE_DIR)
+   ```
+   Then `/opt/aspire-web/bin/backup.sh --check` (whole numbers ≥ 1; `FIGURE_SYNC` 0 or 1) and reinstall the script from the release (`install -m 750 /opt/aspire-web/release/deploy/backup.sh /opt/aspire-web/bin/`). A weekly copy is a hard link to a daily copy, so it keeps its data when that daily copy is pruned. When set, `backup-status.json` also carries `localRetention` and `figureSync` (`ok`, `no_folder` or `failed`). A failed figure copy marks the run `failed`, but the database copy is already off-server by then and `lastSuccessAt` is updated. The figure copies are **not encrypted**: they are question-paper images with no personal data.
+   - **Restoring figures:** `restore.sh` restores only the database. Bring the figures back with `rclone copy gdrive:aspire-backups/qb-figures /opt/aspire-web/data/qb-figures && chown -R 1000:1000 /opt/aspire-web/data/qb-figures` (use your `RCLONE_REMOTE`). Without `FIGURE_SYNC=1` the figures have no off-server copy.
+6. **Rollback:** the question-bank tables are additive (`CREATE TABLE IF NOT EXISTS`), so an earlier image simply leaves them unused. To stop the feature without a rollback: `QB_GENERATION_ENABLED=0` (no new papers) and `QB_IMPORT_ENABLED=0` (no AI imports; CSV / XLSX template imports are not affected by it).
+
+## Page layout (section order on the public pages)
+
+Admin console → Website & content → Page layout (D-084). The tables `page_layout_state` and `page_layout_history` are created on first open; nothing to migrate.
+
+- **After a release:** the first visit to each of the 10 pages may still show the original order once; from then on the published layout shows.
+- **Optional warm-up** (removes even that):
+  ```sh
+  for p in / /about /admissions /programs /results /centres /hostels /resources /contact /tools; do curl -s -o /dev/null https://aspire.thechunkmedia.com$p; curl -s -o /dev/null https://aspire.thechunkmedia.com/hi${p%/}; done
+  ```
+- **Super admin check:** only an effective super admin can change layouts. Open Users and confirm at least one exists. If there is none (more than one admin and no grants): `cd /opt/aspire-web && docker compose exec app npm run auth:super-admin -- grant <login id>`.
+- **Build vs runtime:** the 10 pages are prerendered and then regenerated on the server, so `SHOW_PLACEHOLDER_CONTENT` and `ENQUIRY_STORE` must have the same values at build and at run time.
+- **Rollback:** "Reset to the original order" per page, or roll back the release (the tables are then simply unused).
+
+## Integrations key, Meta Lead Ads and the optional sync cron
+
+Lead routing (docs/lead-routing-plan.md §18–§19, D-047). The CRM connects to Meta **directly** (no Zapier, Make or similar). Meta credentials are sealed in the database with a key that lives only in `.env`.
+
+1. **Set the key BEFORE deploying the release that contains lead routing** (CSV import and Meta show "Server key not set" without it, and an erase then writes no suppression):
+   ```sh
+   # in /opt/aspire-web/.env (root-only, like every secret); never print it, never put it in a backup
+   INTEGRATIONS_SECRET=<openssl rand -base64 48>      # opaque, at least 43 characters
+   ```
+   Keep a copy in the password manager next to the backup key: a restore on a new server needs the **same** key, or the Meta App Secret and token must be entered again (and erase suppressions no longer match). `deploy/backup.sh` uploads only the encrypted database, never `.env`; keep it that way.
+2. **Key rotation** (only if the key leaked or on a schedule): move the old value to `INTEGRATIONS_SECRET_PREVIOUS=<old>`, set a new `INTEGRATIONS_SECRET`, `docker compose up -d`. Then a super admin opens *CRM → Settings → Integrations → Meta Lead Ads* and clicks **Re-encrypt with the new key** (the `reseal` action), which re-seals the Meta secrets. Keep `INTEGRATIONS_SECRET_PREVIOUS` set afterwards: CSV import refs and erase suppressions are keyed hashes that are not re-keyed, so without the old key an old sheet could bring back a family erased before the rotation.
+3. **Meta webhook:** nothing to do on the server. Meta calls `https://aspire.thechunkmedia.com/api/integrations/meta/webhook` (public, verified by the app-secret signature; exempt from the preview password). The owner's guide is Part 2 of the plan and the checklist on the Integrations page. No nginx change: deliveries are well under the 1 MB default.
+4. **Optional loopback cron** (processes waiting Meta leads every 10 minutes even when nobody has the CRM open; install only with the owner's approval, like the other jobs):
+   ```sh
+   # in .env (at least 32 characters), then docker compose up -d
+   INTEGRATIONS_CRON_TOKEN=<openssl rand -hex 32>
+   # header file read by cron's curl (mode 600, root only)
+   umask 077 && printf 'Authorization: Bearer %s\n' "$(grep '^INTEGRATIONS_CRON_TOKEN=' /opt/aspire-web/.env | cut -d= -f2-)" > /opt/aspire-web/meta-sync.header && chmod 600 /opt/aspire-web/meta-sync.header
+   install -m 644 /opt/aspire-web/release/deploy/aspire-web.cron /etc/cron.d/aspire-web
+   ```
+   The cron line does nothing while the header file is missing or empty. The endpoint answers 404 without the token, refuses anything that came through nginx (an `X-Real-IP` header, or an `X-Forwarded-For` that is not one private or loopback address: Next adds the Docker bridge address itself for a direct call, nginx appends the visitor's public address) or with a non-loopback `Host`, and needs the bearer token. Check: `curl -fsS -m 60 -X POST -H @/opt/aspire-web/meta-sync.header http://127.0.0.1:3011/api/integrations/meta/sync` prints `{"ok":true,…}`. Failed runs are logged to `/var/log/aspire-web-meta-sync.log` (curl's error line only; rotated by `aspire-web.logrotate`). Without the cron, open CRM tabs and the Integrations page still process waiting leads (once a minute at most).
+5. **Rollback:** the Meta tables are additive; an earlier image leaves them unused. To stop Meta without a rollback, a super admin switches the integration off on the Integrations page (new ids are then held, not fetched).
+
+### Lead routing release (super admin, areas, 1-hour rule)
+
+- **Before deploying:** `INTEGRATIONS_SECRET` in `.env` (step 1 above). The new tables (`superadmin`, then `crm_intake`) are created automatically at start; they are additive (`crm_leads` is not altered), so a rollback to the previous image simply leaves them unused.
+- **Right after deploying:**
+  ```sh
+  cd /opt/aspire-web && docker compose exec app npm run auth:super-admin -- list
+  ```
+  With exactly one enabled admin, that admin becomes super admin automatically (the command says so). Otherwise grant one: `docker compose exec app npm run auth:super-admin -- grant <login id>` (an enabled admin account). Until a super admin exists nobody can create or change **staff** logins, areas, calling hours or the import.
+- **What changes for staff at once:** routing runs in **areas** mode. Until the super admin adds people to areas (CRM → Settings → Areas & people → "Set up from centre"), new leads still go to counsellors by the old rules, except **free-tool sign-ups with no district, which now wait in "Tool sign-ups"** instead of being auto-assigned (an SA or admin assigns them; or switch CRM → Settings → Areas & people → "How enquiries are routed" to the old rules). New leads from deploy on get a 1-working-hour first-call clock; older leads are not back-filled. Staff now land on Today's calls.
+- **No nginx change.** The cron line for the Meta sync is inert until its header file exists (step 4).
+
 ## First admin (once)
 
 ```sh
@@ -113,8 +203,9 @@ Owner decision 3 (2026-10-21): a nightly encrypted copy of the database to a clo
 1. **Snapshot:** `docker compose exec -T app node -e "…VACUUM INTO…"` makes a consistent copy of `/data/aspire.sqlite` inside the running container (node:sqlite; a plain file copy of a WAL database is not safe) and runs `PRAGMA integrity_check` on it. If the app is not running, the backup fails and says so.
 2. **Encrypt:** gzip, then [age](https://age-encryption.org) to the owner's **public** key (`backup-recipients.txt`). The server can make backups but cannot read them: only the secret key in the password manager can. (Fallback: `ENCRYPTION=openssl`, AES-256 with a key file on the server, `backup.key`, mode 600; the same key must also be in the password manager. age is preferred.) The unencrypted snapshot is deleted at once, also on failure.
 3. **Upload:** rclone copies it to `$RCLONE_REMOTE` (`daily/aspire-YYYY-MM-DD.sqlite.gz.age`; the first copy of each ISO week also goes to `weekly/aspire-YYYY-Www…`; `--label` copies go to `manual/`) and checks the size there. Dates are UTC.
-4. **Retention:** newest 14 daily, 8 weekly, 6 manual copies, locally and on the remote (other files in those folders are never touched). On Google Drive, deleted copies sit in the Drive trash for 30 days first.
-5. **Status:** writes `data/ops/backup-status.json` (`result`, `lastRunAt`, `lastSuccessAt`, `file`, `sizeBytes`, `sha256`, `dbTables`, `dbUserVersion`, copy counts, `error`) and `data/ops/backup-last-success` (time of the last verified off-server copy). The admin console's Site status page reads `/data/ops/backup-status.json` and should warn when `result` is `failed` or `lastSuccessAt` is older than 26 hours.
+4. **Retention:** newest 14 daily, 8 weekly, 6 manual copies, locally and on the remote (other files in those folders are never touched). On Google Drive, deleted copies sit in the Drive trash for 30 days first. Optional `KEEP_LOCAL_DAILY` / `KEEP_LOCAL_WEEKLY` / `KEEP_LOCAL_MANUAL` keep a different number on this server only ([Question bank](#question-bank-exam-pattern-mock-tests), step 5).
+   - **Optional figure copy** (`FIGURE_SYNC=1`): after retention, the question-bank figures folder is copied to `$RCLONE_REMOTE/qb-figures` (incremental, unencrypted image files, never deletes on the remote).
+5. **Status:** writes `data/ops/backup-status.json` (`result`, `lastRunAt`, `lastSuccessAt`, `file`, `sizeBytes`, `sha256`, `dbTables`, `dbUserVersion`, copy counts, `error`; plus `localRetention` and `figureSync` only when those options are set) and `data/ops/backup-last-success` (time of the last verified off-server copy). The admin console's Site status page reads `/data/ops/backup-status.json` and should warn when `result` is `failed` or `lastSuccessAt` is older than 26 hours.
 
 Any failure prints a clear `ERROR:` line in the log, records `"result": "failed"` with the error, and exits non-zero. Runs never overlap (a lock in `/run/lock`), and a run stops before it would leave less than 300 MB free.
 
@@ -144,6 +235,8 @@ Any failure prints a clear `ERROR:` line in the log, records `"result": "failed"
    ENCRYPTION=age
    AGE_RECIPIENTS_FILE=/opt/aspire-web/backup-recipients.txt
    # Defaults: KEEP_DAILY=14 KEEP_WEEKLY=8 KEEP_MANUAL=6 MIN_FREE_MB=300 BACKUP_DIR=/opt/aspire-web/backups/encrypted
+   # Optional (question bank): KEEP_LOCAL_DAILY / KEEP_LOCAL_WEEKLY / KEEP_LOCAL_MANUAL (default: the KEEP_* value)
+   #   and FIGURE_SYNC=1 (FIGURE_DIR default /opt/aspire-web/data/qb-figures); see "Question bank" above
    ```
 6. **Check, then the first backup:**
    ```sh

@@ -9,6 +9,7 @@ import {
   LoaderCircle,
   Lock,
   MapPin,
+  MapPinned,
   Phone,
   Send,
   User,
@@ -27,7 +28,7 @@ import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
 import { enquirySchema, validateHeroStep, type HeroFieldName, type HeroStepIndex } from "@/lib/contracts/enquiry";
 import { captureVisitAttribution, collectEnquiryContext } from "./enquiry-context";
-import { buildHeroPayload } from "./enquiry-payload";
+import { buildHeroPayload, districtOptions, needsDistrict } from "./enquiry-payload";
 import { localizeFieldErrors } from "./field-errors";
 import { ConsentField, HoneypotField, SelectField, TextAreaField, TextField } from "./fields";
 import { formatNodes } from "./format-nodes";
@@ -51,7 +52,8 @@ import { submitEnquiry } from "./submit-enquiry";
  * Home hero 3-step enquiry form (contract `source: "hero"`, D-021 + D-021a; plan §5).
  *
  * 1 Student Information (name, class / target exam) · 2 Contact Details (parent / guardian
- * name, mobile) · 3 Preferences (centre if any, optional message, consent, submit).
+ * name, mobile) · 3 Preferences (centre if any, the district while no centre is chosen (lead
+ * routing §13.8), optional message, consent, submit).
  *
  * - All three fieldsets stay mounted; inactive ones get `hidden`, so one FormData holds every
  *   step and values survive Back. No form values are stored in the browser.
@@ -88,6 +90,8 @@ export interface HeroEnquiryFormProps {
 }
 
 const MESSAGE_MAX = 1000;
+/** The centre select's default ("Not sure yet"). */
+const PREFERRED_CENTRE_DEFAULT = "not-sure";
 /** 72px sticky site header plus breathing room: content above this line is hidden behind it. */
 const STICKY_HEADER_OFFSET = 84;
 
@@ -119,8 +123,11 @@ export function HeroEnquiryForm({
   const [step, setStep] = useState<HeroStepIndex>(0);
   const [errors, setErrors] = useState<HeroFieldErrors>({});
   const [state, setState] = useState<FormState>({ kind: "idle" });
+  // Mirrors the (uncontrolled) centre select: the district select shows while no centre is chosen.
+  const [centreChoice, setCentreChoice] = useState(PREFERRED_CENTRE_DEFAULT);
 
   const hasCentreField = centreOptions.length > 0;
+  const showDistrict = !hasCentreField || needsDistrict(centreChoice);
   const notConnected = deliveryStatus === "not_configured";
   const submitting = state.kind === "submitting";
   const received = state.kind === "received" ? state : null;
@@ -191,7 +198,9 @@ export function HeroEnquiryForm({
   }
 
   function handleChange(event: ChangeEvent<HTMLFormElement>) {
-    const name = (event.target as { name?: string }).name;
+    const target = event.target as { name?: string; value?: string };
+    const name = target.name;
+    if (name === "preferredCentre") setCentreChoice(target.value ?? "");
     if (!name || !(name in errors)) return;
     const next = { ...errors };
     delete next[name as HeroFieldName];
@@ -248,6 +257,7 @@ export function HeroEnquiryForm({
     switch (outcome.kind) {
       case "received":
         form.reset();
+        setCentreChoice(PREFERRED_CENTRE_DEFAULT);
         clearOnHide.current = true;
         flushSync(() => setState(outcome));
         successHeadingRef.current?.focus({ preventScroll: true });
@@ -268,6 +278,7 @@ export function HeroEnquiryForm({
 
   function startOver() {
     formRef.current?.reset();
+    setCentreChoice(PREFERRED_CENTRE_DEFAULT);
     clearOnHide.current = false;
     flushSync(() => {
       setState({ kind: "idle" });
@@ -427,6 +438,20 @@ export function HeroEnquiryForm({
                 options={[notSureCentre, ...centreOptions]}
                 defaultValue={notSureCentre.value}
                 error={errors.preferredCentre}
+              />
+            )}
+            {showDistrict && (
+              <SelectField
+                inset
+                icon={MapPinned}
+                id={fieldId("district")}
+                name="district"
+                label={shared.district.label}
+                optionalLabel={shared.optionalSuffix}
+                placeholder={shared.district.placeholder}
+                options={districtOptions(locale, shared.district.outsideHp)}
+                hint={shared.district.hint}
+                error={errors.district}
               />
             )}
             <TextAreaField

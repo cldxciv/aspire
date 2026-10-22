@@ -17,6 +17,14 @@ const STAT_SLOTS: { id: string; Icon: LucideIcon }[] = [
 const LG_COLUMNS = ["", "lg:grid-cols-1", "lg:grid-cols-2", "lg:grid-cols-3", "lg:grid-cols-4"];
 
 /**
+ * True when the band has a headline stat to show (same STAT_SLOTS filter as StatsBand below).
+ * The homepage layout passes a null slot otherwise (docs/page-layout-plan.md §4 slot contract).
+ */
+export function statsBandHasItems(stats: Stat[]): boolean {
+  return STAT_SLOTS.some(({ id }) => stats.some((s) => s.id === id));
+}
+
+/**
  * Full-bleed light-blue stats band under the hero. Shows only the four headline
  * stats above, with value, label and context exactly as stored (never the design's
  * filler numbers). Each placeholder figure carries a DEMO badge. Renders nothing when

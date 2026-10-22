@@ -182,6 +182,19 @@ describe("Add enquiry: consent method and duplicates (admin-console plan §8, Ag
     expect(eraseSchema.safeParse({ confirm: true }).success).toBe(true);
     expect(eraseSchema.safeParse({ confirm: true, reason: "family_request" }).success).toBe(true);
     expect(eraseSchema.safeParse({ confirm: true, reason: "because" }).success).toBe(false);
+    // Lead routing (§13.8, H4): an optional district; system consent methods are never accepted here.
+    expect(manualLeadSchema.safeParse({ ...body, district: "kangra" }).success).toBe(true);
+    expect(manualLeadSchema.safeParse({ ...body, consentMethod: "meta_lead_form" }).success).toBe(false);
+    expect(manualLeadSchema.safeParse({ ...body, consentMethod: "csv_import" }).success).toBe(false);
+  });
+
+  it("keeps the family's district out of the lead row and off the timeline (it only routes)", () => {
+    const result = createManualLead(admin, { source: "phone_call", studentName: "Phone Student", phone: "9876500071", consent: true, district: "lahaul-spiti" }, NOW);
+    if (!result.ok || result.data.duplicate) throw new Error("expected a new lead");
+    const lead = getLead(admin, result.data.leadId, NOW, { audit: false });
+    if (!lead.ok) throw new Error();
+    expect(JSON.stringify(lead.data.activities)).not.toContain("lahaul");
+    expect(lead.data.message).toBeNull();
   });
 });
 

@@ -8,9 +8,17 @@ const tools = {
     description:
       "Free study tools from Aspire IIT & Medical: rank & college predictor, CBT mock tests, Rancho (our AI doubt solver) and a study planner — in English and Hindi.",
   },
+  /** B · editorial hero (2026-10-22 hero redesign). */
   hero: {
+    eyebrow: "Practise · plan · ask Rancho",
     title: "Free tools for JEE, NEET and BOH students",
+    /** Phrase of `title` underlined in gold; must appear in it exactly. */
+    highlight: "Free tools",
     lead: "Practise, plan and get unstuck — in English or Hindi. Share your contact details once to see results; sign in to save your progress.",
+    /** Main action (Rancho, the AI doubt solver). */
+    primary: "Ask Rancho a doubt",
+    /** Eyebrow of the hero's card that links to each tool. */
+    listTitle: "Jump to a tool",
   },
   status: {
     sample: "Sample data",

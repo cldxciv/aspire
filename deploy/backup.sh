@@ -12,8 +12,10 @@
 #   2. gzip + encrypt it (age to a public key by default; openssl AES-256 as a fallback).
 #      The plain snapshot is deleted straight away, on success or failure.
 #   3. Upload it with rclone to $RCLONE_REMOTE (daily/, weekly/, manual/) and check the size there.
-#   4. Keep the newest 14 daily, 8 weekly and 6 manual copies, locally and on the remote.
-#   5. Write data/ops/backup-status.json (the admin console reads /data/ops/backup-status.json).
+#   4. Keep the newest 14 daily, 8 weekly and 6 manual copies, locally and on the remote
+#      (optional KEEP_LOCAL_DAILY / KEEP_LOCAL_WEEKLY / KEEP_LOCAL_MANUAL: a different number locally).
+#   5. Optional (FIGURE_SYNC=1): copy the question-bank figures to $RCLONE_REMOTE/qb-figures.
+#   6. Write data/ops/backup-status.json (the admin console reads /data/ops/backup-status.json).
 # Any failure: a clear log line, result "failed" in the status file, exit code non-zero.
 #
 # Settings come from the environment or from $BACKUP_CONFIG (default /opt/aspire-web/backup.env,
@@ -22,7 +24,7 @@ set -Eeuo pipefail
 umask 077
 export PATH="$PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
 
 MODE=nightly
 LABEL=""
@@ -60,6 +62,16 @@ OPENSSL_ITER=600000                                      # restore.sh must use t
 KEEP_DAILY="${KEEP_DAILY:-14}"
 KEEP_WEEKLY="${KEEP_WEEKLY:-8}"
 KEEP_MANUAL="${KEEP_MANUAL:-6}"
+# Optional: keep a different number of copies on this server's disk than on the remote (question
+# bank, D-057). Unset or empty = the KEEP_* value above, so nothing changes unless these are set.
+KEEP_LOCAL_DAILY="${KEEP_LOCAL_DAILY:-$KEEP_DAILY}"
+KEEP_LOCAL_WEEKLY="${KEEP_LOCAL_WEEKLY:-$KEEP_WEEKLY}"
+KEEP_LOCAL_MANUAL="${KEEP_LOCAL_MANUAL:-$KEEP_MANUAL}"
+# Optional: FIGURE_SYNC=1 also copies the question-bank figures (plain image files of question
+# papers, no personal data, not encrypted) to $RCLONE_REMOTE/qb-figures after the database copy.
+# Incremental `rclone copy`: it never deletes anything on the remote. Unset or 0 = off.
+FIGURE_SYNC="${FIGURE_SYNC:-0}"
+FIGURE_DIR="${FIGURE_DIR:-$DATA_DIR/qb-figures}"        # host path of the app's QB_FIGURE_DIR (/data/qb-figures)
 MIN_FREE_MB="${MIN_FREE_MB:-300}"                        # never fill the shared disk below this
 LOCK_FILE="${LOCK_FILE:-/run/lock/aspire-web-backup.lock}"
 
@@ -80,6 +92,7 @@ SHA256=""
 DB_TABLES=""
 DB_VERSION=""
 COUNTS=""
+FIGURE_RESULT=""                                         # FIGURE_SYNC=1 only: ok | no_folder | failed
 
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 log() { printf '%s [aspire-backup] %s\n' "$(now)" "$*"; }
@@ -92,6 +105,11 @@ json_str() {
   printf '"%s"' "$(printf '%s' "$1" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')"
 }
 json_num() { if [ -n "${1-}" ]; then printf '%s' "$1"; else printf 'null'; fi; }
+
+# True when KEEP_LOCAL_* ask for a different number of local copies than the remote keeps.
+local_retention_differs() {
+  [ "$KEEP_LOCAL_DAILY/$KEEP_LOCAL_WEEKLY/$KEEP_LOCAL_MANUAL" != "$KEEP_DAILY/$KEEP_WEEKLY/$KEEP_MANUAL" ]
+}
 
 write_status() { # result: ok | failed
   local result="$1" last_success="" tmp
@@ -113,6 +131,11 @@ write_status() { # result: ok | failed
     printf '  "encryption": %s,\n' "$(json_str "$ENCRYPTION")"
     printf '  "remote": %s,\n' "$(json_str "$RCLONE_REMOTE")"
     printf '  "retention": { "daily": %s, "weekly": %s, "manual": %s },\n' "$KEEP_DAILY" "$KEEP_WEEKLY" "$KEEP_MANUAL"
+    # Extra lines only when the optional settings are used, so the file is unchanged otherwise.
+    if local_retention_differs; then
+      printf '  "localRetention": { "daily": %s, "weekly": %s, "manual": %s },\n' "$KEEP_LOCAL_DAILY" "$KEEP_LOCAL_WEEKLY" "$KEEP_LOCAL_MANUAL"
+    fi
+    if [ "$FIGURE_SYNC" = 1 ]; then printf '  "figureSync": %s,\n' "$(json_str "$FIGURE_RESULT")"; fi
     printf '  "copies": %s,\n' "${COUNTS:-null}"
     printf '  "error": %s\n' "$(json_str "$ERROR")"
     printf '}\n'
@@ -165,9 +188,9 @@ list_remote() { rclone lsf --files-only "$1/" 2>/dev/null | grep -E "$2" | sort 
 # All but the newest $1 lines of stdin.
 all_but_newest() { awk -v keep="$1" '{ line[NR] = $0 } END { for (i = 1; i <= NR - keep; i++) print line[i] }'; }
 
-prune() { # folder (daily|weekly|manual), pattern, keep
-  local sub="$1" re="$2" keep="$3" name
-  for name in $(list_local "$BACKUP_DIR/$sub" "$re" | all_but_newest "$keep"); do
+prune() { # folder (daily|weekly|manual), pattern, keep (remote), keep locally (default: the same)
+  local sub="$1" re="$2" keep="$3" keep_local="${4:-$3}" name
+  for name in $(list_local "$BACKUP_DIR/$sub" "$re" | all_but_newest "$keep_local"); do
     log "retention: delete local $sub/$name"
     rm -f "$BACKUP_DIR/$sub/$name"
   done
@@ -247,12 +270,14 @@ done
 command -v "$ENCRYPTION" > /dev/null || fail "missing tool: $ENCRYPTION (apt install $ENCRYPTION)"
 [ -n "$RCLONE_REMOTE" ] || fail "RCLONE_REMOTE is not set (e.g. gdrive:aspire-backups in $BACKUP_CONFIG)"
 case "$RCLONE_REMOTE" in *:*) ;; *) fail "RCLONE_REMOTE must be an rclone remote such as gdrive:aspire-backups (got '$RCLONE_REMOTE')" ;; esac
-for n in "$KEEP_DAILY" "$KEEP_WEEKLY" "$KEEP_MANUAL" "$MIN_FREE_MB"; do
+for n in "$KEEP_DAILY" "$KEEP_WEEKLY" "$KEEP_MANUAL" "$KEEP_LOCAL_DAILY" "$KEEP_LOCAL_WEEKLY" "$KEEP_LOCAL_MANUAL" "$MIN_FREE_MB"; do
   case "$n" in ''|*[!0-9]*) fail "KEEP_* and MIN_FREE_MB must be whole numbers" ;; esac
 done
-if [ "$KEEP_DAILY" -lt 1 ] || [ "$KEEP_WEEKLY" -lt 1 ] || [ "$KEEP_MANUAL" -lt 1 ]; then
+if [ "$KEEP_DAILY" -lt 1 ] || [ "$KEEP_WEEKLY" -lt 1 ] || [ "$KEEP_MANUAL" -lt 1 ] \
+  || [ "$KEEP_LOCAL_DAILY" -lt 1 ] || [ "$KEEP_LOCAL_WEEKLY" -lt 1 ] || [ "$KEEP_LOCAL_MANUAL" -lt 1 ]; then
   fail "KEEP_* must be at least 1"
 fi
+case "$FIGURE_SYNC" in 0|1) ;; *) fail "FIGURE_SYNC must be 0 or 1 (got '$FIGURE_SYNC')" ;; esac
 if [ "$ENCRYPTION" = age ]; then
   [ -s "$AGE_RECIPIENTS_FILE" ] || fail "age public key file $AGE_RECIPIENTS_FILE is missing or empty"
   grep -Eq '^age1[0-9a-z]+$' "$AGE_RECIPIENTS_FILE" || fail "$AGE_RECIPIENTS_FILE must hold age public keys (age1...), one per line"
@@ -273,6 +298,13 @@ if [ "$MODE" = check ]; then
   rclone lsf --dirs-only "$RCLONE_REMOTE/" > /dev/null || fail "rclone cannot list $RCLONE_REMOTE"
   printf 'aspire backup check %s\n' "$(now)" | encrypt > /dev/null || fail "$ENCRYPTION could not encrypt with the configured key"
   app_running || fail "the app container is not running: backups need it (docker compose up -d)"
+  if [ "$FIGURE_SYNC" = 1 ]; then
+    if [ -d "$FIGURE_DIR" ]; then
+      log "figure sync on: $FIGURE_DIR is copied to $RCLONE_REMOTE/qb-figures after each backup"
+    else
+      log "figure sync on, but $FIGURE_DIR does not exist yet (no figures uploaded): runs skip it until it does"
+    fi
+  fi
   log "OK: settings, tools, key, remote and app container are ready"
   exit 0
 fi
@@ -347,10 +379,14 @@ now > "$OPS_DIR/.backup-last-success.tmp"
 chmod 644 "$OPS_DIR/.backup-last-success.tmp"
 mv -f "$OPS_DIR/.backup-last-success.tmp" "$OPS_DIR/backup-last-success"
 
-step "retention (daily $KEEP_DAILY, weekly $KEEP_WEEKLY, manual $KEEP_MANUAL)"
-prune daily "$DAILY_RE" "$KEEP_DAILY"
-prune weekly "$WEEKLY_RE" "$KEEP_WEEKLY"
-prune manual "$MANUAL_RE" "$KEEP_MANUAL"
+RETENTION_NOTE="daily $KEEP_DAILY, weekly $KEEP_WEEKLY, manual $KEEP_MANUAL"
+if local_retention_differs; then
+  RETENTION_NOTE="$RETENTION_NOTE; on this server: daily $KEEP_LOCAL_DAILY, weekly $KEEP_LOCAL_WEEKLY, manual $KEEP_LOCAL_MANUAL"
+fi
+step "retention ($RETENTION_NOTE)"
+prune daily "$DAILY_RE" "$KEEP_DAILY" "$KEEP_LOCAL_DAILY"
+prune weekly "$WEEKLY_RE" "$KEEP_WEEKLY" "$KEEP_LOCAL_WEEKLY"
+prune manual "$MANUAL_RE" "$KEEP_MANUAL" "$KEEP_LOCAL_MANUAL"
 count() { wc -l | tr -d ' '; }
 COUNTS=$(printf '{ "localDaily": %s, "localWeekly": %s, "localManual": %s, "remoteDaily": %s, "remoteWeekly": %s, "remoteManual": %s }' \
   "$(list_local "$BACKUP_DIR/daily" "$DAILY_RE" | count)" \
@@ -359,6 +395,21 @@ COUNTS=$(printf '{ "localDaily": %s, "localWeekly": %s, "localManual": %s, "remo
   "$(list_remote "$RCLONE_REMOTE/daily" "$DAILY_RE" | count)" \
   "$(list_remote "$RCLONE_REMOTE/weekly" "$WEEKLY_RE" | count)" \
   "$(list_remote "$RCLONE_REMOTE/manual" "$MANUAL_RE" | count)")
+
+if [ "$FIGURE_SYNC" = 1 ]; then
+  step "question-bank figures: copy $FIGURE_DIR to $RCLONE_REMOTE/qb-figures"
+  if [ -d "$FIGURE_DIR" ]; then
+    FIGURE_RESULT=failed
+    # Incremental and additive: files already there are skipped, nothing on the remote is deleted.
+    # Dot-files and *.tmp are half-written files of the app's atomic writes.
+    rclone copy --retries 3 --low-level-retries 10 -q --exclude '.*' --exclude '*.tmp' "$FIGURE_DIR" "$RCLONE_REMOTE/qb-figures" \
+      || fail "rclone could not copy the question-bank figures to $RCLONE_REMOTE/qb-figures (the database copy above is already off-server)"
+    FIGURE_RESULT=ok
+  else
+    FIGURE_RESULT=no_folder
+    log "no figure folder $FIGURE_DIR yet (no figures uploaded): nothing to copy"
+  fi
+fi
 
 write_status ok
 log "done in $(( $(date -u +%s) - STARTED ))s: $SUB/$FILE_NAME → $RCLONE_REMOTE; copies $COUNTS"

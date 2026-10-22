@@ -5,8 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui";
+import { districtOptions } from "@/components/forms/enquiry-payload";
 import { useLocale } from "@/i18n/client";
 import { format } from "@/i18n/format";
+import enAreas from "@/i18n/messages/en/crm-areas";
+import hiAreas from "@/i18n/messages/hi/crm-areas";
 import type { Messages } from "@/i18n/messages/types";
 import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
@@ -59,6 +62,8 @@ export function AddLeadForm({
   const a = t.add;
   const router = useRouter();
   const locale = useLocale();
+  // Lead routing (§13.8; LR-ROUTING): the district select's copy lives in the areas messages.
+  const district = (locale === "hi" ? hiAreas : enAreas).addLead;
   const [open, setOpen] = useState(openSignal !== null);
   const [values, setValues] = useState<ManualLeadValues>(EMPTY_MANUAL_LEAD);
   const [issues, setIssues] = useState<Partial<Record<ManualLeadField, ManualLeadIssue>>>({});
@@ -315,6 +320,30 @@ export function AddLeadForm({
                 {select("currentClass", a.class, options.classes)}
                 {select("programInterest", a.program, options.programs)}
                 <div className="sm:col-span-2">{select("centreSlug", a.centre, options.centres)}</div>
+                {!values.centreSlug && (
+                  <div className="flex flex-col gap-1.5 sm:col-span-2">
+                    <label htmlFor={`${id}-district`} className={labelClasses}>
+                      {district.district} <span className="font-normal text-muted">{t.common.optional}</span>
+                    </label>
+                    <select
+                      id={`${id}-district`}
+                      value={values.district}
+                      aria-describedby={`${id}-district-hint`}
+                      onChange={(event) => set("district")(event.target.value)}
+                      className={fieldClasses}
+                    >
+                      <option value="">{district.notGiven}</option>
+                      {districtOptions(locale, district.outsideHp).map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p id={`${id}-district-hint`} className="text-xs text-muted">
+                      {district.districtHint}
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-col gap-1.5">

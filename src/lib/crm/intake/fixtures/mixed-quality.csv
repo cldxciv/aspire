@@ -1,0 +1,9 @@
+Lead ID,Created,Form ID,Student Name,Parent Name,Mobile Number,Email,District,State,Class,Course,Centre,Message
+l:1234567890123491,2026-10-21T09:00:00+0000,900000000000003,Valid One,Parent One,+916000010061,one@example.com,Kangra,Himachal Pradesh,11,NEET,Dharamshala,"Please call after 5, not before"
+,2026-10-21T09:05:00+0000,900000000000003,No Id Two,,6000010062,,Distt. Kangra,HP,Class 10,JEE,,
+l:1234567890123493,2026-10-21T09:10:00+0000,900000000000003,Bad Phone,,12345,,Shimla,,12,,,
+l:1234567890123494,2026-10-21T09:15:00+0000,900000000000003,No Phone,,,,Una,,,,,
+l:1234567890123495,2026-10-21T09:20:00+0000,900000000000003,Foreign,,+447700900123,,London,,,,,
+l:1234567890123491,2026-10-21T09:00:00+0000,900000000000003,Valid One,Parent One,+916000010061,one@example.com,Kangra,Himachal Pradesh,11,NEET,Dharamshala,"Please call after 5, not before"
+,,,,,,,,,,,,
+l:1234567890123497,2026-10-21T09:30:00+0000,900000000000003,Unknown Place,,6000010067,,Pathankot,Punjab,,,Mandi,

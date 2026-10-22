@@ -6,6 +6,7 @@ import {
   LEAD_GATE_HEADER_REQUIRED,
   LEAD_GATE_LIMIT_HEADER,
   LEAD_GATE_MODES,
+  LEAD_GATE_ROLES,
   LEAD_GATE_USAGE_ENDPOINT,
   type LeadGateForgetData,
   type LeadGateStatusData,
@@ -35,6 +36,12 @@ const statusBody = z.object({
     expiresAt: z.string().nullable(),
     /** Absent from a server older than this page (deploy overlap) → false: never claim sample data unasked. */
     sample: z.boolean().optional(),
+    /** A signed-in student / parent account's pre-fill. Absent (older server) or malformed → nothing pre-filled. */
+    prefill: z
+      .object({ studentName: z.string().max(80).nullable(), submittedBy: z.enum(LEAD_GATE_ROLES) })
+      .nullable()
+      .optional()
+      .catch(null),
   }),
 });
 

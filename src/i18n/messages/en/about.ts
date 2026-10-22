@@ -9,10 +9,24 @@ const about = {
     description:
       "About Aspire IIT & Medical: our approach to IIT JEE, NEET and Foundation preparation and what we value in supporting students and families.",
   },
+  /**
+   * Design A · proof up front (2026-10-22). No figure lives here: the proof stats and the result card
+   * come from the data (DEMO-badged placeholders, hidden in production). `highlight` must appear in
+   * `title` exactly (it is set in gold); a wording without it simply renders a plain headline.
+   */
   hero: {
-    title: "About Aspire",
-    lead: "IIT JEE, NEET, Foundation and integrated school programs for students across Himachal Pradesh.",
+    eyebrow: "About Aspire IIT & Medical",
+    title: "IIT JEE and NEET coaching, right here in Himachal",
+    highlight: "Himachal",
+    lead: "IIT JEE, NEET, Foundation and integrated school programs for students across Himachal Pradesh, built on clear concepts, structured practice and regular feedback.",
     crumb: "About",
+    primaryCta: "Talk to a counsellor",
+    secondaryCta: "See our results",
+    /** Accessible name of the proof figures. */
+    statsLabel: "Aspire in numbers",
+    /** Badge on the collage's result card (previous batches, D-031). */
+    resultBadge: "Aspire result",
+    rancho: { title: "Stuck on a doubt?", action: "Ask Rancho" },
   },
   /** Sections built from the institute profile (placeholder: development / preview only). */
   profile: {

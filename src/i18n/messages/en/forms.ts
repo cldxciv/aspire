@@ -33,6 +33,17 @@ const forms = {
     notSureCentre: "Not sure yet",
     /** Centre option label for an unverified (placeholder) centre. Pages build the options. */
     centreUnverified: "{name} (verify availability)",
+    /**
+     * Lead routing (docs/lead-routing-plan.md §13.8): the optional district select, shown when no
+     * centre (or "not sure") is chosen. District names come from src/content/hp-districts.ts, never
+     * from this file; the last option is `outsideHp`.
+     */
+    district: {
+      label: "Your district",
+      hint: "Helps the nearest Aspire team call you back.",
+      placeholder: "Select your district",
+      outsideHp: "Outside Himachal",
+    },
     sending: "Sending…",
     options: {
       /** Keyed by the contract's CLASS_OPTIONS values. */
@@ -93,6 +104,7 @@ const forms = {
       currentClass: "Select the current class",
       programInterest: "Select a program",
       preferredCentre: "Select a centre from the list",
+      district: "Select a district from the list",
       guardianName: "Enter the parent or guardian's name",
       guardianNameTooLong: "Parent or guardian name is too long",
       classOrExam: "Select a class / target exam",

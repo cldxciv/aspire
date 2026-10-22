@@ -189,10 +189,12 @@ export async function POST(request: Request) {
     // Lead gate (plan §5.6), BEFORE the allowance and the body: a browser that must share contact
     // details first gets the gate 401 without its (up to ~5.6 MB) body being read and without
     // anything being reserved or counted. It also resolves the session (one lookup per request).
+    // Owner decision 22 Oct 2026: being signed in does not open it (staff and admins are asked like
+    // visitors; students and parents unless their account has a mobile number on file).
     const access = await resolveLeadGateAccess();
     gate = access;
     if (access.enforce) {
-      askLog({ ...logBase, outcome: "gate_required", account: "guest" });
+      askLog({ ...logBase, outcome: "gate_required", account: askerFor(access, request, config).account });
       return respond(leadGateRequiredResponse(GATE_MESSAGE));
     }
 

@@ -11,9 +11,43 @@ const results = {
       "Aspire's results archive publishes only verified, consent-aware records by exam and year, with the source of every entry.",
   },
   crumb: "Results",
+  /** Hero C · results ribbon (2026-10-22 hero redesign, src/components/hero). */
   hero: {
-    title: "Student success deserves to be documented accurately.",
+    /**
+     * True in both modes: the live demo site shows unverified DEMO cards under it, so the headline
+     * makes no claim about who the students are (the design's "Every rank … is a real Aspire
+     * student" would contradict the page's own demo notice).
+     */
+    title: "Results from Aspire's batches, year by year",
+    /** Phrase of `title` set in gold; must appear in `title` exactly. */
+    highlight: "year by year",
     lead: "A transparent archive of achievements by exam and year, with the source of every entry.",
+    /** The page's one main action (to /admissions#enquiry). */
+    cta: "Join the next batch",
+    /**
+     * Entries in the rankers list for the ribbon's year (getRankerYearCounts(): list entries, not
+     * ranks). Shown only when the data has entries for that year; `one` / `single` when only one
+     * exam has entries.
+     */
+    counts: {
+      both: "The {year} rankers list has {jee} JEE and {neet} NEET entries.",
+      one: "The {year} rankers list has {count} {exam} entries.",
+      single: "The {year} rankers list has 1 {exam} entry.",
+    },
+    /** ResultsRibbon labels (the year pills filter the ribbon). */
+    ribbon: {
+      /** Distinct from `cards.listLabel` (the mosaics beside the rankers list). */
+      listLabel: "Recent result cards from Aspire's batches",
+      yearGroup: "Show results from",
+      /** Last pill: every year in the ribbon, which holds only the newest {count} years (not the whole archive). */
+      allYears: "All {count} years",
+      pause: "Pause the result cards",
+      play: "Play the result cards",
+      previous: "Previous card",
+      next: "Next card",
+      position: "Card {current} of {total}",
+      hint: "A new card every 5 seconds",
+    },
   },
   notices: {
     demoTitle: "Demo data — pending verification",

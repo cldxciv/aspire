@@ -58,6 +58,7 @@ export function QuestionPalette({
   count,
   current,
   onSelect,
+  touch = false,
 }: {
   t: MocktestMessages["runner"];
   /** Status of every question in the test. */
@@ -67,9 +68,11 @@ export function QuestionPalette({
   count: number;
   current: number;
   onSelect: (index: number) => void;
+  /** 44 px targets (36 px swatch + 4 px padding; the generated-paper runner on tablets). The default keeps the fixed tests' size. */
+  touch?: boolean;
 }) {
   return (
-    <ol className="grid grid-cols-5 gap-2.5 sm:grid-cols-6 lg:grid-cols-5">
+    <ol className={cn("grid gap-2.5", touch ? "grid-cols-4 sm:grid-cols-5 lg:grid-cols-4" : "grid-cols-5 sm:grid-cols-6 lg:grid-cols-5")}>
       {Array.from({ length: count }, (_, offset) => {
         const index = start + offset;
         const status = statuses[index];
@@ -82,7 +85,8 @@ export function QuestionPalette({
               aria-current={isCurrent ? "step" : undefined}
               aria-label={format(t.paletteItem, { n: index + 1, status: t.status[status] })}
               className={cn(
-                "rounded-md p-0.5 outline-offset-2 focus-visible:outline-2 focus-visible:outline-blue",
+                "rounded-md outline-offset-2 focus-visible:outline-2 focus-visible:outline-blue",
+                touch ? "p-1" : "p-0.5",
                 isCurrent && "ring-2 ring-gold ring-offset-1",
               )}
             >

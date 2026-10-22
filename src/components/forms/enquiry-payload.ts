@@ -4,7 +4,10 @@
  * Kept free of React so they can be unit-tested (enquiry-form.test.ts).
  */
 
+import { HP_DISTRICTS } from "@/content/hp-districts";
+import type { Locale } from "@/i18n/config";
 import type { EnquiryContext } from "@/lib/contracts/enquiry";
+import { HP_DISTRICT_IDS, OUTSIDE_HP } from "@/lib/crm/lead-ops-types";
 import type { EnquiryFormVariant } from "./EnquiryForm";
 
 export type FieldName =
@@ -14,6 +17,7 @@ export type FieldName =
   | "phone"
   | "email"
   | "preferredCentre"
+  | "district"
   | "topic"
   | "message"
   | "consent";
@@ -25,9 +29,27 @@ export type Intent = "enquiry" | "scholarship";
 /** DOM order per variant — used to pick (and focus) the first invalid field. */
 export const FIELD_ORDER: Record<EnquiryFormVariant, FieldName[]> = {
   quick: ["name", "currentClass", "programInterest", "phone", "consent"],
-  admissions: ["name", "currentClass", "programInterest", "phone", "email", "preferredCentre", "message", "consent"],
-  contact: ["name", "phone", "email", "topic", "message", "consent"],
+  admissions: ["name", "currentClass", "programInterest", "phone", "email", "preferredCentre", "district", "message", "consent"],
+  contact: ["name", "phone", "email", "topic", "district", "message", "consent"],
 };
+
+/** Centre values that mean "no centre chosen": the district select is shown for them (§13.8). */
+export function needsDistrict(centre: string | null | undefined): boolean {
+  return !centre || centre === "not-sure";
+}
+
+/**
+ * The district select's options (lead routing §13.8): Himachal's 12 districts in the page's
+ * language (names from src/content/hp-districts.ts, values = the contract's ids), then "Outside
+ * Himachal". Sorted by the visible name.
+ */
+export function districtOptions(locale: Locale, outsideLabel: string): { value: string; label: string }[] {
+  const names = new Map(HP_DISTRICTS.map((district) => [district.id as string, locale === "hi" ? district.hi : district.en]));
+  const districts = HP_DISTRICT_IDS.map((id) => ({ value: id as string, label: names.get(id) ?? id })).sort((a, b) =>
+    a.label.localeCompare(b.label, locale === "hi" ? "hi" : "en"),
+  );
+  return [...districts, { value: OUTSIDE_HP, label: outsideLabel }];
+}
 
 function text(data: FormData, key: string): string {
   const value = data.get(key);
@@ -74,6 +96,8 @@ export function buildPayload(
         programInterest: text(data, "programInterest"),
         email: optional("email"),
         preferredCentre: hasCentreField ? optional("preferredCentre") : undefined,
+        // Only rendered (so only sent) while no centre is chosen (§13.8).
+        district: optional("district"),
         message: optional("message"),
       };
     case "contact":
@@ -81,6 +105,7 @@ export function buildPayload(
         ...base,
         email: optional("email"),
         topic: text(data, "topic"),
+        district: optional("district"),
         message: optional("message"),
       };
   }
@@ -99,6 +124,8 @@ export type HeroPayload = {
   guardianName: string;
   phone: string;
   preferredCentre?: string;
+  /** Lead routing (§13.8): sent only while no centre is chosen. */
+  district?: string;
   message?: string;
   consent: boolean;
   /** From ConsentField's hidden input (step 3). */
@@ -122,6 +149,7 @@ export function buildHeroPayload(data: FormData, hasCentreField: boolean, contex
     guardianName: text(data, "guardianName"),
     phone: text(data, "phone"),
     preferredCentre: hasCentreField ? optional("preferredCentre") : undefined,
+    district: optional("district"),
     message: optional("message"),
     consent: data.has("consent"),
     consentVersion: text(data, "consentVersion"),

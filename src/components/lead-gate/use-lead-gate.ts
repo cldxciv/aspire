@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 
-import type { LeadGateTool, LeadGateUsageInput } from "@/lib/lead-gate/contract";
+import type { LeadGateTool, LeadGateUsageInput, LeadGateUsageKey } from "@/lib/lead-gate/contract";
 
 import { leadGateStore, type LeadGateState, type LeadGateStore, type LeadGateUnlockEvent } from "./lead-gate-store";
 
@@ -25,10 +25,19 @@ import { leadGateStore, type LeadGateState, type LeadGateStore, type LeadGateUnl
  *   (isLeadGateResponse) call `markRequired()`; the form then never offers "continue without saving".
  * - `sample` (from the store): the site shows sample data. Gate anyway (owner decision 21 Oct 2026);
  *   <LeadGateForm> already prints the honest sample-data line, so hosts add no copy of their own.
+ * - Signed-in accounts (owner decision 22 Oct 2026) need nothing from the host: the server decides.
+ *   Staff and admins see the visitor's form; a student or parent account sees it with its name and
+ *   role pre-filled (store `prefill`) and is let through only with a mobile number on file.
+ * - `usageKey` (planner only): a planner feature other than a study plan. The homepage widget's
+ *   exam countdown uses `useLeadGate({ tool: "planner", usageKey: "countdown" })`: `recordUse({ exam })`
+ *   then notes "Study planner · exam countdown · <exam>" on the family's record, and the form's
+ *   button reads `messages.submitFor.countdown` ("Show my countdown").
  */
 
 export interface UseLeadGateOptions {
   tool: LeadGateTool;
+  /** Planner only: which planner feature this host is (LEAD_GATE_USAGE_KEYS, e.g. "countdown"). */
+  usageKey?: LeadGateUsageKey;
   enforced?: boolean;
   onUnlocked?: (info: { byThisHost: boolean; via: LeadGateUnlockEvent["via"] }) => void;
   /** Tests / storybook only. */
@@ -40,6 +49,8 @@ export interface LeadGateFormBinding {
   hostId: string;
   enforced: boolean;
   store: LeadGateStore;
+  /** Planner feature (planner hosts that passed `usageKey`), for the form's button label. */
+  usageKey?: LeadGateUsageKey;
 }
 
 export interface UseLeadGate extends LeadGateState {
@@ -63,6 +74,7 @@ export function useLeadGate(options: UseLeadGateOptions): UseLeadGate {
   const hostId = useId();
   const enforced = options.enforced === true;
   const { tool } = options;
+  const usageKey = tool === "planner" ? options.usageKey : undefined;
 
   // The unlockSeq at the time the host was refused; null = not waiting.
   const [waitingSince, setWaitingSince] = useState<number | null>(null);
@@ -115,9 +127,13 @@ export function useLeadGate(options: UseLeadGateOptions): UseLeadGate {
     (input) => {
       const usageTool = input.tool ?? (tool === "predictor" || tool === "planner" ? tool : null);
       if (!usageTool) return; // Rancho and mock-test scores are recorded by their own server routes
-      store.recordUse({ ...input, tool: usageTool });
+      const key = usageTool === "planner" ? (input.key ?? usageKey) : undefined;
+      const usage: LeadGateUsageInput = { ...input, tool: usageTool };
+      if (key) usage.key = key;
+      else delete usage.key; // only the planner names a feature
+      store.recordUse(usage);
     },
-    [store, tool],
+    [store, tool, usageKey],
   );
 
   const forget = useCallback<LeadGateStore["forget"]>((forgetOptions) => store.forget(forgetOptions), [store]);
@@ -130,7 +146,7 @@ export function useLeadGate(options: UseLeadGateOptions): UseLeadGate {
     closeGate,
     recordUse,
     forget,
-    formProps: { tool, hostId, enforced, store },
+    formProps: { tool, hostId, enforced, store, ...(usageKey ? { usageKey } : {}) },
   };
 }
 

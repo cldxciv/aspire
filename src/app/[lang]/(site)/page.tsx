@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Fragment, type ReactNode } from "react";
 import { CampusLifeTiles } from "@/components/home/CampusLifeTiles";
 import { CentresShowcase } from "@/components/home/CentresShowcase";
 import { CtaBand } from "@/components/home/CtaBand";
@@ -11,12 +10,13 @@ import { ImpactChart } from "@/components/home/ImpactChart";
 import { ProgramPaths } from "@/components/home/ProgramPaths";
 import { ResourcesTeaser } from "@/components/home/ResourcesTeaser";
 import { ResultsShowcase } from "@/components/home/ResultsShowcase";
-import { StatsBand } from "@/components/home/StatsBand";
+import { StatsBand, statsBandHasItems } from "@/components/home/StatsBand";
 import { pickHomeTestimonials, TestimonialsSection } from "@/components/home/TestimonialsSection";
 import { WhyAspire } from "@/components/home/WhyAspire";
+import { layoutPreviewBanner } from "@/components/page-layout/preview-banner";
+import { PageLayoutFrame, type LayoutSlots } from "@/components/page-layout/render";
 import { ResultCardMarquee } from "@/components/results/ResultCardMarquee";
 import { interleaveCards, resultMosaicMedia } from "@/components/results/ResultMosaicMedia";
-import type { SectionTone } from "@/components/ui";
 import { format } from "@/i18n/format";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
 import {
@@ -34,6 +34,7 @@ import {
   getTestimonials,
   isPlaceholder,
 } from "@/lib/data";
+import { getPageLayout } from "@/lib/page-layout/loader";
 import { getEnquiryDeliveryStatus } from "@/lib/server/env";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -55,15 +56,20 @@ export async function generateMetadata(): Promise<Metadata> {
  * previous result cards (three disjoint sets, newest JEE and NEET mixed); without visible cards
  * (production today) each falls back to labelled non-nature stock photos (the closing band to a
  * carousel). Programs and student life carry stock-photo carousels in both modes; no photo is used
- * twice on the page (home-carousels.ts). The student-tools widget (between programs and "why") has
- * no photos.
+ * twice on the page (home-carousels.ts). The student-tools widget (between programs and "why" by
+ * default) has no photos.
+ * Page layout (docs/page-layout-plan.md): the sections after the hero follow the published layout
+ * (`getPageLayout("home")`, editable by a super admin; the closing band stays last, the tools are
+ * never last). Each section is a slot; tones alternate over the sections that render
+ * (PageLayoutFrame), so the default layout looks exactly as before.
  */
 export default async function HomePage() {
-  const [locale, t, tForms, common] = await Promise.all([
+  const [locale, t, tForms, common, layout] = await Promise.all([
     getLocale(),
     getMessages("home"),
     getMessages("forms"),
     getMessages("common"),
+    getPageLayout("home"),
   ]);
   const [stats, featured, programs, profile, centres, hostel, testimonials, yearCounts, articles, contact, jeeCards, neetCards] =
     await Promise.all([
@@ -102,74 +108,42 @@ export default async function HomePage() {
     label: isPlaceholder(centre) ? format(tForms.shared.centreUnverified, { name: centre.name }) : centre.name,
   }));
 
-  // White / surface alternate over the sections that actually render. Stats (blue band), centres
-  // (navy split) and the photo CTA bring their own backgrounds and sit outside the rhythm.
-  const toned: { key: string; show: boolean; render: (tone: SectionTone) => ReactNode }[] = [
-    {
-      key: "results",
-      show: true,
-      render: (tone) => <ResultsShowcase results={results} locale={locale} tone={tone} media={resultsMedia} />,
-    },
-    { key: "programs", show: true, render: (tone) => <ProgramPaths programs={programs} locale={locale} tone={tone} /> },
-    // Student tools widget: mid-page, between programs and "why" (owner request). Always shown —
-    // without visible tool data each panel describes its tool and links to it.
-    { key: "tools", show: true, render: (tone) => <HomeTools tools={toolsData} locale={locale} tone={tone} /> },
-    {
-      key: "why",
-      show: true,
-      render: (tone) => <WhyAspire profile={profile} locale={locale} tone={tone} media={whyMedia} />,
-    },
-  ];
-  const tonedAfterCentres: typeof toned = [
-    {
-      key: "life",
-      show: true,
-      render: (tone) => (
-        <CampusLifeTiles
-          hostel={hostel}
-          centres={centres}
-          match={{ hostel: hostelEn, centres: centresEn }}
-          locale={locale}
-          tone={tone}
-        />
-      ),
-    },
-    {
-      key: "voices",
-      show: pickHomeTestimonials(testimonialsEn).length > 0,
-      render: (tone) => (
-        <TestimonialsSection testimonials={testimonials} match={testimonialsEn} locale={locale} tone={tone} />
-      ),
-    },
-    {
-      key: "impact",
-      show: yearCounts.length > 0,
-      render: (tone) => <ImpactChart counts={yearCounts} rankerStat={rankerStat} locale={locale} tone={tone} />,
-    },
-    {
-      key: "resources",
-      show: articles.length > 0,
-      render: (tone) => <ResourcesTeaser articles={articles} locale={locale} tone={tone} />,
-    },
-  ];
-  const renderSections = (sections: typeof toned, start: SectionTone) => {
-    let next = start;
-    return sections
-      .filter((section) => section.show)
-      .map((section) => {
-        const tone = next;
-        next = tone === "white" ? "surface" : "white";
-        return <Fragment key={section.key}>{section.render(tone)}</Fragment>;
-      });
-  };
-
-  return (
-    <>
-      <HomeHero centreOptions={centreOptions} deliveryStatus={getEnquiryDeliveryStatus()} locale={locale} />
-      <StatsBand stats={stats} locale={locale} />
-      {renderSections(toned, "white")}
-      <CentresShowcase centres={centres} locale={locale} />
-      {renderSections(tonedAfterCentres, "white")}
+  // One slot per section, rendered in layout order. A slot is null exactly when its section would
+  // render nothing (the component returns null), so empty sections never take a tone. White /
+  // surface alternate over the sections that render; stats (blue band), centres (navy split) and the
+  // photo CTA bring their own backgrounds and restart the rhythm at white (registry "own").
+  const slots: LayoutSlots<"home"> = {
+    stats: statsBandHasItems(stats) ? () => <StatsBand stats={stats} locale={locale} /> : null,
+    results: ({ tone }) => <ResultsShowcase results={results} locale={locale} tone={tone} media={resultsMedia} />,
+    programs: ({ tone }) => <ProgramPaths programs={programs} locale={locale} tone={tone} />,
+    // Student tools widget: mid-page, between programs and "why" by default (owner request), and
+    // never the last section (registry `notLast`). Always shown — without visible tool data each
+    // panel describes its tool and links to it.
+    tools: ({ tone }) => <HomeTools tools={toolsData} locale={locale} tone={tone} />,
+    why: ({ tone }) => <WhyAspire profile={profile} locale={locale} tone={tone} media={whyMedia} />,
+    centres: centres.length > 0 ? () => <CentresShowcase centres={centres} locale={locale} /> : null,
+    life: ({ tone }) => (
+      <CampusLifeTiles
+        hostel={hostel}
+        centres={centres}
+        match={{ hostel: hostelEn, centres: centresEn }}
+        locale={locale}
+        tone={tone}
+      />
+    ),
+    voices:
+      pickHomeTestimonials(testimonialsEn).length > 0
+        ? ({ tone }) => (
+            <TestimonialsSection testimonials={testimonials} match={testimonialsEn} locale={locale} tone={tone} />
+          )
+        : null,
+    impact:
+      yearCounts.length > 0
+        ? ({ tone }) => <ImpactChart counts={yearCounts} rankerStat={rankerStat} locale={locale} tone={tone} />
+        : null,
+    resources:
+      articles.length > 0 ? ({ tone }) => <ResourcesTeaser articles={articles} locale={locale} tone={tone} /> : null,
+    cta: () => (
       <CtaBand
         variant="photo"
         headingId="home-cta-title"
@@ -189,6 +163,15 @@ export default async function HomePage() {
           stockPhoto: common.labels.illustrativeStockPhoto,
         }}
       />
-    </>
+    ),
+  };
+
+  return (
+    <PageLayoutFrame
+      layout={layout}
+      banner={await layoutPreviewBanner(layout)}
+      hero={<HomeHero centreOptions={centreOptions} deliveryStatus={getEnquiryDeliveryStatus()} locale={locale} />}
+      slots={slots}
+    />
   );
 }

@@ -232,7 +232,7 @@ const rancho = {
        * details (the browser didn't keep the pass: cookies blocked, or the pass rejected).
        */
       notKept:
-        "Rancho still couldn't answer: this browser didn't remember that you shared your details. Cookies may be blocked: allow cookies for this site or sign in, then try again.",
+        "Rancho still couldn't answer: this browser didn't remember that you shared your details. Cookies may be blocked: allow cookies for this site, then try again.",
       /** The composer's placeholder while a question waits for the form (the composer is disabled). */
       composerWaiting: "Your question is waiting above.",
       /** Contact details were shared in another tab or tool while the question waited. */

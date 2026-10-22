@@ -17,12 +17,13 @@ import { ResultMarqueeFrame } from "./ResultMarqueeFrame";
  * and fallback rules as ResultCardMosaic: no visible cards (production today) → `fallback`, else
  * `fallbackImage`, else nothing. Placeholder cards carry the DEMO badge.
  *
- * Motion (ResultMarqueeFrame): always plays. Normally a smooth CSS loop (no JS needed); under
- * prefers-reduced-motion, once hydrated, it advances one card at a time with instant jumps (no
- * continuous motion) every 8 s at least, and the strip stays a keyboard-scrollable row. Both pause
- * on hover, keyboard focus in the strip, a hidden tab, when off screen and with the visible
- * "Pause" toggle (WCAG 2.2.2), which sticks until unticked. Never wider than its container, so it
- * cannot cause horizontal page scroll.
+ * Motion (ResultMarqueeFrame): always plays, also while the mouse rests on it. Normally a smooth
+ * CSS loop (no JS needed); under prefers-reduced-motion, once hydrated, it advances one card every
+ * 5 s (`AUTOPLAY_MS`) with instant jumps (no continuous motion), and the strip stays a
+ * keyboard-scrollable row. Both rest while the tab is hidden or the strip is off screen, and stop
+ * with the visible "Pause" toggle (WCAG 2.2.2), which sticks until unticked; keyboard focus in the
+ * strip ticks it for the visitor. Never wider than its container, so it cannot cause horizontal
+ * page scroll.
  */
 export async function ResultCardMarquee({
   locale,
@@ -44,8 +45,8 @@ export async function ResultCardMarquee({
   year?: number;
   limit?: number;
   /**
-   * Speed: one full loop takes `cards × secondsPerCard` seconds (at least 10). Under reduced motion
-   * it steps one card every `secondsPerCard` seconds, but never more often than every 8 s.
+   * Speed of the normal-motion loop: one full loop takes `cards × secondsPerCard` seconds (at least
+   * 10). Under reduced motion it steps one card every 5 s (`AUTOPLAY_MS`) whatever this is.
    */
   secondsPerCard?: number;
   /** "See all results" link under the strip; default localePath("/results", locale); null hides it. */
@@ -86,7 +87,6 @@ export async function ResultCardMarquee({
       pauseLabel={t.pauseLabel}
       pauseText={t.pause}
       loopSeconds={Math.max(shown.length * secondsPerCard, 10)}
-      stepMs={secondsPerCard * 1000}
       footer={
         href && (
           <Link href={href} className="inline-flex items-center gap-1.5 text-sm font-bold text-blue hover:underline">

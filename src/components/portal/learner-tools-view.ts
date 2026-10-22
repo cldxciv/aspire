@@ -18,14 +18,23 @@ import type { ExamId } from "@/lib/planner/types";
 
 export type ToolAudience = "student" | "parent";
 
-/** A mock test visible in this build: its title in the page's language and whether it is sample content. */
-export type VisibleTest = { title: string; sample: boolean };
+/**
+ * A mock test visible in this build: its title in the page's language and whether it is sample content.
+ * `examSlot`: an exam-pattern mock ("bp-…" test ids), whose saved attempts open on
+ * /tools/mock-tests/exam/<slot>/result (it has no certificate or parent report page).
+ */
+export type VisibleTest = { title: string; sample: boolean; examSlot?: string };
+
+/** A page of one saved attempt; `path` is locale-free (the panel localises it). */
+export type MockAttemptLink = { page: "result" | "certificate" | "report"; path: string };
 
 export type MockAttemptView = {
   id: string;
   testId: string;
   title: string;
   sample: boolean;
+  /** The attempt's own pages, in display order. */
+  links: MockAttemptLink[];
   score: number;
   maxScore: number;
   correct: number;
@@ -106,20 +115,32 @@ function accuracyOf(correct: number, wrong: number): number | null {
   return answered > 0 ? correct / answered : null;
 }
 
+/** Where a saved attempt opens: result, certificate and report for a fixed test; the result only for an exam-pattern paper. */
+export function mockAttemptLinks(attempt: { id: string; testId: string }, test: Pick<VisibleTest, "examSlot">): MockAttemptLink[] {
+  const query = `?saved=${encodeURIComponent(attempt.id)}`;
+  if (test.examSlot) return [{ page: "result", path: `/tools/mock-tests/exam/${encodeURIComponent(test.examSlot)}/result${query}` }];
+  const base = `/tools/mock-tests/${encodeURIComponent(attempt.testId)}`;
+  return (["result", "certificate", "report"] as const).map((page) => ({ page, path: `${base}/${page}${query}` }));
+}
+
 export function buildMockTestsView({
   attempts,
   summary,
   tests,
+  sampleAttempts,
 }: {
   /** Newest first (listAttemptsForStudent). */
   attempts: readonly SavedAttemptSummary[];
   summary: AttemptsSummary | null;
   /** Visible tests by id, in catalog order. */
   tests: ReadonlyMap<string, VisibleTest>;
+  /** Attempts on a paper that had sample questions (exam-pattern papers are labelled per paper, not per test). */
+  sampleAttempts?: ReadonlySet<string>;
 }): MockTestsView {
   if (tests.size === 0) return { status: "comingSoon" };
   const visible = attempts.filter((attempt) => tests.has(attempt.testId));
   const noneHidden = summary !== null && visible.length === attempts.length;
+  const sampleAttempt = (id: string) => sampleAttempts?.has(id) === true;
 
   const recent: MockAttemptView[] = visible.slice(0, RECENT_ATTEMPTS_LIMIT).map((attempt) => {
     const test = tests.get(attempt.testId) as VisibleTest;
@@ -127,7 +148,8 @@ export function buildMockTestsView({
       id: attempt.id,
       testId: attempt.testId,
       title: test.title,
-      sample: test.sample,
+      sample: test.sample || sampleAttempt(attempt.id),
+      links: mockAttemptLinks(attempt, test),
       score: attempt.score,
       maxScore: attempt.maxScore,
       correct: attempt.correct,
@@ -154,7 +176,8 @@ export function buildMockTestsView({
   }
   const best: MockBestView[] = [...tests].flatMap(([testId, test]) => {
     const entry = bestById.get(testId);
-    return entry ? [{ testId, title: test.title, sample: test.sample, ...entry }] : [];
+    const sample = test.sample || visible.some((a) => a.testId === testId && sampleAttempt(a.id));
+    return entry ? [{ testId, title: test.title, sample, ...entry }] : [];
   });
 
   let totals: { totalAttempts: number; testsTaken: number; averageAccuracy: number | null; longestStreakDays: number; badges: BadgeId[] };

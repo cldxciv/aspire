@@ -2,6 +2,7 @@ import { ArrowRight, Clock, Mail, MapPin, Phone } from "lucide-react";
 import type { Metadata } from "next";
 import { FillMediaSplit } from "@/components/about/FillMediaSplit";
 import { PhotoPanel } from "@/components/about/PhotoPanel";
+import { finderLabels } from "@/components/centres/finder-labels";
 import { CampusDesks, type CampusDesk } from "@/components/contact/CampusDesks";
 import { ContactDetailsList } from "@/components/contact/ContactDetailsList";
 import { mailtoHref, telHref } from "@/components/contact/contact-links";
@@ -15,14 +16,26 @@ import {
 import { CONTACT_LINK_CLASS, DetailRow } from "@/components/contact/DetailRow";
 import { SocialLinks } from "@/components/contact/SocialLinks";
 import { EnquiryForm } from "@/components/forms/EnquiryForm";
-import { ButtonLink, Card, DemoBadge, Notice, PageHero, Section, SectionHeading } from "@/components/ui";
-import { heroSlides } from "@/components/ui/hero-slides";
+import {
+  CentreFinder,
+  HeroAction,
+  HeroCollage,
+  HeroCopy,
+  HeroPanel,
+  finderCentres,
+  finderDistricts,
+  type FinderAction,
+} from "@/components/hero";
+import { layoutPreviewBanner } from "@/components/page-layout/preview-banner";
+import { PageLayoutFrame, type LayoutSlots } from "@/components/page-layout/render";
+import { ButtonLink, Card, DemoBadge, Notice, Section, SectionHeading } from "@/components/ui";
 import { siteConfig } from "@/config/site";
 import { stockImages } from "@/content/images";
 import type { Messages } from "@/i18n/messages/types";
 import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
 import { getCentres, getContactDetails, getInstituteProfile, isPlaceholder, localizeImage } from "@/lib/data";
+import { getPageLayout } from "@/lib/page-layout/loader";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getMessages("contact");
@@ -33,12 +46,30 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+/** The hero finder's buttons on /contact: reach the chosen district's centre (each only when the data has it). */
+const FINDER_ACTIONS: readonly FinderAction[] = ["call", "whatsapp", "directions"];
+
+/**
+ * Contact. Hero (E · centre finder, 2026-10-22 hero redesign): choose a district to see the centre
+ * that serves it, with Call (the campus desk's number from the contact details), WhatsApp (the
+ * institute's chat link) and Directions (when the centre record has a link), beside an
+ * illustrative map. Without publishable centres (production today) the hero is the headline, a
+ * "Send an enquiry" link to the form below and two labelled stock photos (D-030, never a
+ * landscape or a result card, D-031).
+ * Page layout (docs/page-layout-plan.md): the sections after the hero follow the published layout
+ * (`getPageLayout("contact")`, editable by a super admin; no closing band, and the enquiry form
+ * that links point to can't be hidden). Each section is a slot; tones alternate over the sections
+ * that render (PageLayoutFrame) and the form's and details' photos switch sides with the tone (D8),
+ * so the default layout looks exactly as before.
+ */
 export default async function ContactPage() {
-  const [locale, t, tc, tForms] = await Promise.all([
+  const [locale, t, tc, tForms, tCentres, layout] = await Promise.all([
     getLocale(),
     getMessages("contact"),
     getMessages("common"),
     getMessages("forms"),
+    getMessages("centres"),
+    getPageLayout("contact"),
   ]);
   // getContactDetails() is null in production until Aspire verifies the details (D-005 / D-020).
   const [details, centres, profile] = await Promise.all([
@@ -65,27 +96,21 @@ export default async function ContactPage() {
     };
   });
 
-  return (
-    <>
-      <PageHero
-        title={t.hero.title}
-        lead={t.hero.lead}
-        crumbs={[{ label: t.hero.crumb }]}
-        homeLabel={tc.labels.home}
-        homeHref={localePath("/", locale)}
-        slides={heroSlides(
-          CONTACT_HERO_KEYS.map((key) => stockImages[key]),
-          photoLabel,
-          locale,
-        )}
-      />
+  // Hero finder: each centre with its campus desk's phone (contact details) and the institute's WhatsApp.
+  const deskPhone = new Map((details?.campusContacts ?? []).map((desk) => [desk.centreSlug, desk.phone?.display]));
+  const finderSource = centres.map((centre) => ({ ...centre, phone: deskPhone.get(centre.slug) ?? centre.phone }));
+  const hasCentres = centres.length > 0;
 
-      {/* D-030: the form beside a tall photo from lg (after the form below lg, so the form stays near the top
-          and keeps its full width on tablets). */}
-      <Section>
+  // One slot per section, rendered in layout order. The campus desks slot is null exactly when the
+  // section would render nothing (no verified desks), so it never takes a tone.
+  const slots: LayoutSlots<"contact"> = {
+    // D-030: the form beside a tall photo from lg (after the form below lg, so the form stays near the top
+    // and keeps its full width on tablets).
+    form: ({ tone, side }) => (
+      <Section tone={tone} id="contact-form" className="scroll-mt-24">
         <FillMediaSplit
           image={localizeImage(stockImages[CONTACT_FORM_PHOTO], locale)}
-          imageSide="right"
+          imageSide={side}
           imageLabel={photoLabel}
           imageFirstOnMobile={false}
           splitFrom="lg"
@@ -97,11 +122,13 @@ export default async function ContactPage() {
           </Card>
         </FillMediaSplit>
       </Section>
+    ),
 
-      <Section tone="surface">
+    details: ({ tone, side }) => (
+      <Section tone={tone}>
         <FillMediaSplit
           image={localizeImage(stockImages[CONTACT_DETAILS_PHOTO], locale)}
-          imageSide="left"
+          imageSide={side}
           imageWidth="wide"
           imageLabel={photoLabel}
         >
@@ -126,8 +153,10 @@ export default async function ContactPage() {
           </Card>
         </FillMediaSplit>
       </Section>
+    ),
 
-      <Section aria-labelledby="contact-help-heading">
+    help: ({ tone }) => (
+      <Section tone={tone} aria-labelledby="contact-help-heading">
         <PhotoPanel image={localizeImage(stockImages[CONTACT_HELP_PHOTO], locale)} imageLabel={photoLabel} minHeight="lg">
           <h2
             id="contact-help-heading"
@@ -149,26 +178,65 @@ export default async function ContactPage() {
           </ButtonLink>
         </PhotoPanel>
       </Section>
+    ),
 
-      {desks.length > 0 && (
-        <Section tone="surface" id="campus-desks" aria-labelledby="campus-desks-heading" className="scroll-mt-24">
-          <SectionHeading
-            id="campus-desks-heading"
-            eyebrow={t.desks.eyebrow}
-            title={t.desks.title}
-            description={t.desks.description}
+    desks:
+      desks.length > 0
+        ? ({ tone }) => (
+            <Section tone={tone} id="campus-desks" aria-labelledby="campus-desks-heading" className="scroll-mt-24">
+              <SectionHeading
+                id="campus-desks-heading"
+                eyebrow={t.desks.eyebrow}
+                title={t.desks.title}
+                description={t.desks.description}
+              />
+              <CampusDesks
+                desks={desks}
+                locale={locale}
+                labels={t.desks}
+                demoLabel={tc.labels.demoPending}
+                photoLabel={photoLabel}
+              />
+              {desks.some((desk) => desk.photo) && <p className="mt-4 text-xs text-muted">{t.desks.photoNote}</p>}
+            </Section>
+          )
+        : null,
+  };
+
+  return (
+    <PageLayoutFrame
+      layout={layout}
+      banner={await layoutPreviewBanner(layout)}
+      hero={
+        <HeroPanel>
+          <CentreFinder
+            copy={
+              <HeroCopy
+                title={t.hero.title}
+                highlight={t.hero.highlight}
+                lead={hasCentres ? t.hero.finderLead : t.hero.lead}
+                crumbs={[{ label: t.hero.crumb }]}
+                homeLabel={tc.labels.home}
+                homeHref={localePath("/", locale)}
+                actions={hasCentres ? undefined : <HeroAction href="#contact-form">{t.form.title}</HeroAction>}
+              />
+            }
+            centres={finderCentres(finderSource, { whatsapp: details?.whatsapp ?? null })}
+            districts={finderDistricts(centres, locale)}
+            labels={finderLabels(tCentres, tc)}
+            actions={FINDER_ACTIONS}
+            fallback={
+              <HeroCollage
+                photos={CONTACT_HERO_KEYS.map((key) => ({ image: localizeImage(stockImages[key], locale), label: photoLabel }))}
+                resultBadge=""
+                demoLabel={tc.labels.demo}
+              />
+            }
           />
-          <CampusDesks
-            desks={desks}
-            locale={locale}
-            labels={t.desks}
-            demoLabel={tc.labels.demoPending}
-            photoLabel={photoLabel}
-          />
-          {desks.some((desk) => desk.photo) && <p className="mt-4 text-xs text-muted">{t.desks.photoNote}</p>}
-        </Section>
-      )}
-    </>
+        </HeroPanel>
+      }
+      slots={slots}
+    />
   );
 }
 

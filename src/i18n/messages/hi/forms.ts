@@ -16,6 +16,12 @@ const forms: Messages<"forms"> = {
     honeypotLabel: "यह फ़ील्ड खाली छोड़ें",
     notSureCentre: "अभी तय नहीं",
     centreUnverified: "{name} (उपलब्धता की पुष्टि करें)",
+    district: {
+      label: "आपका ज़िला",
+      hint: "इससे Aspire की सबसे नज़दीकी टीम आपको कॉल कर पाती है।",
+      placeholder: "अपना ज़िला चुनें",
+      outsideHp: "हिमाचल से बाहर",
+    },
     sending: "भेजा जा रहा है…",
     options: {
       class: {
@@ -71,6 +77,7 @@ const forms: Messages<"forms"> = {
       currentClass: "वर्तमान कक्षा चुनें",
       programInterest: "प्रोग्राम चुनें",
       preferredCentre: "सूची में से केंद्र चुनें",
+      district: "सूची में से ज़िला चुनें",
       guardianName: "माता-पिता या अभिभावक का नाम लिखें",
       guardianNameTooLong: "माता-पिता या अभिभावक का नाम बहुत लंबा है",
       classOrExam: "कक्षा / लक्ष्य परीक्षा चुनें",

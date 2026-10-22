@@ -1,0 +1,2 @@
+# Byte-exact fixtures (BOMs, UTF-16, CRLF vs LF, windows-1252): never convert line endings.
+*.csv -text

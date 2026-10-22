@@ -4,19 +4,15 @@ import type { StockImageKey } from "@/content/images";
  * Stock photos on /contact (D-030; licensed stock only, D-018). Study / desk / form scenes only:
  * no landscapes and no result cards (D-031), and nothing that reads as an Aspire campus or office.
  * Every photo appears once per page, so the hero and body lists must never overlap
- * (contact-photos.test.ts checks it).
+ * (contact-page.test.ts checks it).
  */
 
 /**
- * Hero carousel, in slide order: a student taking notes, an enquiry form, planning at a desk, worked
- * practice (1600px 3:2 sources where possible, so the hero stays sharp on DPR-2 tablets).
+ * Hero collage while the centre finder has no centres to show (production until the records are
+ * verified): an enquiry form (large) and a student taking notes (small). With centres, the hero
+ * shows the finder's illustrative map instead and no photo.
  */
-export const CONTACT_HERO_KEYS = [
-  "youngStudentNotebook",
-  "signingForm",
-  "notebookPlanning",
-  "notebookSolutions",
-] as const satisfies readonly StockImageKey[];
+export const CONTACT_HERO_KEYS = ["signingForm", "youngStudentNotebook"] as const satisfies readonly StockImageKey[];
 
 /** Beside the enquiry form. */
 export const CONTACT_FORM_PHOTO: StockImageKey = "laptopStudy";

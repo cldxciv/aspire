@@ -25,8 +25,12 @@ import { format } from "@/i18n/format";
 import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
 import type { CrmPermissions, CrmViewer, LeadActivity, LeadDetail, LeadTask } from "@/lib/crm/types";
+import { CallReturnPrompt } from "./CallReturnPrompt";
+import { ChangeAreaButton } from "./ChangeAreaButton";
 import { CrmPageHeader, DueLabel, RelativeTime, SourceBadges, StageBadge } from "./CrmBlocks";
 import {
+  accountLinkLabel,
+  areaName,
   backLabel,
   bandLabel,
   centreLabel,
@@ -44,6 +48,9 @@ import {
   needsParentConfirmation,
   outcomeLabel,
   programLabel,
+  routingMatchLabel,
+  routingOutcomeLabel,
+  slaTimeLabel,
   sourceLabel,
   stageLabel,
   submitterLabel,
@@ -70,6 +77,7 @@ import {
   type DetailOptions,
   type LeadIslandMessages,
 } from "./LeadActions";
+import { SlaChip } from "./SlaChip";
 import type { Option } from "./types";
 
 export type LeadDetailProps = {
@@ -142,6 +150,7 @@ export function LeadDetailView({
             <span className="flex flex-wrap items-center gap-2 text-sm">
               <StageBadge stage={lead.stage} t={t} />
               <SourceBadges source={lead.source} tool={lead.tool} t={t} />
+              {lead.sla && <SlaChip clock={lead.sla} now={now} locale={locale} t={t} />}
               <span>{format(t.lead.receivedOn, { date: formatDate(lead.createdAt, locale) ?? "" })}</span>
             </span>
           </span>
@@ -158,6 +167,14 @@ export function LeadDetailView({
           {t.lead.parentFlag.body}
         </Notice>
       )}
+
+      {!lead.erased && lead.confirmConsent && (
+        <Notice variant="warning" title={t.lead.confirmConsent.title}>
+          {t.lead.confirmConsent.body}
+        </Notice>
+      )}
+
+      {editable && lead.phone && <CallReturnPrompt leadId={lead.id} t={island} pagePath={pagePath} />}
 
       {editable && (
         <section aria-labelledby="crm-lead-manage" className="rounded-card border border-line bg-white p-5 shadow-soft md:p-6">
@@ -188,6 +205,15 @@ export function LeadDetailView({
           )}
         </section>
       )}
+
+      <RoutingPanel
+        lead={lead}
+        canChangeArea={editable && (permissions.isSuperAdmin || viewer.role === "manager")}
+        pagePath={pagePath}
+        now={now}
+        locale={locale}
+        t={t}
+      />
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {editable && lead.phone && (
@@ -264,6 +290,95 @@ export function LeadDetailView({
         </PortalPanel>
       )}
     </div>
+  );
+}
+
+/**
+ * Lead routing (docs/lead-routing-plan.md §20): the lead's area, how it was matched and what the
+ * family typed; its first-call clock; where an imported / Meta lead came from; and "Change area"
+ * (a super admin, or a manager who can see the lead; the server re-checks).
+ */
+function RoutingPanel({
+  lead,
+  canChangeArea,
+  pagePath,
+  now,
+  locale,
+  t,
+}: {
+  lead: LeadDetail;
+  canChangeArea: boolean;
+  pagePath: string;
+  now: number;
+  locale: Locale;
+  t: CrmMessages;
+}) {
+  const r = t.lead.routing;
+  const s = t.lead.sla;
+  const routing = lead.routing ?? null;
+  const origins = lead.origins ?? [];
+  if (!routing && !lead.sla && origins.length === 0 && !canChangeArea) return null;
+  const area = areaName(locale, routing?.areaName ?? lead.area ?? null);
+  const time = (value: string | null) => (value ? slaTimeLabel(value, now, locale) : "");
+  return (
+    <PortalPanel
+      id="crm-lead-routing"
+      title={r.title}
+      action={canChangeArea ? <ChangeAreaButton leadId={lead.id} areaId={routing?.areaId ?? null} pagePath={pagePath} t={{ common: t.common, errors: t.errors, routing: r }} /> : undefined}
+    >
+      <dl className="divide-y divide-line">
+        <Row label={r.area}>{area ?? <span className="text-muted">{routing?.gateOnly ? r.toolSignup : r.noArea}</span>}</Row>
+        {routing && (
+          <>
+            <Row label={r.match}>
+              {[routingMatchLabel(t, routing.match), routing.outcome !== "area" ? routingOutcomeLabel(t, routing.outcome) : null].filter(Boolean).join(" · ") ||
+                routingOutcomeLabel(t, routing.outcome)}
+            </Row>
+            {routing.placeInput && (
+              <Row label={r.place}>
+                <span className="break-words">{routing.placeInput}</span>
+              </Row>
+            )}
+            <Row label={r.routedAt}>
+              <RelativeTime value={routing.routedAt} locale={locale} /> · {routing.routedBy ? format(r.routedBy, { name: routing.routedBy }) : r.automatic}
+            </Row>
+          </>
+        )}
+        {lead.sla && (
+          <Row label={s.title}>
+            <span className="flex flex-col items-start gap-1">
+              <SlaChip clock={lead.sla} now={now} locale={locale} t={t} />
+              <span className="text-xs text-muted">
+                {s.reasons[lead.sla.reason]} · {format(s.started, { time: time(lead.sla.startedAt) })}
+              </span>
+              {lead.sla.tier1At && <span className="text-xs text-muted">{format(s.tier1, { time: time(lead.sla.tier1At) })}</span>}
+              {lead.sla.tier2At && <span className="text-xs text-muted">{format(s.tier2, { time: time(lead.sla.tier2At) })}</span>}
+            </span>
+          </Row>
+        )}
+        {origins.length > 0 && (
+          <Row label={t.lead.origin.title}>
+            <ul className="space-y-0.5">
+              {origins.map((origin, index) => (
+                <li key={`${origin.provider}-${origin.metaLeadId ?? index}`}>
+                  {origin.provider === "meta" ? t.lead.origin.meta : t.lead.origin.csv}
+                  {origin.metaLeadId && (
+                    <>
+                      {" · "}
+                      <span lang="en" className="font-mono text-[13px]">
+                        {format(t.lead.origin.metaLeadId, { id: origin.metaLeadId })}
+                      </span>
+                    </>
+                  )}
+                  {" · "}
+                  {format(t.lead.origin.on, { date: formatDate(origin.createdAt, locale) ?? "" })}
+                </li>
+              ))}
+            </ul>
+          </Row>
+        )}
+      </dl>
+    </PortalPanel>
   );
 }
 
@@ -458,7 +573,13 @@ function ConsentList({ entries, locale, t }: { entries: ConsentEntry[]; locale: 
       <p className="mt-4 text-sm font-bold text-navy">{d.consentHistory}</p>
       <ol className="mt-2 space-y-2">
         {entries.map((entry) => {
-          const method = entry.method && Object.hasOwn(methods, entry.method) ? methods[entry.method as keyof typeof methods] : entry.method;
+          const systemMethods = d.consentSystemMethods;
+          const method =
+            entry.method && Object.hasOwn(methods, entry.method)
+              ? methods[entry.method as keyof typeof methods]
+              : entry.method && Object.hasOwn(systemMethods, entry.method)
+                ? systemMethods[entry.method as keyof typeof systemMethods]
+                : entry.method;
           const by = submitterLabel(t, entry.submittedBy);
           const lang = entry.locale === "en" || entry.locale === "hi" ? entry.locale : undefined;
           return (
@@ -620,6 +741,8 @@ export function activitySummary(
       if (toolFacts.length) lines.push(toolFacts.join(" · "));
       const by = submitterLabel(t, metaString(meta, "submittedBy"));
       if (by) lines.push(`${t.lead.details.submittedBy}: ${by}`);
+      const signedIn = accountLinkLabel(t, metaString(meta, "accountRole"));
+      if (signedIn) lines.push(signedIn);
       if (meta.onLostLead === true) lines.push(t.lead.gate.onLostLead);
       const page = metaString(meta, "page");
       if (page) lines.push(format(tl.onPage, { page }));

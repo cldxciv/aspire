@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { DISTRICT_INPUT_VALUES } from "./lead-ops-types";
 import {
   CONSENT_METHODS,
   CONTACT_CHANNELS,
@@ -58,6 +59,11 @@ export const manualLeadSchema = z
     consent: z.literal(true, { error: "Confirm the family agreed to be contacted." }),
     consentMethod: z.enum(CONSENT_METHODS, { error: "Choose how the family agreed." }).nullable().optional(),
     onDuplicate: z.enum(MANUAL_DUPLICATE_MODES, { error: "onDuplicate must be append or report." }).optional(),
+    /** Lead routing (§13.8): an HP district id, `outside-hp`, or empty; the service re-checks and routes on it. */
+    district: z
+      .union([z.enum(DISTRICT_INPUT_VALUES), z.literal("")], { error: "Choose a district from the list." })
+      .nullable()
+      .optional(),
   })
   .strict();
 export type ManualLeadBody = z.infer<typeof manualLeadSchema>;
@@ -119,5 +125,7 @@ export const staffAccountCrmSchema = z
   .object({
     crmRole: z.enum(CRM_ROLES, { error: "Choose counsellor or manager." }).default("counsellor"),
     centreSlugs: z.array(shortText(60)).max(20, { error: "At most 20 centres." }).default([]),
+    /** Lead routing (§21): area memberships, passed to the `setUserAreas` seam (super admin only). */
+    areaIds: z.array(id).max(24, { error: "At most 24 areas." }).optional(),
   })
   .strict();

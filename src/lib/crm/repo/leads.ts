@@ -2,6 +2,7 @@ import "server-only";
 
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 
+import type { ClockReason } from "../lead-ops-types";
 import type { LeadStage, LostReason } from "../types";
 import { escapeLike, int, stringArray, text, type Row } from "./rows";
 
@@ -42,7 +43,29 @@ export interface LeadRow {
   nextTaskDueAt: number | null;
   erasedAt: number | null;
   erasedBy: string | null;
+  /**
+   * Lead routing (docs/lead-routing-plan.md §13.5): the routing area (`crm_lead_routing.area_id`).
+   * REQUIRED, so every `canSeeLead` caller passes it; null = no area (or not routed yet).
+   */
+  areaId: string | null;
+  /** The routing area's names (null without an area). */
+  areaNameEn: string | null;
+  areaNameHi: string | null;
+  /** The open first-call clock (`crm_sla_clocks`, at most one per lead), or null. */
+  openClock: OpenClockFacts | null;
 }
+
+/** Times (epoch ms) of a lead's open first-call clock, read with the lead. */
+export interface OpenClockFacts {
+  reason: ClockReason;
+  startedAt: number;
+  dueAt: number;
+  tier1At: number | null;
+  tier2At: number | null;
+}
+
+/** Fields read from other tables: never inserted or updated through `crm_leads`. */
+type JoinedFields = "assigneeName" | "areaId" | "areaNameEn" | "areaNameHi" | "openClock";
 
 /** Writable columns (camelCase → SQL column). Anything else can never reach an UPDATE. */
 const COLUMN: Readonly<Record<string, string>> = {
@@ -79,12 +102,35 @@ const COLUMN: Readonly<Record<string, string>> = {
   erasedBy: "erased_by",
 };
 
-export type LeadUpdate = Partial<Omit<LeadRow, "id" | "createdAt" | "assigneeName">>;
+export type LeadUpdate = Partial<Omit<LeadRow, "id" | "createdAt" | JoinedFields>>;
 
+/**
+ * The shared lead SELECT: the lead, its assignee's name, its routing area (`crm_lead_routing` has
+ * one row per lead) and its open clock (the partial unique index allows one open clock per lead),
+ * so the joins never multiply rows.
+ */
 const SELECT = `
-  SELECT l.*, u.display_name AS assignee_name
+  SELECT l.*, u.display_name AS assignee_name,
+         r.area_id AS routing_area_id, ar.name_en AS routing_area_name_en, ar.name_hi AS routing_area_name_hi,
+         c.reason AS clock_reason, c.started_at AS clock_started_at, c.due_at AS clock_due_at,
+         c.tier1_at AS clock_tier1_at, c.tier2_at AS clock_tier2_at
     FROM crm_leads l
-    LEFT JOIN users u ON u.id = l.assigned_to`;
+    LEFT JOIN users u ON u.id = l.assigned_to
+    LEFT JOIN crm_lead_routing r ON r.lead_id = l.id
+    LEFT JOIN crm_areas ar ON ar.id = r.area_id
+    LEFT JOIN crm_sla_clocks c ON c.lead_id = l.id AND c.resolved_at IS NULL`;
+
+function mapClock(row: Row): OpenClockFacts | null {
+  if (row.clock_due_at === null || row.clock_due_at === undefined) return null;
+  const reason = String(row.clock_reason);
+  return {
+    reason: reason === "reopened" || reason === "import" ? reason : "new",
+    startedAt: Number(row.clock_started_at),
+    dueAt: Number(row.clock_due_at),
+    tier1At: int(row.clock_tier1_at),
+    tier2At: int(row.clock_tier2_at),
+  };
+}
 
 function mapLead(row: Row): LeadRow {
   return {
@@ -122,6 +168,10 @@ function mapLead(row: Row): LeadRow {
     nextTaskDueAt: int(row.next_task_due_at),
     erasedAt: int(row.erased_at),
     erasedBy: text(row.erased_by),
+    areaId: text(row.routing_area_id),
+    areaNameEn: text(row.routing_area_name_en),
+    areaNameHi: text(row.routing_area_name_hi),
+    openClock: mapClock(row),
   };
 }
 
@@ -135,7 +185,7 @@ export function findLeadByPhone(db: DatabaseSync, phoneE164: string): LeadRow | 
   return row ? mapLead(row) : null;
 }
 
-export type NewLead = Omit<LeadRow, "assigneeName" | "erasedAt" | "erasedBy">;
+export type NewLead = Omit<LeadRow, JoinedFields | "erasedAt" | "erasedBy">;
 
 export function insertLead(db: DatabaseSync, lead: NewLead): void {
   const columns: string[] = ["id", "created_at"];
@@ -178,11 +228,23 @@ export function updateLead(db: DatabaseSync, id: string, update: LeadUpdate): bo
 // Scoped queries (inbox, reports, export)
 // ---------------------------------------------------------------------------
 
-/** Record-level scope (D-038), already decided by the service layer. */
+/**
+ * Record-level scope (D-038), already decided by the service layer. `areas` (explicit manager
+ * scope, H2): leads assigned to them, leads routed to one of `areaIds` (through EXISTS, so it works
+ * in every query without a join, M1), and leads whose centre belongs to those areas
+ * (`centreSlugs`). Zero areas and zero centres = only the leads assigned to them.
+ */
 export type LeadScope =
   | { kind: "all" }
   | { kind: "assigned"; userId: string }
-  | { kind: "centres"; userId: string; centreSlugs: readonly string[] };
+  | { kind: "centres"; userId: string; centreSlugs: readonly string[] }
+  | { kind: "areas"; userId: string; areaIds: readonly string[]; centreSlugs: readonly string[] };
+
+/** Inbox `sla` filter, with the request time it is evaluated at. */
+export interface SlaQueryFilter {
+  kind: "open" | "overdue" | "escalated";
+  now: number;
+}
 
 export interface LeadQuery {
   scope: LeadScope;
@@ -199,12 +261,16 @@ export interface LeadQuery {
   createdFrom?: number;
   createdTo?: number;
   includeErased?: boolean;
+  /** An area id, `none` (no area, not a tool sign-up) or `tool_signups` (no area, every arrival a tool sign-up). */
+  area?: string;
+  sla?: SlaQueryFilter;
   sort?: "recent_activity" | "newest" | "oldest" | "due" | "name";
   limit: number;
   offset: number;
 }
 
-function scopeClause(scope: LeadScope, where: string[], values: SQLInputValue[]): void {
+/** The record-level scope as SQL on `crm_leads l` (also used by repo/sla.ts and the dashboard). */
+export function scopeClause(scope: LeadScope, where: string[], values: SQLInputValue[]): void {
   if (scope.kind === "assigned") {
     where.push("l.assigned_to = ?");
     values.push(scope.userId);
@@ -212,6 +278,46 @@ function scopeClause(scope: LeadScope, where: string[], values: SQLInputValue[])
     const placeholders = scope.centreSlugs.map(() => "?").join(", ");
     where.push(`(l.assigned_to = ?${placeholders ? ` OR l.centre_slug IN (${placeholders})` : ""})`);
     values.push(scope.userId, ...scope.centreSlugs);
+  } else if (scope.kind === "areas") {
+    const parts = ["l.assigned_to = ?"];
+    values.push(scope.userId);
+    if (scope.areaIds.length > 0) {
+      const marks = scope.areaIds.map(() => "?").join(", ");
+      parts.push(`EXISTS (SELECT 1 FROM crm_lead_routing sr WHERE sr.lead_id = l.id AND sr.area_id IN (${marks}))`);
+      values.push(...scope.areaIds);
+    }
+    if (scope.centreSlugs.length > 0) {
+      parts.push(`l.centre_slug IN (${scope.centreSlugs.map(() => "?").join(", ")})`);
+      values.push(...scope.centreSlugs);
+    }
+    where.push(`(${parts.join(" OR ")})`);
+  }
+}
+
+/** `area` filter as SQL on `crm_leads l`: an area id, `none` or `tool_signups` (also used by repo/sla.ts). */
+export function areaClause(area: string, where: string[], values: SQLInputValue[]): void {
+  if (area === "none") {
+    where.push(
+      "NOT EXISTS (SELECT 1 FROM crm_lead_routing fr WHERE fr.lead_id = l.id AND (fr.area_id IS NOT NULL OR fr.gate_only = 1))",
+    );
+  } else if (area === "tool_signups") {
+    where.push("EXISTS (SELECT 1 FROM crm_lead_routing fr WHERE fr.lead_id = l.id AND fr.area_id IS NULL AND fr.gate_only = 1)");
+  } else {
+    where.push("EXISTS (SELECT 1 FROM crm_lead_routing fr WHERE fr.lead_id = l.id AND fr.area_id = ?)");
+    values.push(area);
+  }
+}
+
+function slaClause(sla: SlaQueryFilter, where: string[], values: SQLInputValue[]): void {
+  const open = "SELECT 1 FROM crm_sla_clocks fc WHERE fc.lead_id = l.id AND fc.resolved_at IS NULL";
+  if (sla.kind === "open") {
+    where.push(`EXISTS (${open})`);
+  } else if (sla.kind === "overdue") {
+    where.push(`EXISTS (${open} AND (fc.due_at <= ? OR fc.tier1_at <= ?))`);
+    values.push(sla.now, sla.now);
+  } else {
+    where.push(`EXISTS (${open} AND fc.tier2_at <= ?)`);
+    values.push(sla.now);
   }
 }
 
@@ -270,6 +376,8 @@ function whereFor(query: Omit<LeadQuery, "limit" | "offset" | "sort">): { sql: s
     where.push("l.phone_e164 LIKE ? ESCAPE '\\'");
     values.push(`%${escapeLike(query.phoneEndsWith)}`);
   }
+  if (query.area) areaClause(query.area, where, values);
+  if (query.sla) slaClause(query.sla, where, values);
   return { sql: where.length > 0 ? `WHERE ${where.join(" AND ")}` : "", values };
 }
 

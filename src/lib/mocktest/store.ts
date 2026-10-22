@@ -7,10 +7,19 @@ import { getDb, withTransaction } from "@/lib/db/connection";
 import { schema as MOCKTEST_SCHEMA } from "@/lib/db/features/mocktest";
 import { computeBadges, longestStreakDays } from "./badges";
 import { getVisibleMockTest } from "./catalog";
-import { rankEntries, SCHOOL_MIN_PARTICIPANTS, schoolKey } from "./leaderboard";
+import { rankEntries, rankRankedEntries, SCHOOL_MIN_PARTICIPANTS, schoolKey } from "./leaderboard";
+import { parseBlueprintTest } from "./resolve";
 import { nicknameIdentityIssue, type ProfileInput } from "./schemas";
 import type { Answer, ScoreResult } from "./scoring";
-import { evaluateAttempt, isPracticeReason, maxDurationMs, openWindowAt, type AttemptTiming, type StartCheck } from "./timing";
+import {
+  evaluateAttempt,
+  isPracticeReason,
+  maxDurationMs,
+  monthWindowFromId,
+  openWindowAt,
+  type AttemptTiming,
+  type StartCheck,
+} from "./timing";
 import type {
   AttemptsSummary,
   LeaderboardData,
@@ -118,6 +127,8 @@ export function summaryOf(attempt: SavedAttempt): SavedAttemptSummary {
     practiceReason: attempt.practiceReason,
     serverDurationSec: attempt.serverDurationSec,
     verifyId: attempt.verifyId,
+    // Generated papers only (absent for fixed tests).
+    ...(attempt.paperId !== undefined ? { paperId: attempt.paperId, rescoredAt: attempt.rescoredAt ?? null } : {}),
   };
 }
 
@@ -184,7 +195,8 @@ export interface SaveAttemptInput {
   attemptId: string;
   answers: Answer[];
   timeSpentSec: number[];
-  result: ScoreResult;
+  /** Only the tally is stored; a generated paper may carry question-bank subjects (`mental_ability`). */
+  result: Pick<ScoreResult<string>, "score" | "maxScore" | "correct" | "wrong" | "unattempted">;
   timeTakenSec: number;
   startedAt: number;
   submittedAt: number;
@@ -255,6 +267,17 @@ function insertAttempt(db: DatabaseSync, input: SaveAttemptInput, timing: Attemp
 }
 
 /**
+ * The attempt this student already saved at THIS test under this CLIENT attempt id, or null. POST
+ * /api/mocktest/attempts answers a retried save from it without asking for contact details again
+ * (the student's own saved data, as GET ?id= returns it), and never scores the retry's body: a
+ * reused id with another test is not a retry, and other answers get the stored scoring back.
+ */
+export function findSavedClientAttempt(userId: string, testId: string, clientAttemptId: string, db: DatabaseSync = mocktestDb()): SavedAttempt | null {
+  const row = db.prepare("SELECT id FROM mocktest_attempts WHERE user_id = ? AND test_id = ? AND client_attempt_id = ?").get(userId, testId, clientAttemptId);
+  return row ? getAttemptForStudent(userId, str(row.id), db) : null;
+}
+
+/**
  * POST /api/mocktest/attempts: saves a server-scored attempt with server timing, atomically —
  * a retried save (same client attempt id) returns the first row and does not touch the start.
  * The start token is used up; the attempt is leaderboard-eligible only when `evaluateAttempt`
@@ -292,6 +315,199 @@ export function saveTimedAttempt(
   });
 }
 
+// ---------------------------------------------------------------------------------------------
+// Attempts at generated papers (docs/question-bank-plan.md §B9.4, §B10). The link to the paper lives
+// in `qb_attempt_papers` (src/lib/db/features/qb.ts; feature schemas may not ALTER mocktest tables).
+// Fixed-test code paths never touch qb_* tables.
+
+/** The paper facts a save needs (from the bank's paper view). */
+export interface SavedPaperFacts {
+  id: string;
+  kind: "practice" | "ranked";
+  /** The student who made the paper (ranked: always), else null. */
+  userId: string | null;
+  windowId: string | null;
+  /** Server time the paper was made: the server start of the attempt. */
+  createdAt: number;
+  durationMinutes: number;
+}
+
+export type SavePaperAttemptResult =
+  | { ok: true; attempt: SavedAttempt; created: boolean }
+  | { ok: false; reason: "paper_already_saved" };
+
+/**
+ * Server timing of a paper attempt: the paper's `created_at` is the server start (no start token).
+ * A ranked paper counts on its month's board only when saved by its owner within the window rules
+ * of `evaluateAttempt` (between a quarter of the time and the limit + grace); practice papers are
+ * practice ("practice_test") with their server duration.
+ */
+export function paperAttemptTiming(paper: SavedPaperFacts, userId: string, now: number): AttemptTiming {
+  if (paper.kind === "ranked") {
+    const window = paper.windowId ? monthWindowFromId(paper.windowId) : null;
+    const start: StartCheck =
+      paper.userId === userId ? { status: "ok", startedAt: paper.createdAt, windowId: window ? window.id : null } : { status: "other_user" };
+    return evaluateAttempt({ test: { kind: "weekly", durationMinutes: paper.durationMinutes, windows: window ? [window] : [] }, start, now });
+  }
+  return evaluateAttempt({
+    test: { kind: "practice", durationMinutes: paper.durationMinutes },
+    start: { status: "ok", startedAt: paper.createdAt, windowId: null },
+    now,
+  });
+}
+
+/**
+ * Saves a server-scored attempt at a generated paper for the signed-in student, atomically: the
+ * same client attempt id returns the first row (200); a paper can be saved ONCE (`paper_id UNIQUE`),
+ * so another save of it is refused (`paper_already_saved`). The ranked test id
+ * ("bp-<slot>-ranked") keeps practice attempts ("bp-<slot>") from ever blocking a board entry.
+ */
+export function savePaperAttempt(
+  input: Omit<SaveAttemptInput, "windowId" | "timing"> & { paper: SavedPaperFacts; tiebreak: number[] | null },
+  db: DatabaseSync = mocktestDb(),
+): SavePaperAttemptResult {
+  return withTransaction(db, () => {
+    const existing = findOwnAttemptRow(db, "a.user_id = ? AND a.client_attempt_id = ?", input.userId, input.attemptId);
+    if (existing) return { ok: true, attempt: withPaperLink(db, toAttempt(existing)), created: false };
+    if (db.prepare("SELECT 1 FROM qb_attempt_papers WHERE paper_id = ?").get(input.paper.id)) return { ok: false, reason: "paper_already_saved" };
+    const timing = paperAttemptTiming(input.paper, input.userId, input.now);
+    const record: SaveAttemptInput = {
+      userId: input.userId,
+      testId: input.testId,
+      windowId: input.paper.kind === "ranked" ? input.paper.windowId : null,
+      attemptId: input.attemptId,
+      answers: input.answers,
+      timeSpentSec: input.timeSpentSec,
+      result: input.result,
+      timeTakenSec: input.timeTakenSec,
+      startedAt: input.startedAt,
+      submittedAt: input.submittedAt,
+      now: input.now,
+    };
+    const id = insertAttempt(db, record, timing);
+    db.prepare("INSERT INTO qb_attempt_papers (attempt_id, paper_id, tiebreak, rescored_at) VALUES (?, ?, ?, NULL)").run(
+      id,
+      input.paper.id,
+      input.tiebreak ? JSON.stringify(input.tiebreak) : null,
+    );
+    return { ok: true, attempt: withPaperLink(db, toAttempt(findOwnAttemptRow(db, "a.id = ?", id) as Row)), created: true };
+  });
+}
+
+/** The paper behind a saved attempt, with the last re-score after an answer-key correction. */
+export function paperLinkForAttempt(attemptId: string, db: DatabaseSync = mocktestDb()): { paperId: string; rescoredAt: number | null } | null {
+  const row = db.prepare("SELECT paper_id, rescored_at FROM qb_attempt_papers WHERE attempt_id = ?").get(attemptId);
+  return row ? { paperId: str(row.paper_id), rescoredAt: nullableNum(row.rescored_at) } : null;
+}
+
+function withPaperLink(db: DatabaseSync, attempt: SavedAttempt): SavedAttempt {
+  const link = paperLinkForAttempt(attempt.id, db);
+  return link ? { ...attempt, paperId: link.paperId, rescoredAt: link.rescoredAt } : attempt;
+}
+
+/** Every paper that has a saved attempt (papers linked to an attempt are never pruned by the bank). */
+export function listLinkedPaperIds(db: DatabaseSync = mocktestDb()): string[] {
+  return db
+    .prepare("SELECT DISTINCT paper_id FROM qb_attempt_papers ORDER BY paper_id")
+    .all()
+    .map((row) => str(row.paper_id));
+}
+
+/** A saved attempt at a paper, as re-scoring needs it. */
+export interface PaperAttemptLink {
+  attemptId: string;
+  paperId: string;
+  userId: string;
+  testId: string;
+  answers: Answer[];
+  timeSpentSec: number[];
+  score: number;
+  correct: number;
+  wrong: number;
+  unattempted: number;
+  tiebreak: number[] | null;
+}
+
+/** Bound parameters per `IN (…)` list: far below SQLite's limit whatever the number of papers. */
+const LINK_CHUNK = 400;
+
+/** Saved attempts at the given papers (answers included; server-side re-scoring only). */
+export function listPaperAttemptLinks(paperIds?: readonly string[], db: DatabaseSync = mocktestDb()): PaperAttemptLink[] {
+  if (paperIds && paperIds.length > LINK_CHUNK) {
+    const out: PaperAttemptLink[] = [];
+    for (let i = 0; i < paperIds.length; i += LINK_CHUNK) out.push(...listPaperAttemptLinks(paperIds.slice(i, i + LINK_CHUNK), db));
+    return out;
+  }
+  const where = paperIds ? `WHERE ap.paper_id IN (${paperIds.map(() => "?").join(", ") || "NULL"})` : "";
+  return db
+    .prepare(
+      `SELECT ap.attempt_id, ap.paper_id, ap.tiebreak, a.user_id, a.test_id, a.answers, a.time_spent, a.score, a.correct, a.wrong, a.unattempted
+         FROM qb_attempt_papers ap JOIN mocktest_attempts a ON a.id = ap.attempt_id ${where}
+        ORDER BY ap.paper_id, ap.attempt_id`,
+    )
+    .all(...(paperIds ?? []))
+    .map((row) => ({
+      attemptId: str(row.attempt_id),
+      paperId: str(row.paper_id),
+      userId: str(row.user_id),
+      testId: str(row.test_id),
+      answers: parseJsonArray<Answer>(row.answers),
+      timeSpentSec: parseJsonArray<number>(row.time_spent),
+      score: num(row.score),
+      correct: num(row.correct),
+      wrong: num(row.wrong),
+      unattempted: num(row.unattempted),
+      tiebreak: row.tiebreak === null || row.tiebreak === undefined ? null : parseJsonArray<number>(row.tiebreak),
+    }));
+}
+
+/**
+ * After an answer-key correction (plan §B10.4): re-scores the saved attempts at `paperIds` with
+ * `rescore` (the paper's key with corrections applied) and, in ONE transaction, updates the stored
+ * score, correct, wrong and unattempted plus the tie-break vector, and stamps `rescored_at` — so
+ * boards, summaries and verification pages follow. Attempts whose figures did not change are left
+ * alone. Returns how many attempts changed.
+ */
+export function rescoreAttemptsForCorrection(
+  input: {
+    paperIds: readonly string[];
+    now: number;
+    rescore: (link: PaperAttemptLink) => { result: Pick<ScoreResult<string>, "score" | "correct" | "wrong" | "unattempted">; tiebreak: number[] | null } | null;
+  },
+  db: DatabaseSync = mocktestDb(),
+): { updated: number } {
+  if (input.paperIds.length === 0) return { updated: 0 };
+  return withTransaction(db, () => {
+    let updated = 0;
+    for (const link of listPaperAttemptLinks(input.paperIds, db)) {
+      const next = input.rescore(link);
+      if (!next) continue;
+      const { result, tiebreak } = next;
+      const same =
+        result.score === link.score &&
+        result.correct === link.correct &&
+        result.wrong === link.wrong &&
+        result.unattempted === link.unattempted &&
+        JSON.stringify(tiebreak) === JSON.stringify(link.tiebreak);
+      if (same) continue;
+      db.prepare("UPDATE mocktest_attempts SET score = ?, correct = ?, wrong = ?, unattempted = ? WHERE id = ?").run(
+        result.score,
+        result.correct,
+        result.wrong,
+        result.unattempted,
+        link.attemptId,
+      );
+      db.prepare("UPDATE qb_attempt_papers SET tiebreak = ?, rescored_at = ? WHERE attempt_id = ?").run(
+        tiebreak ? JSON.stringify(tiebreak) : null,
+        input.now,
+        link.attemptId,
+      );
+      updated += 1;
+    }
+    return { updated };
+  });
+}
+
 /** Newest-first summaries of a learner's saved attempts (no answers). */
 export function listAttemptsForStudent(userId: string, db: DatabaseSync = mocktestDb()): SavedAttemptSummary[] {
   return db
@@ -317,10 +533,20 @@ export function getAttemptForStudent(userId: string, attemptId: string, db: Data
   return toAttempt(row);
 }
 
-/** Totals, best score per test, longest streak and badges for one learner. */
+/** Score as a share of its own maximum (a best-of comparison across papers of different lengths). */
+function scoreShare(score: number, maxScore: number): number {
+  return maxScore > 0 ? score / maxScore : Number.NEGATIVE_INFINITY;
+}
+
+/**
+ * Totals, best score per test, longest streak and badges for one learner. The best attempt per test
+ * is the highest share of its OWN maximum, and its score and maximum come from that same row: the
+ * practice papers of one exam-pattern test ("bp-<slot>") can differ in length (a shorter set while
+ * the bank is thin), so "70 / 300" from two different papers is never reported.
+ */
 export function summariseAttempts(userId: string, db: DatabaseSync = mocktestDb()): AttemptsSummary {
   const rows = db
-    .prepare("SELECT test_id, window_id, score, max_score, correct, wrong, created_at FROM mocktest_attempts WHERE user_id = ?")
+    .prepare("SELECT test_id, window_id, score, max_score, correct, wrong, created_at FROM mocktest_attempts WHERE user_id = ? ORDER BY created_at, id")
     .all(userId);
   const best = new Map<string, { testId: string; bestScore: number; maxScore: number; attempts: number }>();
   let correct = 0;
@@ -329,11 +555,19 @@ export function summariseAttempts(userId: string, db: DatabaseSync = mocktestDb(
   const times: number[] = [];
   for (const row of rows) {
     const testId = str(row.test_id);
-    const entry = best.get(testId) ?? { testId, bestScore: Number.NEGATIVE_INFINITY, maxScore: num(row.max_score), attempts: 0 };
-    entry.bestScore = Math.max(entry.bestScore, num(row.score));
-    entry.maxScore = num(row.max_score);
-    entry.attempts += 1;
-    best.set(testId, entry);
+    const score = num(row.score);
+    const maxScore = num(row.max_score);
+    const entry = best.get(testId);
+    if (!entry) best.set(testId, { testId, bestScore: score, maxScore, attempts: 1 });
+    else {
+      entry.attempts += 1;
+      const share = scoreShare(score, maxScore);
+      const bestShare = scoreShare(entry.bestScore, entry.maxScore);
+      if (share > bestShare || (share === bestShare && score > entry.bestScore)) {
+        entry.bestScore = score;
+        entry.maxScore = maxScore;
+      }
+    }
     correct += num(row.correct);
     attempted += num(row.correct) + num(row.wrong);
     const created = num(row.created_at);
@@ -394,6 +628,8 @@ export function deleteProfile(userId: string, db: DatabaseSync = mocktestDb()): 
 // Leaderboards (weekly tests only; opt-in profiles of enabled student accounts only)
 
 interface BoardRow {
+  /** Never sent: joins the tie-break vector of a ranked paper's attempt. */
+  attemptId: string;
   userId: string;
   nickname: string;
   district: string | null;
@@ -436,6 +672,7 @@ function boardRows(testId: string, window: TestWindow, db: DatabaseSync): BoardR
     const nickname = str(row.nickname);
     if (nicknameIdentityIssue(nickname, { displayName: str(row.display_name), loginId: str(row.login_id) })) continue;
     out.push({
+      attemptId: str(row.id),
       userId,
       nickname,
       district: nullableStr(row.district),
@@ -482,21 +719,50 @@ function groupBoard(
 
 export const LEADERBOARD_LIMIT = 100;
 
-export function getLeaderboard(
-  input: {
-    testId: string;
-    window: TestWindow;
-    district: string | null;
-    view: LeaderboardData["view"];
-    maxScore: number;
-    viewerId?: string | null;
-    limit?: number;
-  },
-  db: DatabaseSync = mocktestDb(),
+interface LeaderboardInput {
+  testId: string;
+  window: TestWindow;
+  district: string | null;
+  view: LeaderboardData["view"];
+  maxScore: number;
+  viewerId?: string | null;
+  limit?: number;
+}
+
+export function getLeaderboard(input: LeaderboardInput, db: DatabaseSync = mocktestDb()): LeaderboardData {
+  return assembleBoard(input, boardRows(input.testId, input.window, db), rankEntries);
+}
+
+/** Ranked papers: each board row with its stored tie-break vector. */
+function rankedBoardRows(testId: string, window: TestWindow, db: DatabaseSync): (BoardRow & { tiebreak: number[] | null })[] {
+  const rows = boardRows(testId, window, db);
+  if (rows.length === 0) return [];
+  const vectors = new Map(
+    db
+      .prepare("SELECT ap.attempt_id, ap.tiebreak FROM qb_attempt_papers ap JOIN mocktest_attempts a ON a.id = ap.attempt_id WHERE a.test_id = ?")
+      .all(testId)
+      .map((row) => [str(row.attempt_id), row.tiebreak === null || row.tiebreak === undefined ? null : parseJsonArray<number>(row.tiebreak)] as const),
+  );
+  return rows.map((row) => ({ ...row, tiebreak: vectors.get(row.attemptId) ?? null }));
+}
+
+/**
+ * The board of a generated mock's monthly ranked paper ("bp-<slot>-ranked", plan §B10.3): the same
+ * paper for everyone in the month, so entries rank by score and then the official tie-break vector
+ * (no time criterion; entries equal on every criterion share a rank and are listed by save time).
+ * Same privacy rules as the weekly boards (opt-in nicknames only; schools only in the aggregate).
+ */
+export function getRankedLeaderboard(input: LeaderboardInput, db: DatabaseSync = mocktestDb()): LeaderboardData {
+  return { ...assembleBoard(input, rankedBoardRows(input.testId, input.window, db), rankRankedEntries), ranked: true };
+}
+
+function assembleBoard<R extends BoardRow>(
+  input: LeaderboardInput,
+  all: R[],
+  rank: (rows: R[]) => (R & { rank: number })[],
 ): LeaderboardData {
-  const all = boardRows(input.testId, input.window, db);
   const filtered = input.district ? all.filter((r) => r.district === input.district) : all;
-  const ranked = rankEntries(filtered);
+  const ranked = rank(filtered);
   const mine = input.viewerId ? ranked.find((r) => r.userId === input.viewerId) : undefined;
   const entries: LeaderboardEntry[] = ranked.slice(0, input.limit ?? LEADERBOARD_LIMIT).map((r) => ({
     rank: r.rank,
@@ -536,6 +802,15 @@ export function leaderboardPositions(userId: string, db: DatabaseSync = mocktest
     .map((row) => ({ testId: str(row.test_id), windowId: str(row.window_id) }));
   const positions: { testId: string; windowId: string | null; rank: number; total: number }[] = [];
   for (const board of boards) {
+    // Monthly ranked papers of generated mocks ("bp-<slot>-ranked"): official tie-breaks, monthly windows.
+    if (parseBlueprintTest(board.testId)?.mode === "ranked") {
+      const month = monthWindowFromId(board.windowId);
+      if (!month) continue;
+      const rankedBoard = rankRankedEntries(rankedBoardRows(board.testId, month, db));
+      const own = rankedBoard.find((r) => r.userId === userId);
+      if (own) positions.push({ ...board, rank: own.rank, total: rankedBoard.length });
+      continue;
+    }
     const window = getVisibleMockTest(board.testId)?.windows?.find((w) => w.id === board.windowId);
     if (!window) continue;
     const ranked = rankEntries(boardRows(board.testId, window, db));
@@ -555,13 +830,15 @@ export interface VerificationRecord {
   maxScore: number;
   /** Only when the student opted into leaderboards (D-034) and the nickname reveals no identity. */
   nickname: string | null;
+  /** Server-side only (never sent): the attempt, to find a generated paper's link. */
+  attemptId?: string;
 }
 
 /** A saved attempt by its public verification id: test, date, score — never the student's name. */
 export function findVerification(verifyId: string, db: DatabaseSync = mocktestDb()): VerificationRecord | null {
   const row = db
     .prepare(
-      `SELECT a.test_id, a.score, a.max_score, m.server_submitted_at,
+      `SELECT a.id AS attempt_id, a.test_id, a.score, a.max_score, m.server_submitted_at,
               p.nickname, p.leaderboard_opt_in, u.display_name, u.login_id, u.disabled, u.role
          FROM mocktest_attempt_meta m
          JOIN mocktest_attempts a ON a.id = m.attempt_id
@@ -580,5 +857,6 @@ export function findVerification(verifyId: string, db: DatabaseSync = mocktestDb
     score: num(row.score),
     maxScore: num(row.max_score),
     nickname: safe ? nickname : null,
+    attemptId: str(row.attempt_id),
   };
 }

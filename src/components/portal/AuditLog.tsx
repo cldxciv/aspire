@@ -46,6 +46,10 @@ const ACTION_KEYS: Readonly<Record<string, ActionKey>> = {
   "seed.password_reset": "seedPasswordReset",
   "seed.link_add": "seedLinkAdd",
   "bootstrap.admin_create": "bootstrapAdminCreate",
+  "layout.save_draft": "layoutSaveDraft",
+  "layout.discard_draft": "layoutDiscardDraft",
+  "layout.publish": "layoutPublish",
+  "layout.reset": "layoutReset",
 };
 
 /** Localised label for an audit action code; unknown codes are shown as written. */

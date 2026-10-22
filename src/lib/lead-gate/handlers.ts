@@ -42,6 +42,7 @@ import {
   defaultLeadGateRuntime,
   LEAD_GATE_COOKIE,
   leadGateConfig,
+  leadGatePrefill,
   leadGateStatusData,
   resolveLeadGateAccess,
   setLeadGateCookie,
@@ -53,7 +54,7 @@ import { generatePassId, hashPassId, signPassToken, verifyPassToken } from "./to
  * Route handlers of /api/lead-gate (docs/lead-gate-plan.md §5), built from injectable deps so the
  * tests can drive the clock, limiters and failures. The real routes use `leadGateHandlers`.
  *
- *   GET    /api/lead-gate          status (mode, unlocked, via, recordsUse, expiresAt, sample)
+ *   GET    /api/lead-gate          status (mode, unlocked, via, recordsUse, expiresAt, sample, prefill)
  *   POST   /api/lead-gate          share details once → CRM capture + pass cookie (201)
  *   DELETE /api/lead-gate          "Not you?" (forget this browser); ?withdraw=1 also withdraws consent
  *   POST   /api/lead-gate/usage    one use of a browser-only tool (predictor, planner)
@@ -127,7 +128,7 @@ export function createLeadGateHandlers(overrides: Partial<LeadGateHandlerDeps> =
         leadGateLog({ action: "status", outcome: "rate_limited" });
         return portalApiError("rate_limited", LEAD_GATE_SERVER_MESSAGES.rateLimited, { headers: retryAfter(limit.retryAfterSeconds) });
       }
-      return applyLeadGateCookies(portalApiItem(leadGateStatusData(access, deps.sampleData())), access);
+      return applyLeadGateCookies(portalApiItem(leadGateStatusData(access, deps.sampleData(), leadGatePrefill(access))), access);
     } catch (error) {
       unstable_rethrow(error);
       leadGateLog({ action: "status", outcome: "error", reason: leadGateExceptionReason(error) });
@@ -136,10 +137,13 @@ export function createLeadGateHandlers(overrides: Partial<LeadGateHandlerDeps> =
   }
 
   /**
-   * POST /api/lead-gate. Order: same-origin (403) → gate off / signed in (200, nothing stored, body
-   * unread) → per-connection limit (429) → JSON ≤ 4 KB + schema (415/413/400/422) → honeypot (201,
-   * dead cookie) → flood breaker (503) → per-phone cap → capture + pass in one transaction (201 with
-   * Set-Cookie; 429 when capped and the number has no lead; 500 and no cookie on a store failure).
+   * POST /api/lead-gate. Order: same-origin (403) → gate off / an account let through (`session`:
+   * a student or parent with a mobile on file; 200, nothing stored, body unread) → per-connection
+   * limit (429) → JSON ≤ 4 KB + schema (415/413/400/422) → honeypot (201, dead cookie) → flood
+   * breaker (503) → per-phone cap → capture + pass in one transaction (201 with Set-Cookie; 429 when
+   * capped and the number has no lead; 500 and no cookie on a store failure). Signed-in staff and
+   * admins go through exactly like visitors. A signed-in student or parent account's submission also
+   * records the account id and role on the lead (submission meta; nothing else from the account).
    * The 201 body is the same for a new and an existing family and never names anyone.
    */
   async function POST(request: NextRequest): Promise<Response> {
@@ -230,6 +234,7 @@ export function createLeadGateHandlers(overrides: Partial<LeadGateHandlerDeps> =
             },
             replacePassHash: access.pass?.passHash ?? null,
             assignNew: config.assignNew,
+            account: access.account ? { userId: access.account.userId, role: access.account.role } : null,
           },
           now,
         );
@@ -342,9 +347,11 @@ export function createLeadGateHandlers(overrides: Partial<LeadGateHandlerDeps> =
         return portalApiError("rate_limited", LEAD_GATE_SERVER_MESSAGES.rateLimited, { headers: retryAfter(perPass.retryAfterSeconds) });
       }
       const page = usage.page && usage.page.startsWith("/") ? stripLocale(usage.page.split(/[?#]/)[0]) : null;
+      // A planner feature (the homepage countdown) gets its own daily entry per exam, apart from plans.
+      const feature = usage.tool === "planner" ? (usage.key ?? null) : null;
       const result = deps.record(
         access.pass.leadId,
-        { tool: usage.tool, key: usage.exam, exam: usage.exam, band: usage.band ?? null, page },
+        { tool: usage.tool, key: feature ? `${feature}-${usage.exam}` : usage.exam, exam: usage.exam, band: usage.band ?? null, feature, page },
         deps.now(),
       );
       log({ outcome: result.recorded ? "ok" : "skipped", tool: usage.tool });

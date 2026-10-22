@@ -1,0 +1,24 @@
+# Daily lead summary, every morning at 08:30 IST. The report lands in the Console session (Deployments -> runs) as a file and as the final reply.
+name: aspire-ops daily summary
+agent: ./agent.md
+environment_id: ./environment.yaml
+vault_ids: [vlt_011CgG9eWeaQbgQdU8JvYY28]   # vault.yaml's ID from claude-lock.json
+schedule: {type: cron, expression: "30 8 * * *", timezone: Asia/Kolkata}
+budget: {type: limit, max_list_cost: {amount: "50", currency: USD}}   # $0.50 cap per run
+initial_events:
+  - type: user.message
+    content:
+      - type: text
+        text: |
+          Write today's lead summary for the owner and the admissions team, covering the 24 hours before now (Asia/Kolkata).
+          Save it as /mnt/session/outputs/daily-summary-<YYYY-MM-DD>.md and give the same text as your final reply.
+
+          Before you finish, check it against this list and fix anything that fails:
+          1. The first lines state the exact 24-hour window in IST and whether the site is in demo mode (from site_status); in demo mode, warn that leads may be sample data.
+          2. New leads in the window, with the breakdown by source, centre and program, taken from crm_report for that window. A breakdown the data does not hold is named "not recorded".
+          3. How many leads are still in the first stage (not yet contacted) and how many follow-ups are overdue (list_leads with due: overdue), as the tools report them.
+          4. First-contact speed against the 1-hour rule only if the CRM records contact times; otherwise say "not tracked yet". Never estimate.
+          5. Every number comes from a tool result in this session.
+          6. No full phone number, email or address; individual leads at most as first name, last initial and last four phone digits.
+          7. At most five actions for today, each tied to a number above and to a centre or role.
+          8. Short enough to read on a phone: short bullets and small tables.

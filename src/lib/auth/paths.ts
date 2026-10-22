@@ -16,7 +16,8 @@ export const PORTAL_HOME: Readonly<Record<Role, string>> = {
   student: "/student",
   parent: "/parent",
   admin: "/admin",
-  staff: "/crm",
+  // Staff land on Today's calls (docs/lead-routing-plan.md §20, A6): the "Call now" list first.
+  staff: "/crm/today",
 };
 
 /** The CRM workspace (M7): staff accounts only reach this area; admins may open it too. */
@@ -68,12 +69,25 @@ export function portalRoleForPath(pathname: string): Role | null {
 }
 
 /**
+ * The question bank (`/admin/questions/**`, docs/question-bank-plan.md §B6): inside the admin area,
+ * but open to `staff` accounts too (their QB membership is checked by the page itself).
+ */
+export const QUESTION_BANK_HOME = "/admin/questions";
+const QUESTION_BANK_PAGE = /^\/admin\/questions(?:\/|$)/;
+
+/** `/admin/questions` and anything below it (locale-free). */
+export function isQuestionBankPagePath(pathname: string): boolean {
+  return QUESTION_BANK_PAGE.test(pathname);
+}
+
+/**
  * Whether a signed-in `role` may be sent to the portal page `pathname`: its own area, and for
- * admins also the CRM (`/crm/**`). Staff only ever get `/crm/**`.
+ * admins also the CRM (`/crm/**`). Staff get `/crm/**` and the question bank (`/admin/questions/**`).
  */
 export function portalPathAllowsRole(pathname: string, role: Role): boolean {
   const owner = portalRoleForPath(pathname);
   if (owner === null) return false;
+  if (role === "staff" && isQuestionBankPagePath(pathname)) return true;
   return owner === role || (owner === "staff" && role === "admin");
 }
 

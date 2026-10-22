@@ -13,7 +13,16 @@ import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
 import { PROGRAM_INTEREST_OPTIONS, enquirySchema } from "@/lib/contracts/enquiry";
 import { captureVisitAttribution, collectEnquiryContext, toolArrivalFrom } from "./enquiry-context";
-import { FIELD_ORDER, buildPayload, pickErrors, type FieldErrors, type FieldName, type Intent } from "./enquiry-payload";
+import {
+  FIELD_ORDER,
+  buildPayload,
+  districtOptions,
+  needsDistrict,
+  pickErrors,
+  type FieldErrors,
+  type FieldName,
+  type Intent,
+} from "./enquiry-payload";
 import { localizeFieldErrors } from "./field-errors";
 import { ConsentField, HoneypotField, SelectField, TextAreaField, TextField } from "./fields";
 import { formatNodes } from "./format-nodes";
@@ -53,6 +62,9 @@ import { useLocationSearch } from "./use-location-search";
  *   `forms.shared.errors` (field-errors.ts). Server outcomes are shown with `forms.shared.status`
  *   copy chosen by outcome kind, never the server's English `message`.
  * - Option values always come from the contract; only their labels are localised.
+ * - Lead routing (§13.8): an optional district select, on the contact form always and on the
+ *   admissions form while no centre (or "Not sure yet") is chosen. It routes the enquiry to that
+ *   district's team.
  * - Unchanged: `variant`, `centreOptions`, `defaultProgram`, `className`.
  */
 
@@ -94,6 +106,8 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className,
   const [intent, setIntent] = useState<Intent>("enquiry");
   const [errors, setErrors] = useState<FieldErrors>({});
   const [state, setState] = useState<FormState>({ kind: "idle" });
+  // Mirrors the (uncontrolled) centre select: the district select shows while no centre is chosen.
+  const [centreChoice, setCentreChoice] = useState("not-sure");
 
   // Visit attribution (utm_*, referrer) is recorded when the form mounts; harmless if a layout did it already.
   useEffect(() => {
@@ -105,6 +119,7 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className,
 
   const order = FIELD_ORDER[variant];
   const hasCentreField = variant === "admissions" && (centreOptions?.length ?? 0) > 0;
+  const showDistrict = variant === "contact" || (variant === "admissions" && (!hasCentreField || needsDistrict(centreChoice)));
   // Accept option values ("jee") and ExamTrack names ("JEE", "Foundation"); ignore anything else.
   const requestedProgram = defaultProgram?.trim().toLowerCase() ?? "";
   const programDefault = PROGRAM_INTEREST_OPTIONS.some((o) => o.value === requestedProgram) ? requestedProgram : "";
@@ -141,7 +156,9 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className,
   }
 
   function handleChange(event: ChangeEvent<HTMLFormElement>) {
-    const name = (event.target as { name?: string }).name as FieldName | undefined;
+    const target = event.target as { name?: string; value?: string };
+    if (target.name === "preferredCentre") setCentreChoice(target.value ?? "");
+    const name = target.name as FieldName | undefined;
     if (name && errors[name]) {
       setErrors((current) => {
         const next = { ...current };
@@ -183,6 +200,7 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className,
       case "received":
         form.reset();
         setIntent("enquiry");
+        setCentreChoice("not-sure");
         clearOnHide.current = true;
         setState(outcome);
         return;
@@ -362,6 +380,19 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className,
                 className={wide}
               />
             )}
+            {showDistrict && (
+              <SelectField
+                id={fieldId("district")}
+                name="district"
+                label={shared.district.label}
+                optionalLabel={optional}
+                placeholder={shared.district.placeholder}
+                options={districtOptions(locale, shared.district.outsideHp)}
+                hint={shared.district.hint}
+                error={errors.district}
+                className={wide}
+              />
+            )}
             <TextAreaField
               id={fieldId("message")}
               name="message"
@@ -418,6 +449,19 @@ export function EnquiryForm({ variant, centreOptions, defaultProgram, className,
               options={topicOptions(shared.options)}
               error={errors.topic}
             />
+            {showDistrict && (
+              <SelectField
+                id={fieldId("district")}
+                name="district"
+                label={shared.district.label}
+                optionalLabel={optional}
+                placeholder={shared.district.placeholder}
+                options={districtOptions(locale, shared.district.outsideHp)}
+                hint={shared.district.hint}
+                error={errors.district}
+                className={wide}
+              />
+            )}
             <TextAreaField
               id={fieldId("message")}
               name="message"

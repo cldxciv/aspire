@@ -26,16 +26,21 @@ import { portalApiError } from "@/lib/auth/responses";
  * OPTIMISTIC ONLY: it never decides who may see data. Pages re-check via
  * `requirePortalAccess()` and route handlers via `requireRole()`.
  */
+/** Paths the preview gate never challenges: each authenticates its callers itself. Exact matches only. */
+const PREVIEW_EXEMPT_PATHS: ReadonlySet<string> = new Set(["/api/mcp", "/api/integrations/meta/webhook", "/api/integrations/meta/sync"]);
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Preview access gate (D-027): only when PREVIEW_ACCESS_PASSWORD is configured. The MCP endpoint is
   // exempt: agents authenticate with their own bearer token in the same Authorization header
-  // (src/lib/mcp/auth.ts), which the Basic-auth gate would otherwise reject.
+  // (src/lib/mcp/auth.ts), which the Basic-auth gate would otherwise reject. So are EXACTLY the two
+  // Meta Lead Ads endpoints (docs/lead-routing-plan.md §18.7, M12): Meta signs its webhook calls
+  // with the app secret, and the loopback cron sends its own bearer token.
   const previewPassword = previewAccessPassword();
   if (
     previewPassword &&
-    pathname !== "/api/mcp" &&
+    !PREVIEW_EXEMPT_PATHS.has(pathname) &&
     !isPreviewAuthorized(request.headers.get("authorization"), previewPassword)
   ) {
     return previewChallenge();

@@ -55,15 +55,25 @@ const SCAN_PAGE = 100;
 /** Upper bound for filters the CRM service cannot apply itself (the `tool` filter). */
 const SCAN_MAX = 5000;
 
-function crmViewer(ctx: ToolContext): CrmViewer | null {
+/**
+ * The CRM viewer of an MCP call: the admin who created the token, with `channel: "mcp"` and NEVER a
+ * super admin (lead routing §11, L3): an assistant cannot change super-admin settings, and its
+ * contact logs never resolve a first-call clock.
+ */
+export function crmViewer(ctx: Pick<ToolContext, "caller">): CrmViewer | null {
   const user = adminGetUser(ctx.caller.createdBy);
   if (!user || user.disabled || user.role !== "admin") return null;
-  return resolveCrmViewer({
-    userId: user.id,
-    role: user.role,
-    displayName: user.displayName,
-    mustChangePassword: user.mustChangePassword,
-  });
+  const viewer = resolveCrmViewer(
+    {
+      userId: user.id,
+      role: user.role,
+      displayName: user.displayName,
+      mustChangePassword: user.mustChangePassword,
+    },
+    undefined,
+    { channel: "mcp" },
+  );
+  return viewer ? { ...viewer, superAdmin: false, channel: "mcp" } : null;
 }
 
 const NO_VIEWER = fail("forbidden", "The admin who created this token cannot use the CRM right now.");

@@ -700,7 +700,7 @@ describe("portal chrome", () => {
 // dead end. Staff (counsellors / managers) keep the flat CRM nav.
 
 const CRM_PAGES = ["/crm", "/crm/today", "/crm/pipeline", "/crm/reports", "/crm/staff"] as const;
-const ADMIN_PAGES = ["/admin", "/admin/coming", "/admin/website", "/admin/users", "/admin/mcp", "/admin/audit"] as const;
+const ADMIN_PAGES = ["/admin", "/admin/coming", "/admin/questions", "/admin/website", "/admin/page-layout", "/admin/users", "/admin/mcp", "/admin/audit"] as const;
 /** Retired admin pages: they redirect (to `/crm` or `/admin/website`) and are not in the sidebar. */
 const RETIRED_PAGES = ["/admin/enquiries", "/admin/content", "/admin/centres", "/admin/results"] as const;
 
@@ -733,8 +733,9 @@ describe.each(["en", "hi"] as const)("admin console navigation (%s)", (locale) =
     for (const path of [...ADMIN_PAGES, ...CRM_PAGES]) expect(html, path).toContain(`href="${prefix}${path}"`);
     for (const path of RETIRED_PAGES) expect(html, path).not.toContain(`href="${prefix}${path}"`);
     // Groups per decision 2: Dashboard, Admission engine, Website & content, Users & access,
-    // Settings & audit. Sections with no working page yet are not in the sidebar.
-    expect(groupKeys).toEqual(["dashboard", "admission", "website", "access", "settings"]);
+    // Settings & audit, plus Tests & question bank (docs/question-bank-plan.md §B6). Sections with
+    // no working page yet are not in the sidebar.
+    expect(groupKeys).toEqual(["dashboard", "admission", "tests", "website", "access", "settings"]);
     for (const key of groupKeys) expect(html).toContain(esc(portal.navGroups[key]));
     for (const key of ["leadGeneration", "search"] as const) expect(html).not.toContain(esc(portal.navGroups[key]));
     for (const label of Object.values(crmPageLabels(portal, crm))) expect(html).toContain(esc(label));

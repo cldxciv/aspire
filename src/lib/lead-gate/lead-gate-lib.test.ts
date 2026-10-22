@@ -11,6 +11,7 @@ import {
   LEAD_GATE_CONSENT_VERSION,
   LEAD_GATE_CONSENT_VERSIONS,
   LEAD_GATE_ERRORS,
+  LEAD_GATE_USAGE_KEYS,
   leadGateSubmitSchema,
   leadGateUsageSchema,
   mockScoreBand,
@@ -137,6 +138,20 @@ describe("contract: POST /api/lead-gate/usage body", () => {
       page: "/tools/predictor",
     });
     expect(leadGateUsageSchema.parse({ tool: "planner", exam: "neet", band: "score-1-2" }).band).toBeUndefined();
+  });
+
+  it("the planner may name a feature (`key: \"countdown\"`, the homepage countdown); the predictor's key is dropped; unknown keys are refused", () => {
+    expect(leadGateUsageSchema.parse({ tool: "planner", exam: "jee-main", key: "countdown", page: "/" })).toEqual({
+      tool: "planner",
+      exam: "jee-main",
+      key: "countdown",
+      page: "/",
+    });
+    expect(leadGateUsageSchema.parse({ tool: "predictor", exam: "neet", key: "countdown" }).key).toBeUndefined();
+    expect(LEAD_GATE_USAGE_KEYS).toEqual(["countdown"]);
+    for (const key of ["timetable", "Countdown", "", 1]) {
+      expect(leadGateUsageSchema.safeParse({ tool: "planner", exam: "neet", key }).success, String(key)).toBe(false);
+    }
   });
 
   it("refuses tools recorded by their own server routes, and anything that is not a summary", () => {
@@ -319,5 +334,33 @@ describe("consent registry (D-039) and the leadGate messages", () => {
       expect(all).not.toMatch(/verif|we (have )?sent|OTP sent|Ask Aspire/i);
     }
     expect(messagesFor("en", "leadGate").submit.ask).toBe("Ask Rancho");
+  });
+
+  it.each(["en", "hi"] as const)(
+    "%s: never says signing in skips the step (owner decision 22 Oct 2026); says when the name came from the account; has the countdown's button",
+    (locale) => {
+      const t = messagesFor(locale, "leadGate");
+      const all = [...leaves(t).values()].join(" \n ");
+      expect(all).not.toMatch(/sign in instead|not needed if you're signed in|इसके बजाय साइन इन|साइन इन होने पर ज़रूरी नहीं/i);
+      expect(t.note.required).not.toMatch(/sign|साइन/i);
+      expect(t.fields.studentNameFromAccount).toMatch(locale === "en" ? /Aspire account.*change it/ : /Aspire खाते.*बदल/);
+      expect(t.accountNote).toMatch(locale === "en" ? /signed in.*link these details to your account/ : /साइन इन.*खाते से जोड़/);
+      for (const key of LEAD_GATE_USAGE_KEYS) expect(t.submitFor[key].trim(), key).not.toBe("");
+    },
+  );
+
+  it.each(["en", "hi"] as const)("%s: the privacy notice no longer says signed-in users are never asked, and discloses the account link", (locale) => {
+    const p = messagesFor(locale, "legal").privacy.toolContact;
+    if (locale === "en") {
+      expect(p.p1).not.toMatch(/unless you are signed in/);
+      expect(p.p1).toMatch(/also when you are signed in to an Aspire account/);
+      expect(p.p3).toMatch(/student or parent account, we also note which account it was \(its account ID/);
+      expect(p.p4).not.toMatch(/while you are signed in/);
+    } else {
+      expect(p.p1).not.toMatch(/जब तक आप Aspire खाते में साइन इन न हों/);
+      expect(p.p1).toMatch(/साइन इन होने पर भी/);
+      expect(p.p3).toMatch(/खाता ID/);
+      expect(p.p4).not.toMatch(/जब आप साइन इन हों/);
+    }
   });
 });

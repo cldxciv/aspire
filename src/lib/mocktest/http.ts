@@ -1,9 +1,9 @@
 import "server-only";
 
 import { unstable_rethrow } from "next/navigation";
-import type { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import type { ApiError } from "@/lib/contracts/api";
-import { portalApiError } from "@/lib/auth/responses";
+import { portalApiError, privateApiHeaders } from "@/lib/auth/responses";
 import type { RateLimitResult } from "@/lib/server/rate-limit";
 
 /**
@@ -11,7 +11,22 @@ import type { RateLimitResult } from "@/lib/server/rate-limit";
  * Log lines carry fixed codes only — never ids, nicknames, IPs or bodies.
  */
 
-export type MocktestRoute = "score" | "start" | "attempts" | "profile" | "leaderboard" | "verify" | "admin_profile";
+export type MocktestRoute =
+  | "score"
+  | "start"
+  | "attempts"
+  | "profile"
+  | "leaderboard"
+  | "verify"
+  | "admin_profile"
+  // Generated question papers (docs/question-bank-plan.md §B10).
+  | "papers"
+  | "paper"
+  | "readiness"
+  | "report"
+  | "figure"
+  // Re-scoring saved attempts after an answer-key correction (not a route; called by the bank).
+  | "rescore";
 
 export function mocktestLog(entry: { route: MocktestRoute; outcome: string; reason?: string }): void {
   const level = entry.outcome === "error" ? "error" : entry.outcome === "success" ? "info" : "warn";
@@ -37,7 +52,38 @@ export const MOCKTEST_MESSAGES = {
   verifyNotFound: "No saved attempt has this verification ID.",
   invalidVerifyId: "Invalid verification ID.",
   studentNotFound: "Student not found.",
+  paperNotFound: "This question paper is not available. It may have expired.",
+  bankThin: "The question bank does not have enough approved questions for this exam yet.",
+  rankedUnavailable: "This month's ranked paper is not available yet.",
+  rankedOff: "This exam has no monthly ranked paper.",
+  rankedSignIn: "Sign in with a student account to sit the monthly ranked paper.",
+  useAttempts: "Ranked papers are scored when you save them (sign in as the student who sat the paper).",
+  alreadyScored: "This paper was already submitted with different answers.",
+  alreadySaved: "This paper was already saved.",
+  generationOff: "Exam-pattern mocks are switched off right now.",
+  figureNotFound: "Figure not found.",
 } as const;
+
+/** Machine-readable reasons of the 409 answers (body `reason`; the envelope code stays `bad_request`, D-007 / D-016). */
+export type MocktestConflict =
+  | "bank_thin"
+  | "ranked_unavailable"
+  | "ranked_off"
+  | "use_attempts"
+  | "paper_already_scored"
+  | "paper_already_saved";
+
+/**
+ * A 409 conflict. The D-007 code list is frozen, so the envelope says `bad_request` (clients branch
+ * on the HTTP status, as for 413 / 415) and `reason` names the conflict; `extra` adds data such as
+ * the readiness of a thin bank.
+ */
+export function mocktestConflict(reason: MocktestConflict, message: string, extra: Record<string, unknown> = {}): NextResponse {
+  return NextResponse.json(
+    { ok: false, error: "bad_request", message, reason, ...extra },
+    { status: 409, headers: privateApiHeaders() },
+  );
+}
 
 export function rateLimited(result: RateLimitResult): NextResponse<ApiError> {
   return portalApiError("rate_limited", MOCKTEST_MESSAGES.rateLimited, {

@@ -134,14 +134,23 @@ describe("ResultCardMarquee — preview", () => {
     expect(html).toContain('<div class="aspire-result-marquee min-w-0 max-w-full"><div role="region"');
     expect(html).toContain("--marquee-duration:30s");
     // The CSS loop: normal motion only (the global reduced-motion rule would cut it short), paused
-    // by hover, keyboard focus in the strip (not the toggle, so unticking Pause resumes at once),
-    // the Pause toggle and — once hydrated — a hidden tab or an off-screen strip.
+    // by the Pause toggle, by keyboard focus in the strip only before hydration (afterwards the
+    // frame ticks the toggle, so the pause shows), and — once hydrated — by `data-marquee-idle`
+    // (toggle ticked, a hidden tab or an off-screen strip). Never by mouse hover (owner decision
+    // 2026-10-22: it stood still while the pointer rested on it, toggle unticked).
     expect(MARQUEE_CSS).toMatch(/@media \(prefers-reduced-motion: no-preference\) \{\s*\.aspire-result-marquee-track \{ animation:/);
     expect(MARQUEE_CSS).not.toContain("prefers-reduced-motion: reduce");
     expect(MARQUEE_CSS).not.toContain(":focus-within");
+    expect(MARQUEE_CSS).not.toContain(":hover");
+    // No focus pause the toggle cannot show: a clicked strip turns :focus-visible after any key
+    // (PageDown), which froze the hydrated loop while the Pause box stayed unticked.
+    for (const rule of MARQUEE_CSS.split("\n").filter((line) => line.includes(":focus-visible"))) {
+      expect(rule).toMatch(/^\.aspire-result-marquee:not\(\[data-hydrated\]\) /);
+    }
+    // So the server markup keeps the pre-hydration CSS focus pause.
+    expect(html).not.toContain('data-hydrated=""');
     for (const pause of [
-      ".aspire-result-marquee:hover .aspire-result-marquee-track",
-      '.aspire-result-marquee [role="region"]:focus-visible .aspire-result-marquee-track',
+      '.aspire-result-marquee:not([data-hydrated]) [role="region"]:focus-visible .aspire-result-marquee-track',
       ".aspire-result-marquee[data-marquee-idle] .aspire-result-marquee-track",
       ".aspire-result-marquee:has(.aspire-result-marquee-pause:checked) .aspire-result-marquee-track",
     ]) {

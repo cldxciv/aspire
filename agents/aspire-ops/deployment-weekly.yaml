@@ -1,0 +1,25 @@
+# Weekly admissions review, Mondays at 09:00 IST, covering the previous Monday-Sunday. Workbook + one-page summary in the Console session.
+name: aspire-ops weekly review
+agent: ./agent.md
+environment_id: ./environment.yaml
+vault_ids: [vlt_011CgG9eWeaQbgQdU8JvYY28]   # vault.yaml's ID from claude-lock.json
+schedule: {type: cron, expression: "0 9 * * 1", timezone: Asia/Kolkata}
+budget: {type: limit, max_list_cost: {amount: "100", currency: USD}}   # $1.00 cap per run
+initial_events:
+  - type: user.message
+    content:
+      - type: text
+        text: |
+          Write last week's admissions review (the previous Monday 00:00 to Sunday 23:59, Asia/Kolkata) for the owner.
+          Produce /mnt/session/outputs/weekly-review-<YYYY-MM-DD>.xlsx and a one-page summary at /mnt/session/outputs/weekly-review-<YYYY-MM-DD>.md, and give the summary as your final reply.
+
+          Before you finish, check both files against this list and fix anything that fails:
+          1. The summary states the exact week in IST and whether the site is in demo mode (from site_status); in demo mode, warn that leads may be sample data.
+          2. The workbook has the sheets Summary, Funnel, Sources, Centres and Follow-ups, each with a header row, filled from crm_report for the week (and list_leads for follow-ups).
+          3. Funnel: current count per stage and how many ever reached each stage. Week-over-week change only from a second crm_report call for the week before; if that week has no data, write "no comparison yet".
+          4. Sources and Centres: totals with contacted and enrolled counts and rates exactly as crm_report gives them.
+          5. Follow-ups: overdue follow-ups (list_leads with due: overdue) and leads with no activity for 7+ days, individual leads at most as first name, last initial, last four phone digits and CRM reference.
+          6. Speed to lead only if contact times are recorded; otherwise "not tracked yet". Nothing is estimated.
+          7. No full phone number, email or address in either file.
+          8. At most five recommendations, each tied to a specific number in the workbook and to a centre, source or role.
+          9. Every figure comes from a tool result in this session, and totals agree across sheets.

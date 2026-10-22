@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import robots from "@/app/robots";
 import sitemap from "@/app/sitemap";
 import { siteConfig } from "@/config/site";
+import { setQbPaperPortForTests } from "@/lib/mocktest/generated";
+import { FakeQbPort } from "@/lib/mocktest/testing/fake-qb-port";
 import { setTestLang, withTestLang } from "@/test/root-params-stub";
 import { defaultLocale, htmlLang, isLocale, locales } from "./config";
 import { format } from "./format";
@@ -10,9 +12,17 @@ import { alternatesFor, languageAlternates } from "./metadata";
 import { isNonLocalizedPath, localeFromPathname, localePath, splitLocale, stripLocale } from "./paths";
 import { getLocale, getMessages, localeAlternates } from "./server";
 
+// The sitemap reads the question bank after `connection()` (request time), which throws outside a
+// Next.js request scope; here it only marks the route as dynamic.
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  connection: async () => undefined,
+}));
+
 afterEach(() => {
   vi.unstubAllEnvs();
   setTestLang("en");
+  setQbPaperPortForTests(null);
 });
 
 describe("config", () => {
@@ -166,6 +176,8 @@ describe("messages", () => {
 
 describe("sitemap and robots", () => {
   it("lists every public page in both locales with hreflang alternates", async () => {
+    // Synthetic bank (no database) where every exam-pattern mock can serve a paper, so those pages are listed too.
+    setQbPaperPortForTests(new FakeQbPort());
     const entries = await sitemap();
     const urls = entries.map((entry) => entry.url);
     expect(urls).toContain(siteConfig.url);

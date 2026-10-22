@@ -6,7 +6,7 @@ import type { Enquiry } from "@/lib/contracts/enquiry";
 
 import type { EnquiryDestination } from "./destinations";
 import { consentLocale, consentRecord } from "./enquiry-consent";
-import { buildEnquiryPayload, generateEnquiryReference, isHoneypotTriggered } from "./enquiry-service";
+import { buildEnquiryPayload, enquiryDistrict, generateEnquiryReference, isHoneypotTriggered } from "./enquiry-service";
 import { safeSinkCode, type LeadCaptureInput, type LeadSink } from "./lead-sink";
 import { exceptionReason } from "./logger";
 import { SlidingWindowRateLimiter } from "./rate-limit";
@@ -75,6 +75,8 @@ export function buildLeadCapture(enquiry: Enquiry, reference: string, receivedAt
       input.topic = enquiry.topic;
       break;
   }
+  // Lead routing (§13.8): the district routes the lead to that district's team.
+  input.district = enquiryDistrict(enquiry);
   for (const key of Object.keys(input) as (keyof LeadCaptureInput)[]) {
     if (input[key] === undefined) delete input[key];
   }

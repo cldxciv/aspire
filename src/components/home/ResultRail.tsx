@@ -1,23 +1,26 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, GraduationCap, Pause, Play } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { InitialsAvatar } from "@/components/faculty/InitialsAvatar";
 import { DemoBadge } from "@/components/ui";
 import {
   readRail,
   scrollRailTo,
+  stepRail,
+  useAutoplay,
+  useFocusPause,
   useHydrated,
   useInView,
-  useInteractionPause,
   usePageHidden,
   useReducedMotion,
+  useScrollSettle,
 } from "@/components/ui/carousel-env";
 import {
+  AUTOPLAY_MS,
   autoplayDelay,
   isPlaying,
   liveMode,
-  railNextIndex,
   shouldAutoRotate,
   type PlayChoice,
 } from "@/components/ui/carousel-utils";
@@ -112,13 +115,17 @@ function ResultCard({ card, t }: { card: ResultCardView; t: ResultRailMessages }
  * Horizontal scroll-snap rail of result cards with 44px pause/play and previous/next buttons and
  * an "n of N" status.
  *
- * Autoplay (default on, 6 s, on every device once hydrated): advances one card at a time and wraps
- * from the end back to the first card. Under `prefers-reduced-motion` it still plays, but each
- * step is an instant jump (no smooth scroll) every 8 s at least. It pauses on mouse hover, keyboard
- * focus inside (not on the pause/play button), a hidden tab and when scrolled out of view (APG
- * carousel pattern); a Pause press sticks until Play (WCAG 2.2.2). The status is a polite live
- * region only while the rail is not auto-rotating. Nothing rotates and no pause/play button renders
- * before hydration, so the server markup is the static rail.
+ * Autoplay (default on, one card every 5 s, on every device once hydrated): advances one card at a
+ * time and wraps from the end back to the first card. Under `prefers-reduced-motion` it still
+ * plays at the same pace, but each step is an instant jump (no smooth scroll). Mouse hover does not
+ * pause it. A Pause press sticks until Play (WCAG 2.2.2; Play moves on one card at once, then
+ * every 5 s), and keyboard focus inside (not on the
+ * pause/play button) presses Pause for the visitor (APG), so the button always shows the real
+ * state; it also rests while the tab is hidden or the rail is fully off screen. Each step is
+ * worked out from the rail's live scroll position on a self-repeating timer, so a lost or late
+ * scroll event cannot stop it. The status is a polite live region only while the rail is not
+ * auto-rotating. Nothing rotates and no pause/play button renders before hydration, so the server
+ * markup is the static rail.
  *
  * The list itself is focusable so keyboard users can scroll it with the arrow keys; previous/next
  * stay focusable at the ends (aria-disabled) so focus is never lost.
@@ -128,13 +135,13 @@ export function ResultRail({
   label,
   messages: t,
   autoPlay = true,
-  intervalMs = 6000,
+  intervalMs = AUTOPLAY_MS,
 }: {
   cards: ResultCardView[];
   label: string;
   messages: ResultRailMessages;
   autoPlay?: boolean;
-  /** Autoplay interval; never below 2000, and at least 8000 under reduced motion. */
+  /** Autoplay interval (default `AUTOPLAY_MS`, 5000); never below 2000. */
   intervalMs?: number;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -144,7 +151,11 @@ export function ResultRail({
   const [atStart, setAtStart] = useState(true);
   const [atEnd, setAtEnd] = useState(cards.length <= 1);
   const [choice, setChoice] = useState<PlayChoice>("auto");
-  const { hovered, focusWithin, noteKey, pointerHandlers, focusHandlers } = useInteractionPause();
+  // Manual moves (buttons, swipes) and presses on the list: each restarts the full autoplay
+  // interval, so no step lands in the middle of a swipe.
+  const [moves, setMoves] = useState(0);
+  // Keyboard focus on a card or button (not pause / play) presses Pause (APG).
+  const focusPause = useFocusPause(() => setChoice("paused"));
   const hydrated = useHydrated();
   const reducedMotion = useReducedMotion();
   const pageHidden = usePageHidden();
@@ -153,14 +164,7 @@ export function ResultRail({
   // Every card already fits: nothing to move, so no autoplay and no pause/play button.
   const scrollable = cards.length > 1 && !(atStart && atEnd);
   const playing = hydrated && isPlaying({ autoPlay, choice });
-  const rotate = shouldAutoRotate({
-    count: scrollable ? cards.length : 1,
-    playing,
-    hovered,
-    focusWithin,
-    pageHidden,
-    inView,
-  });
+  const rotate = shouldAutoRotate({ count: scrollable ? cards.length : 1, playing, pageHidden, inView });
 
   /** Syncs the "n of N" status and the button states with the scroll position. */
   const update = useCallback(() => {
@@ -183,36 +187,59 @@ export function ResultRail({
     return () => observer.disconnect();
   }, [update]);
 
-  // Autoplay: one timeout per position, so a manual move (buttons, swipe, keys) restarts the full
-  // interval. From the end it wraps back to the first card.
-  useEffect(() => {
-    if (!rotate) return;
-    const timer = window.setTimeout(() => {
+  // Autoplay: a self-repeating interval; each step reads where the rail really is, so it never
+  // waits for a scroll event and a cancelled scroll is simply retried from there. From the end it
+  // wraps back to the first card. A manual move restarts the full interval.
+  useAutoplay(
+    rotate,
+    autoplayDelay(intervalMs),
+    () => {
       const list = listRef.current;
-      if (!list) return;
-      const items = Array.from(list.children) as HTMLElement[];
-      scrollRailTo(list, items, railNextIndex(index, items.length, atEnd), reducedMotion);
-    }, autoplayDelay(intervalMs, reducedMotion));
-    return () => window.clearTimeout(timer);
-  }, [rotate, index, atEnd, intervalMs, reducedMotion]);
+      if (list) stepRail(list, Array.from(list.children) as HTMLElement[], reducedMotion);
+    },
+    moves,
+  );
+
+  // A swipe, trackpad or key scroll of the list counts as a manual move once it comes to rest; a
+  // press on it restarts the interval at once.
+  useScrollSettle(
+    listRef,
+    hydrated && cards.length > 1,
+    (userGesture) => {
+      if (userGesture) setMoves((n) => n + 1);
+    },
+    () => setMoves((n) => n + 1),
+  );
+
+  /** Pause / play. Play also moves on one card at once, so the press visibly resumes (then every 5 s). */
+  function togglePlay() {
+    if (playing) {
+      setChoice("paused");
+      return;
+    }
+    setChoice("playing");
+    const list = listRef.current;
+    if (list) stepRail(list, Array.from(list.children) as HTMLElement[], reducedMotion);
+  }
 
   function go(direction: -1 | 1) {
     const list = listRef.current;
     if (!list || (direction < 0 ? atStart : atEnd)) return;
     const items = Array.from(list.children) as HTMLElement[];
     scrollRailTo(list, items, Math.min(Math.max(index + direction, 0), items.length - 1), reducedMotion);
+    setMoves((n) => n + 1);
   }
-
-  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-    // A click-focused control that is then used from the keyboard is keyboard focus too.
-    noteKey(event.target);
-  };
 
   return (
     // Container queries: the rail sits in half the page width beside a photo on the home page (D-030).
-    // Hover and keyboard focus anywhere in the rail (cards or buttons) pause autoplay.
-    <div ref={rootRef} className="@container flex min-w-0 flex-col" onKeyDown={onKeyDown} {...focusHandlers} {...pointerHandlers}>
+    // Keyboard focus anywhere in the rail (cards or buttons, not pause/play) presses Pause (APG);
+    // mouse hover never pauses (owner decision 2026-10-22).
+    <div
+      ref={rootRef}
+      className="@container flex min-w-0 flex-col"
+      onFocus={focusPause.onFocus}
+      onBlur={focusPause.onBlur}
+    >
       {/* Controls come first in DOM and tab order (APG: rotation control before the slides), shown below the cards. */}
       {cards.length > 1 && (
         <div className="order-last mt-4 flex items-center justify-end gap-3">
@@ -223,7 +250,7 @@ export function ResultRail({
               data-carousel-toggle=""
               aria-controls={listId}
               aria-label={playing ? t.pause : t.play}
-              onClick={() => setChoice(playing ? "paused" : "playing")}
+              onClick={togglePlay}
               className={cn(controlClass, "mr-auto")}
             >
               {playing ? <Pause aria-hidden="true" className="size-4" /> : <Play aria-hidden="true" className="size-4" />}

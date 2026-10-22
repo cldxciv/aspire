@@ -1,0 +1,24 @@
+{
+  "id": "12345678901234567",
+  "created_time": "2026-10-21T04:45:30+0000",
+  "ad_id": "120200000000000001",
+  "ad_name": "NEET Kangra Oct",
+  "adset_id": "120200000000000003",
+  "adset_name": "Parents 35-55 Kangra",
+  "campaign_id": "120200000000000002",
+  "campaign_name": "NEET 2027 Admissions",
+  "form_id": "998877665544332",
+  "field_data": [
+    { "name": "full_name", "values": ["Test Parent One"] },
+    { "name": "phone_number", "values": ["+919812345670"] },
+    { "name": "city", "values": ["Chandigarh"] },
+    { "name": "which_district_do_you_live_in?", "values": ["Kangra"] },
+    { "name": "i_am_the", "values": ["Parent / guardian"] },
+    { "name": "which_class_is_the_student_in?", "values": ["Class 11"] },
+    { "name": "which_course?", "values": ["NEET (Medical)"] },
+    { "name": "best_time_to_call", "values": ["Evening"] }
+  ],
+  "custom_disclaimer_responses": [{ "checkbox_key": "consent_contact", "is_checked": "1" }],
+  "is_organic": false,
+  "platform": "ig"
+}

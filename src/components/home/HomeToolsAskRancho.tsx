@@ -90,6 +90,7 @@ export function AskRanchoLink({
   variant = "light",
   size = "md",
   mascot = true,
+  appearance = "button",
   className,
 }: {
   /** The Ask page in the page's locale (`localePath("/tools/ask", locale)`): the no-JS / no-chat fallback. */
@@ -101,6 +102,11 @@ export function AskRanchoLink({
   size?: ButtonSize;
   /** Rancho's head before the label (decorative). Off where the mascot is already beside it. */
   mascot?: boolean;
+  /**
+   * "button" (default): the site's button styles (`variant`, `size`). "plain": only `className`
+   * (e.g. the homepage's example-question bubbles); the link, hand-off and fallback are the same.
+   */
+  appearance?: "button" | "plain";
   className?: string;
 }) {
   return (
@@ -108,7 +114,7 @@ export function AskRanchoLink({
       href={href}
       prefetch={false}
       onClick={(event) => handleAskRanchoClick(event, detail, document, () => window.location.assign(href))}
-      className={buttonClasses({ variant, size, className })}
+      className={appearance === "plain" ? className : buttonClasses({ variant, size, className })}
       data-ask-rancho=""
     >
       {mascot && (

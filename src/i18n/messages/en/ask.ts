@@ -67,7 +67,7 @@ const ask = {
        * mode shows in the chat's own note). Tool-use notes for Rancho record only that it was used.
        */
       privacy:
-        "Photos and questions aren't stored. If you're signed in as an Aspire student, only the subject and topic of each doubt are saved, to show your weak areas. Before your first answer on a browser you may be asked once for a contact number (not if you're signed in); Aspire may then note that Rancho was used, never your questions, photos or answers.",
+        "Photos and questions aren't stored. If you're signed in as an Aspire student, only the subject and topic of each doubt are saved, to show your weak areas. Before your first answer on a browser you may be asked once for a contact number (even if you're signed in); Aspire may then note that Rancho was used, never your questions, photos or answers.",
     },
   },
 };

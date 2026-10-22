@@ -65,7 +65,7 @@ const home = {
      */
     points: {
       free: "Free. You may be asked for a contact number once before results",
-      private: "Scores and dates you type here are worked out in your browser; the exact values are never sent",
+      private: "Exact scores and dates are worked out in your browser, never sent",
       languages: "In English and Hindi",
     },
     seeAll: "See all tools",
@@ -75,10 +75,34 @@ const home = {
       ask: "Ask Rancho",
       planner: "Study planner",
     },
+    /** Phone tile labels (nouns, one line at 375px). Visual only: each tab is still named by its full `tabs` label. */
+    tabsShort: {
+      predictor: "Rank",
+      mockTests: "Mock test",
+      ask: "Rancho",
+      planner: "Planner",
+    },
+    /** One-line descriptions under each tile from `md` (and under the panel title below `md`). */
+    taglines: {
+      predictor: "From score to rank band in seconds",
+      mockTests: "Timed tests, just like the real CBT",
+      ask: "Type or photograph a doubt",
+      planner: "Count the days, then plan them",
+    },
     predictor: {
       lead: "Enter a score or percentile to see an estimated rank band. The full predictor adds colleges, category and home-state quota.",
       empty: "Your estimated rank band will appear here.",
       cta: "See colleges & full prediction",
+      /** Recap above the contact form (local values only; {value} is the number the visitor typed). */
+      ready: {
+        score: "Your {exam} rank band for {value} marks is ready",
+        percentile: "Your {exam} rank band for the {value} percentile is ready",
+      },
+      /** Closes the contact form and moves focus back to the score field. */
+      change: {
+        score: "Change score",
+        percentile: "Change percentile",
+      },
     },
     mockTests: {
       lead: "Exam-style computer-based tests with a timer, question palette and negative marking, then a topic-wise analysis of your attempt.",
@@ -90,8 +114,13 @@ const home = {
      */
     ask: {
       title: "Ask Rancho",
-      lead: "Rancho, Aspire's friendly snow leopard, now answers your doubts: type or photograph a Physics, Chemistry, Maths or Biology question and get step-by-step help in English or Hindi from our AI doubt solver.",
-      examplesTitle: "Questions you could ask",
+      lead: "Rancho, Aspire's friendly snow leopard, answers Physics, Chemistry, Maths and Biology doubts step by step, in English or Hindi.",
+      /** Rancho's speech bubble above the example questions (each one opens the chat with it prefilled). */
+      examplesTitle: "Hi, I'm Rancho! Tap a question to ask me.",
+      /** Opens the floating Rancho chat on this page (a plain link to /tools/ask without JS). */
+      cta: "Chat with Rancho",
+      /** Link to /rancho (the installable Rancho app). */
+      app: "Get the Rancho app",
       examples: {
         physics: "Find the maximum height of a ball thrown at 20 m/s at 30° to the ground.",
         chemistry: "Why does the boiling point of water rise when salt is added?",
@@ -105,6 +134,15 @@ const home = {
       daysLeft: "{days} days to {exam}",
       today: "{exam} is today — all the best!",
       past: "That date has passed. Choose your next exam date.",
+      /** The countdown's submit button (the lead gate may ask for contact details first). */
+      submit: "Show days left",
+      dateMissing: "Choose your exam date first.",
+      /** A date is chosen but the countdown is not shown yet ({button} is `submit`). */
+      pressToShow: "Press “{button}” to see your countdown.",
+      /** Recap above the contact form. */
+      ready: "Your {exam} countdown is ready",
+      /** Closes the contact form and moves focus back to the date field. */
+      change: "Change exam or date",
       /** Opens the Rancho chat with this prompt prefilled and a short context: exam and days left only. */
       askRancho: "Ask Rancho for a plan",
       askRanchoPrompt: "Can you help me plan my preparation for the days I have left?",

@@ -17,8 +17,21 @@ const programs = {
     metaDescription:
       "Explore Aspire's IIT JEE, NEET, Foundation and integrated school programs, and speak with an academic counsellor about the right pathway.",
     crumb: "Programs",
-    heroTitle: "Programs built around your goals",
-    heroLead: "Explore course pathways and speak with an academic counsellor before choosing a program.",
+    /** Hero headline (B · Himalayan editorial); `heroHighlight` is the part underlined in gold. */
+    heroTitle: "From your class to exam day, one clear path",
+    /** Must appear in heroTitle exactly, otherwise the headline renders without the underline. */
+    heroHighlight: "one clear path",
+    /** Under the headline when programs are listed (the picker below it). */
+    heroLead: "Pick your class to see the matching program at a glance, then talk it through with an academic counsellor.",
+    /** Under the headline while no program is listed yet (production until Aspire confirms them). */
+    heroLeadPending: "Explore course pathways and speak with an academic counsellor before choosing a program.",
+    /** D · program picker in the hero: one chip per program, labelled with its class level. */
+    heroPicker: {
+      group: "Choose your class",
+      seeProgram: "See the full program",
+      /** Announced to screen readers after a chip is chosen. */
+      selected: "Showing {title}",
+    },
     directoryTitle: "Choose a pathway",
     directoryLead: "Filter by exam, then open a program for its class level, schedule and highlights.",
     demoNotice:
@@ -79,6 +92,13 @@ const programs = {
     notFoundTitle: "Program not found",
     enquire: "Enquire about this program",
     allPrograms: "All programs",
+    /** Accessible name of the hero's facts strip (class, duration, batch size). */
+    heroFacts: "Program at a glance",
+    /** White card beside the hero headline: the batch details the program record states. */
+    heroCard: {
+      eyebrow: "Batch details",
+      cta: "See schedule & fees",
+    },
     draftTitle: "Draft program information",
     draftBody:
       "This description is a placeholder pending verification by Aspire's academic team. Please confirm details with a counsellor.",

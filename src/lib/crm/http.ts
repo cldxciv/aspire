@@ -11,7 +11,8 @@ import { parseJsonBody, REQUEST_MESSAGES, rejectCrossOrigin } from "@/lib/auth/r
 import { portalApiError, portalApiItem } from "@/lib/auth/responses";
 import { SlidingWindowRateLimiter } from "@/lib/server/rate-limit";
 
-import { resolveCrmViewer } from "./access";
+import { CRM_MESSAGES, resolveCrmViewer } from "./access";
+import { SLA_FILTERS, type SlaFilter } from "./lead-ops-types";
 import { isLeadStage, LEAD_SORTS, type CrmResult, type CrmViewer, type LeadFilters, type LeadSort } from "./types";
 
 /**
@@ -22,6 +23,22 @@ import { isLeadStage, LEAD_SORTS, type CrmResult, type CrmViewer, type LeadFilte
  */
 
 export const CRM_MAX_BODY_BYTES = 8 * 1024;
+
+/**
+ * Body limits per kind of request (lead routing §21): ordinary CRM writes 8 KB; settings
+ * documents (calling hours, speed rule, Meta field maps) 32 KB; import chunks 256 KB (under
+ * nginx's 1 MB default). Pass one to `parseCrmBody`.
+ */
+export const CRM_BODY_LIMITS = {
+  default: CRM_MAX_BODY_BYTES,
+  settings: 32 * 1024,
+  import: 256 * 1024,
+} as const;
+
+/** The byte limit for a kind of request (`bodyLimit("settings")`). */
+export function bodyLimit(kind: keyof typeof CRM_BODY_LIMITS): number {
+  return CRM_BODY_LIMITS[kind];
+}
 
 export const CRM_API_MESSAGES = {
   noMembership: "Your account is not set up for the CRM yet. Ask an Aspire administrator.",
@@ -102,9 +119,28 @@ export async function requireCrm(
   return { ok: true, viewer };
 }
 
-/** JSON body with the CRM size limit. */
-export async function parseCrmBody<T>(request: Request, schema: z.ZodType<T>, route: string) {
-  const body = await parseJsonBody(request, schema, CRM_MAX_BODY_BYTES);
+/**
+ * Guard for every SUPER-ADMIN-ONLY CRM write (and the few SA-only reads: secrets state, the Meta
+ * inbox): `requireCrm` (same-origin for writes, session, membership, rate limit), then an
+ * EFFECTIVE super admin (D-044) — 403 otherwise. Enforced on the server for every call; hidden
+ * buttons are never the protection.
+ */
+export async function requireCrmSuperAdmin(
+  request: Request,
+  options: { write: boolean; limit?: CrmLimit; route: string },
+): Promise<CrmGuard> {
+  const auth = await requireCrm(request, options);
+  if (!auth.ok) return auth;
+  if (auth.viewer.role !== "admin" || auth.viewer.superAdmin !== true) {
+    crmLog(options.route, "forbidden", "super_admin_only");
+    return { ok: false, response: portalApiError("forbidden", CRM_MESSAGES.superAdminOnly) };
+  }
+  return auth;
+}
+
+/** JSON body with the CRM size limit (`maxBytes`: one of `CRM_BODY_LIMITS`, default 8 KB). */
+export async function parseCrmBody<T>(request: Request, schema: z.ZodType<T>, route: string, maxBytes: number = CRM_MAX_BODY_BYTES) {
+  const body = await parseJsonBody(request, schema, maxBytes);
   if (!body.ok) crmLog(route, "bad_request", body.reason ?? body.outcome);
   return body;
 }
@@ -157,6 +193,11 @@ export function leadFiltersFromSearch(params: URLSearchParams): LeadFilters {
     if (value !== undefined) filters[key] = value;
   }
   if (params.get("includeErased") === "true") filters.includeErased = true;
+  // Lead routing (§21): `area` = an area id, `none` or `tool_signups`; `sla` = open / overdue / escalated.
+  const area = get("area");
+  if (area !== undefined && ID.test(area)) filters.area = area;
+  const sla = get("sla");
+  if (sla !== undefined && (SLA_FILTERS as readonly string[]).includes(sla)) filters.sla = sla as SlaFilter;
   return filters;
 }
 

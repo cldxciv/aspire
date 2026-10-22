@@ -24,6 +24,9 @@ import enCrm from "./en/crm";
 import enRancho from "./en/rancho";
 import enRanchoApp from "./en/ranchoApp";
 import enLeadGate from "./en/leadGate";
+import enQb from "./en/qb";
+import enQbImport from "./en/qbImport";
+import enLayout from "./en/layout";
 import hiAbout from "./hi/about";
 import hiAdmissions from "./hi/admissions";
 import hiAuth from "./hi/auth";
@@ -48,6 +51,9 @@ import hiCrm from "./hi/crm";
 import hiRancho from "./hi/rancho";
 import hiRanchoApp from "./hi/ranchoApp";
 import hiLeadGate from "./hi/leadGate";
+import hiQb from "./hi/qb";
+import hiQbImport from "./hi/qbImport";
+import hiLayout from "./hi/layout";
 import type { Catalog, Messages, Namespace } from "./types";
 
 export type { Catalog, Messages, Namespace } from "./types";
@@ -83,6 +89,9 @@ const catalogs: Readonly<Record<Locale, Catalog>> = {
     rancho: enRancho,
     ranchoApp: enRanchoApp,
     leadGate: enLeadGate,
+    qb: enQb,
+    qbImport: enQbImport,
+    layout: enLayout,
   },
   hi: {
     common: hiCommon,
@@ -109,6 +118,9 @@ const catalogs: Readonly<Record<Locale, Catalog>> = {
     rancho: hiRancho,
     ranchoApp: hiRanchoApp,
     leadGate: hiLeadGate,
+    qb: hiQb,
+    qbImport: hiQbImport,
+    layout: hiLayout,
   },
 };
 

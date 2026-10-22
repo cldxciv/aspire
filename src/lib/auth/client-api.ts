@@ -39,7 +39,12 @@ export type KnownApiMessage =
   | "selfReset"
   | "notAParent"
   | "notAStudent"
-  | "userNotFound";
+  | "userNotFound"
+  | "superAdminOnly"
+  | "staffSuperAdminOnly"
+  | "superAdminTarget"
+  | "lastSuperAdmin"
+  | "notAdmin";
 
 const KNOWN: ReadonlyArray<[string, KnownApiMessage]> = [
   [PASSWORD_CHANGE_REQUIRED_TEXT, "passwordChangeRequired"],
@@ -57,6 +62,11 @@ const KNOWN: ReadonlyArray<[string, KnownApiMessage]> = [
   [AUTH_MESSAGES.notAParent, "notAParent"],
   [AUTH_MESSAGES.notAStudent, "notAStudent"],
   [AUTH_MESSAGES.userNotFound, "userNotFound"],
+  [AUTH_MESSAGES.superAdminOnly, "superAdminOnly"],
+  [AUTH_MESSAGES.staffSuperAdminOnly, "staffSuperAdminOnly"],
+  [AUTH_MESSAGES.superAdminTarget, "superAdminTarget"],
+  [AUTH_MESSAGES.lastSuperAdmin, "lastSuperAdmin"],
+  [AUTH_MESSAGES.notAdmin, "notAdmin"],
 ];
 
 /** Recognises one of the API's fixed English messages; `null` for anything else. */

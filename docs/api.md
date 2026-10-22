@@ -31,6 +31,11 @@ Every response is JSON in the shared envelope, with a matching HTTP status:
 | GET | `/api/health` | Liveness + non-secret config state |
 | GET / POST / DELETE | `/api/lead-gate` | Lead gate: status, share contact details once (pass cookie), forget / withdraw ([below](#lead-gate-apilead-gate)) |
 | POST | `/api/lead-gate/usage` | Note one use of a browser-only tool on the family's lead |
+| GET | `/api/mocktest/papers/readiness` | Exam-pattern mocks: can a paper be made for this slot and language? ([below](#exam-pattern-mock-papers-apimocktestpapers); being built) |
+| POST | `/api/mocktest/papers` | Generate a practice paper, or get this month's ranked paper (being built) |
+| GET | `/api/mocktest/papers/[id]` | Resume a generated paper (being built) |
+| POST | `/api/mocktest/papers/[id]/report` | Report a problem with one question (being built) |
+| GET | `/api/qb/figures/[id]` | A figure of an approved question-bank question (being built) |
 
 The Rancho route (`/api/ask`) enforces the lead gate; the mock-test score route (`/api/mocktest/score`) asks for it too, but guests keep attempts in the browser, so it is lead capture rather than access control: see [Lead gate on server-enforced tools](#lead-gate-on-server-enforced-tools).
 
@@ -65,6 +70,7 @@ Accepts the enquiry forms (the 3-step home page "hero" form, `/admissions`, `/co
 | `intent` | – | – | – | opt | `enquiry` (default) or `scholarship` |
 | `preferredCentre` | opt | opt | – | – | `"not-sure"`, `""`, or the slug of a centre `getCentres()` currently publishes (enforced server-side; free text or an unpublished centre → 422) |
 | `topic` | – | – | ✓ | – | `course-information`, `admissions`, `scholarship`, `centre-information`, `other` |
+| `district` | opt | opt | opt | – | lead routing (D-045): one of Himachal's 12 district ids (`bilaspur`, `chamba`, `hamirpur`, `kangra`, `kinnaur`, `kullu`, `lahaul-spiti`, `mandi`, `shimla`, `sirmaur`, `solan`, `una`), `outside-hp`, or `""`. The forms show it while no centre is chosen (hero step 3, admissions, contact). Anything else → 422 "Select a district from the list". The server passes it to the CRM as the family's place, which routes the lead to that district's team |
 
 ¹ Accepted by the contract, but the hero form does not ask for an email address (D-021a), so hero enquiries normally arrive without one.
 
@@ -296,11 +302,11 @@ Every response: D-007 envelope, `Cache-Control: no-store`, `X-Robots-Tag: noinde
 
 **Cookie `aspire_tool_pass`.** HttpOnly, SameSite=Lax, Path=/, Secure in production, Max-Age 180 days, fixed expiry. Value `lg1.<passId>.<expiresAtSeconds>.<sig>` (HMAC-SHA256 with `LEAD_GATE_SECRET`). The server stores only SHA-256(passId) in `crm_gate_passes`. A stolen cookie can only unlock tools and add tool-use notes to that lead; it reveals nothing. Cleared by "Not you?" (DELETE), withdrawal, sign-out (`/api/auth/logout`), erase, expiry, a retired consent version or a rotated secret.
 
-**Access order** (`resolveLeadGateAccess`, request time only): gate off → open (`via: "off"`); any verified session (student, parent, staff, admin) → open (`session`, nothing stored); live pass → open (`pass`); else locked. `required` degrades to `optional` while the flood breaker is tripped.
+**Access order** (`resolveLeadGateAccess`, request time only; **owner decision 22 Oct 2026**): gate off → open (`via: "off"`); a signed-in **student or parent account with a mobile number on file** → open (`session`, nothing stored); live pass → open (`pass`, signed in or not); else locked. Being signed in does not open the gate by itself: **staff and admins always get the visitor's form**, and accounts have no phone field yet (`accountMobileOnFile()` is false), so today **every student and parent is asked once too**, with the name pre-filled. `required` degrades to `optional` while the flood breaker is tripped.
 
 ### GET /api/lead-gate → 200
 
-`{ ok: true, data: { mode: "off" | "optional" | "required", unlocked, via: "off" | "session" | "pass" | null, recordsUse, expiresAt: ISO | null, sample } }`. `sample` = results currently come from sample data (the form then shows `leadGate.sampleData`). 429 at 600 / 10 min per IP bucket; 500. Re-issues a refreshed session cookie and clears a dead pass cookie.
+`{ ok: true, data: { mode: "off" | "optional" | "required", unlocked, via: "off" | "session" | "pass" | null, recordsUse, expiresAt: ISO | null, sample, prefill } }`. `sample` = results currently come from sample data (the form then shows `leadGate.sampleData`). `prefill` = `{ studentName: string | null, submittedBy: "student" | "parent" } | null`: only for a signed-in student or parent account that is asked (a student's own name; a parent's linked learner when exactly one is linked; the account's role), else null (guests, staff, admins, gate off, accounts let through). It is the account's own data to its own browser; no lead field is ever returned. 429 at 600 / 10 min per IP bucket; 500. Re-issues a refreshed session cookie and clears a dead pass cookie.
 
 ### POST /api/lead-gate (≤ 4 KB)
 
@@ -309,7 +315,7 @@ Body: `{ studentName (2–80), phone (Indian mobile, implausible numbers refused
 | Status | When |
 |---|---|
 | 403 | Cross-origin |
-| 200 `{ unlocked: true, via: "off" \| "session" }` | Gate off or signed in: nothing stored, body not read |
+| 200 `{ unlocked: true, via: "off" \| "session" }` | Gate off, or a student / parent account with a mobile on file (none yet): nothing stored, body not read. Signed-in staff and admins continue like visitors |
 | 429 | 60 / 10 min per IP bucket; or the per-number cap (5 new submissions / 24 h) when that number has no lead yet (`X-Lead-Gate-Limit: phone`) |
 | 415 / 413 / 400 / 422 | Content type, size, JSON, schema (`fieldErrors`; a `consentVersion` error means a stale page) |
 | 201 | Honeypot: the normal body and a cookie that never works; nothing stored |
@@ -317,7 +323,7 @@ Body: `{ studentName (2–80), phone (Indian mobile, implausible numbers refused
 | 201 `{ unlocked: true, via: "pass", recordsUse, expiresAt }` + `Set-Cookie` | Captured as a CRM lead (source `tool`, dedupe by number, consent text from the server registry) and a pass, in one transaction; this browser's previous pass revoked. Past the per-number cap the pass binds to the existing lead without a new submission. **Byte-identical for a new and an existing family; never names anyone** |
 | 500 | Store failure: "We couldn't save your details. Nothing was saved. Please try again." No cookie |
 
-An existing lead is never reopened, re-assigned or given a weaker consent by the gate (`docs/crm.md` §11).
+An existing lead is never reopened, re-assigned or given a weaker consent by the gate (`docs/crm.md` §11). Sent while signed in to a **student or parent** account, the submission entry also records `accountId` (the opaque account id) and `accountRole`; nothing else is copied from the account, the account itself is never changed (no phone is written to it), and the link is scrubbed on erase. Staff and admin submissions carry no account link.
 
 ### DELETE /api/lead-gate[?withdraw=1] → 200 `{ forgotten: true, withdrawn }`
 
@@ -325,16 +331,79 @@ Same-origin; 30 / 10 min per IP bucket; idempotent; always expires the cookie. `
 
 ### POST /api/lead-gate/usage (≤ 1 KB) → 200 `{ recorded, reason? }`
 
-Body `{ tool: "predictor" | "planner", exam, band? (predictor only: "score-a-b" / "percentile-a-b"), page? }`. `ask` and `mock-test` → 422 (their own routes record them; a browser cannot spoof them). `reason`: `off` | `session` | `no_pass` | `not_recorded` (e.g. a pass from an enquiry, or `LEAD_GATE_RECORD_USE` excludes it). 429 at 600 / 10 min per IP bucket or 120 / hour per pass. One `tool_use` entry per lead + tool + key + India day (merged, `uses` counted); deleted after 90 days; never moves the lead's last activity. The client ignores failures.
+Body `{ tool: "predictor" | "planner", exam, band? (predictor only: "score-a-b" / "percentile-a-b"), key? (planner only: `"countdown"` = the homepage exam countdown, noted as its own entry `countdown-<exam>` with `feature: "countdown"`; any other value 422; dropped for the predictor), page? }`. `ask` and `mock-test` → 422 (their own routes record them; a browser cannot spoof them). `reason`: `off` | `session` | `no_pass` | `not_recorded` (e.g. a pass from an enquiry, or `LEAD_GATE_RECORD_USE` excludes it). 429 at 600 / 10 min per IP bucket or 120 / hour per pass. One `tool_use` entry per lead + tool + key + India day (merged, `uses` counted); deleted after 90 days; never moves the lead's last activity. The client ignores failures.
 
 ## Lead gate on server-enforced tools
 
-A locked browser gets **401** with header `X-Lead-Gate: required` and body `{ ok: false, error: "unauthenticated", message, gate: "lead" }` (`leadGateRequiredResponse`). Clients treat a response as the gate **only** when `isLeadGateResponse(response)` (status 401 + that header); any other 401 keeps its old meaning. Browser-only tools (predictor, homepage widget, planner) cannot be enforced: their tables ship to the page, so their gate is lead capture, not access control.
+"Locked" follows the access order above: a signed-in admin, staff member, student or parent without a pass is locked too (owner decision 22 Oct 2026). A locked browser gets **401** with header `X-Lead-Gate: required` and body `{ ok: false, error: "unauthenticated", message, gate: "lead" }` (`leadGateRequiredResponse`). Clients treat a response as the gate **only** when `isLeadGateResponse(response)` (status 401 + that header); any other 401 keeps its old meaning. Browser-only tools (predictor, homepage widget, planner) cannot be enforced: their tables ship to the page, so their gate is lead capture, not access control.
 
 - **`POST /api/ask` (Rancho):** after the same-origin and configuration checks and **before** the allowance check and the body (≤ 5.6 MB) is read: locked → the gate 401 (log outcome `gate_required`); nothing read, reserved or counted. A browser unlocked by a pass is charged per IP **and** per family (`scope: "lead"`, hashed with the day); a pass never raises an allowance and the global daily cap stays the real ceiling. On a counted answer only (`end_turn` / `max_tokens`) one note `{ tool: "ask", key: "rancho" }`: never the question, subject, topic, answer or a photo flag. Every response re-issues cookies via `applyLeadGateCookies`. `GET /api/ask` adds `access: "open" | "gate_required" | "gate_optional"` to `AskStatus`.
-- **`POST /api/mocktest/score`:** after the IP limit and before the body: locked and not grandfathered → the gate 401 ("Share a contact number once to see your score."); nothing scored (sample tests included). Grandfathered (never gated): an attempt that started before `LEAD_GATE_SINCE` (as implemented: the body's `startedAt`, the browser's own record), and an attempt the browser marks `seen: true` because its score is already stored on the device (scored without a pass, no tool-use note). The body (≤ 16 KB) is always read before the gate decides. Body gains `record?: true`, sent only for the first scoring of a local attempt; then, via a pass only, one note `{ tool: "mock-test", key: testId, testId, exam, scoreBand }` (10-point band, e.g. `pct-40-49`). Tests of 60 minutes or more ask in the runner before `/api/mocktest/start`. Signed-in flows unchanged.
+- **`POST /api/mocktest/score`:** after the IP limit and before the body: locked and not grandfathered → the gate 401 ("Share a contact number once to see your score."); nothing scored (sample tests included). Grandfathered (never gated): an attempt that started before `LEAD_GATE_SINCE` (as implemented: the body's `startedAt`, the browser's own record), and an attempt the browser marks `seen: true` because its score is already stored on the device (scored without a pass, no tool-use note). The body (≤ 16 KB) is always read before the gate decides. Body gains `record?: true`, sent only for the first scoring of a local attempt; then, via a pass only, one note `{ tool: "mock-test", key: testId, testId, exam, scoreBand }` (10-point band, e.g. `pct-40-49`). Tests of 60 minutes or more ask in the runner before `/api/mocktest/start`. Scoring a new attempt through `/score` is gated for every role like a guest's (22 Oct 2026).
+- **`POST /api/mocktest/attempts`:** saving scores the attempt, so the save follows the same rule (after the student role, the per-student limit and the body; before the test lookup): locked → the same gate 401, nothing scored or saved. Never gated: `seen: true` (new optional body field; the result page sends it because it saves a result already shown) and a `startedAt` before `LEAD_GATE_SINCE`. A retried save of an attempt this student already saved at the same test (same `testId` and `attemptId`) gets 200 with the stored row and the scoring of its STORED answers, never a scoring of the retry's body; the same `attemptId` with another test is gated like a new attempt. Generated papers: after the paper is found (404 first); never gated when the paper's server `created_at` is before `LEAD_GATE_SINCE` or the paper was already scored (answers locked, e.g. by `/score` on the result page). `seen` is ignored for papers (every result view scores the paper first, so an unscored paper was never seen), and a ranked paper (scored only here) is asked at its first save. The session is read once, with the gate, so a renewed session cookie is re-issued. No tool-use note is written by a save. Viewing saved attempts (`GET`) is the student's own data and stays ungated.
+
+## Exam-pattern mock papers (`/api/mocktest/papers`)
+
+**Status: being built (22 Oct 2026, package QB-MOCKTEST-API).** This section is the contract from `docs/question-bank-plan.md` §B9–B13. It was first written before the routes landed, then re-checked against the landed route files (`src/app/api/mocktest/papers/**`, `src/lib/mocktest/generated.ts`, `src/lib/mocktest/service.ts`) on 22 Oct 2026 by reading the source; nothing was run. The route code and the request schemas in `src/lib/mocktest/schemas.ts` are authoritative; the Integrate stage makes the final check. Decisions D-050, D-051, D-056; operator guide `docs/question-bank.md`. The question-bank admin APIs (`/api/admin/qb/**`) are portal APIs, listed in `docs/question-bank.md` §15.
+
+Every response uses the D-007 envelope and `Cache-Control: no-store` (except the figure route). Writes are same-origin only (403). Rate limits are in memory, per IP (single instance; a school lab shares one IP, hence the high per-IP numbers). The routes call `ensureQbSeeded()` at request time only, never from static code.
+
+| Method | Path | Does | Limit |
+|---|---|---|---|
+| GET | `/api/mocktest/papers/readiness?slot=…` | Readiness of the published blueprint: `full` / `short` / `thin` overall and per language, question counts, and the ranked window's status. **Answers before any lead gate**, so a family is never asked for details for a slot that cannot make a paper | 300 / 10 min per IP |
+| POST | `/api/mocktest/papers` | Practice: generate a new paper. Ranked: return this month's shared paper (a repeat request returns the same paper) | 150 / 10 min and 600 / day per IP; 10 / hour per signed-in student |
+| GET | `/api/mocktest/papers/[id]` | The paper again (resume after a reload), with any answer-key corrections applied. Token in the `X-Paper-Token` header | 300 / 10 min per IP |
+| POST | `/api/mocktest/papers/[id]/report` | "Report a problem" for one question: kind `wrong_answer` \| `question_error` \| `figure` \| `hindi` \| `out_of_syllabus` \| `other`, optional note. Creates a staff report and flags the question `student_report`. **Stores no account ID and no IP address** | 20 / hour per IP |
+| GET | `/api/qb/figures/[id]` | A figure image (PNG / JPEG / WebP). Served only when an **approved** version of a question references it, else 404. `Cache-Control: public, max-age=31536000, immutable`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'` | 1,200 / 10 min per IP |
+
+Slots: `jee-main`, `neet-ug`, `jee-adv`, `boh-class-10`. A slot without a published blueprint, or with `QB_GENERATION_ENABLED=0`, gets no paper.
+
+**`POST /api/mocktest/papers`.** The body names the slot, the mode (`practice` or `ranked`), the language (`en` or `hi`), whether to add the official compensatory time (practice only; such attempts are never ranked), and up to 5 recent papers the browser holds, so a guest's new paper avoids questions just seen. A paper has a 22-character base64url ID and a 43-character base64url bearer **token**, returned once; the server stores only its SHA-256. A JEE Advanced request returns a set of two papers (Paper 1 and Paper 2) sharing one token. The response carries the runner payload, the duration and maximum score, and the **composition** (counts by source and official years, difficulty spread, whether the paper is a shorter set or uses sample questions, the Hindi shortfall and any relaxed rules), which the page shows before the start. As implemented: `{ slot, mode?, language?, compensatory?, recent?: { paperId, token }[] ≤ 5 }` (JSON ≤ 2 KB) → 201 `{ token, resumed, setId, papers }`; a repeated ranked request → 200 with `resumed: true` and `token: null` (the owner's session opens it).
+- `503` while `QB_GENERATION_ENABLED=0`; `404` for an unknown slot.
+- `409 bank_thin` (with the readiness) when even the shortest allowed set cannot be made; `409 ranked_off` / `ranked_unavailable` for the ranked paper; `422` for compensatory time on a ranked paper. The page then says "coming soon: the bank has X of Y questions".
+- Ranked: signed-in students only; one paper per student per slot per India month (`month-YYYY-MM`); the month is "unavailable" when no full paper can be made.
+- Papers expire: guests' after 14 days (`QB_PAPER_GUEST_RETENTION_DAYS`), students' after 30 days, except papers a saved attempt uses.
+- **Runner payload whitelist:** never answers, solutions, sources, difficulty, the staff-only `claimedSource` / `aspireRef`, staff IDs or import IDs. Source labels and difficulty appear only in the result, after scoring.
+- Lead gate: for papers of 60 minutes or more the browser asks for contact details **before** this call (`gateAtStart`, fails open), after readiness.
+
+**`GET /api/mocktest/papers/[id]`.** The token is checked in constant time; the student who owns a paper needs no token. A wrong token, an unknown ID and an expired paper all give the same 404. **Token transport:** `GET /api/mocktest/papers/[id]` reads it from the `X-Paper-Token` header; `/score` and `/attempts` take `paperToken` in the JSON body, and `/report` takes `token` in the body. It never travels in the URL, so it never reaches access logs. Ranked papers open with the owner's session only.
+
+**Changes to the existing mock-test routes** (all additive):
+- **`POST /api/mocktest/score`:** the body gains optional `paperId` (`^[A-Za-z0-9_-]{22}$`) and `paperToken` (`^[A-Za-z0-9_-]{43}$`), and an answer may be an array for one-or-more-correct questions (whole numbers 0–9, at most 10). Marking adds JEE Advanced partial marks (`per_correct_option`), numerical ranges and the integer rule. The lead-gate order and grandfathering are unchanged, except that "started before `LEAD_GATE_SINCE`" uses the paper's server `created_at`, not the browser's `startedAt`; tool-use notes use the key `bp-<slot>`. Practice papers: the first scoring stores a hash of the answers and the result; the same answers re-score (applying any answer-key correction); **different answers → `409 paper_already_scored`**. The score, per-question right / wrong and each question's source label and difficulty (`paperQuestionMeta`) come with the score, after submission and never during the test; correct answers and solutions only after `created_at` + `minDurationMs(duration)` (a quarter of the paper's time, at least 5 minutes; `paperRelease`). **Ranked papers → `409 use_attempts`**, so `/score` can never reveal a ranked key. Question statistics are recorded once per paper (compare-and-set) and only when the elapsed time is plausible. The rank projection is null for shorter sets, sample papers and exams without predictor tables.
+- **`/api/mocktest/attempts`:** saves a generated paper's attempt once (`qb_attempt_papers.paper_id` is unique). Ranked: the score at save, a tie-break vector from the blueprint's official rules computed at save, and the solutions held until the month closes. Practice attempts use the test ID `bp-<slot>`, ranked `bp-<slot>-ranked`, so a practice attempt never blocks a ranked board entry.
+- **`/api/mocktest/leaderboard`:** boards `bp-<slot>-ranked` per month, ordered by score and then the tie-break vector (`compareRankedEntries`; time is never used; equal entries share a rank and are listed by save time). Attempts with compensatory time are unranked and labelled. The fixed weekly tests keep `compareEntries` unchanged.
+- **`/api/mocktest/verify/[id]`:** shows "score updated after an answer-key correction on <date>" when a correction re-scored the attempt (corrections re-score saved attempts and boards in one transaction).
 
 ---
+
+## Page layout (`/api/admin/page-layout`, `/api/page-layout/preview/exit`)
+
+Section order and visibility of the 10 public pages (D-084, `docs/page-layout-plan.md` §9). D-007 envelope with private headers (`no-store`, `X-Robots-Tag`).
+
+| Method + path | Who | Body | Responses |
+|---|---|---|---|
+| `GET /api/admin/page-layout/[page]` | any admin | – | 200 `{ page, revision, published: { sections, custom, updatedAt, updatedBy }, draft, history[20] }` · 401 / 403 · 404 unknown page |
+| `POST /api/admin/page-layout/[page]` | effective super admin, same-origin | JSON ≤ 4 KB, strict: `{ action: "save_draft", revision, sections: [{ key, hidden }] (≤ 32) }` or `{ action: "discard_draft" \| "publish" \| "reset", revision }` | 200 new state · 401 / 403 · 404 · 409 stale `revision` · 413 / 415 · 422 `fieldErrors.sections`: `not_last:<key>`, `cannot_hide:<key>`, `duplicate:<key>`, `none_visible`, `no_draft` · 429 (60 writes per user per 10 min, `Retry-After`) |
+| `POST /api/admin/page-layout/preview` | effective super admin, same-origin | form `page`, `lang` (≤ 1 KB) | 303 to the public page with Draft Mode on · 303 back to the editor for an unknown page or a non-super-admin · 403 envelope cross-origin |
+| `POST /api/page-layout/preview/exit` | anyone, same-origin (outside the portal API, so it works after sign-out) | form `page?`, `lang?` (≤ 1 KB) | 303 to that page (registry paths only), else to `/` of `lang` · 403 envelope cross-origin |
+
+Publish and reset call `revalidateTag("page-layout:<page>", { expire: 0 })`; saving or discarding a draft revalidates nothing (drafts render only in Draft Mode, never cached). Every successful write is in `page_layout_history` and the audit log (`layout.save_draft`, `layout.discard_draft`, `layout.publish`, `layout.reset`, target `page-layout:<page>`, flat details `{ page, revision, moved, hidden, shown, order }`). Unknown, pinned and missing section keys are not errors: the server drops or re-inserts them at their default position.
+
+## Lead routing (`/api/admin/super-admins`, `/api/crm/**`, `/api/integrations/meta/**`)
+
+Staff APIs (docs/crm.md §12 has the full table; design `docs/lead-routing-plan.md` §21). JSON envelope (D-007), `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow`, same-origin writes, zod, body limits. **Every write that the plan calls super-admin-only is refused with 403 for anyone else on the server**, whatever the UI shows.
+
+| Method & path | Who | Notes |
+|---|---|---|
+| GET `/api/admin/super-admins` · PUT `/api/admin/super-admins/:userId` | admin · super admin (current password) | 409 `last_super_admin`, 422 `not_admin` |
+| `/api/crm/areas/**`, PUT `/api/crm/availability`, PATCH `/api/crm/leads/:leadId/area`, GET/PUT `/api/crm/settings/routing` | reads: manager, admin · writes: super admin (reassign / availability / change area also for area heads, within their areas) | areas, people, aliases, merge, set up from centre, re-route, unmatched places, resolver |
+| GET/PUT `/api/crm/settings/speed`, GET `/api/crm/sla`, GET `/api/crm/sla/summary`, GET `/api/crm/dashboard` | reads scoped · PUT super admin | calling hours + first-call rule; queues; alert-strip summary (polled every 60 s); dashboard |
+| POST `/api/crm/import/preview`, `/api/crm/import/batches`, `…/:batchId/rows`, `…/:batchId/finish` · GET `/api/crm/import/batches` | super admin · admin (history) | ≤ 256 KB / 250 rows per request; 20 batches and 400 chunks per hour per user |
+| GET/PUT `/api/crm/integrations/meta`, PUT/DELETE `…/secrets`, POST `…/actions`, GET `…/inbox` | GET status: admin, manager · the rest: super admin | secrets are write-only; 503 `not_configured` without `INTEGRATIONS_SECRET` |
+| GET `/api/integrations/meta/webhook` | Meta (public) | handshake: `hub.mode=subscribe`, constant-time `hub.verify_token`, `hub.challenge` echoed as text (`[0-9A-Za-z_-]{1,128}`), else 403 / 400 |
+| POST `/api/integrations/meta/webhook` | Meta (public) | ≤ 2 MB; `X-Hub-Signature-256: sha256=<hex>` = HMAC-SHA256(App Secret, raw body) else 401; 503 without the key or App Secret; 600 / min per IP; answers `{"ok":true}` at once and fetches the leads after the response. Exempt from the preview password (`src/proxy.ts`) |
+| POST `/api/integrations/meta/sync` | loopback cron only | 404 unless `INTEGRATIONS_CRON_TOKEN` is set; needs `Authorization: Bearer <token>`, a loopback `Host`, no proxy headers |
+
+`GET /api/crm/leads` also takes `area` (area id, `none`, `tool_signups`) and `sla` (`open`, `overdue`, `escalated`). `POST /api/admin/users` with `role: "staff"`, and every change to a staff account, is super-admin-only; a non-super-admin changing a super admin's account gets 403 ("Only a super admin can change a super admin's account.").
 
 ## Rendering and caching (Next.js 16, Cache Components)
 
@@ -361,12 +430,19 @@ All of these are listed in `.env.example`. Only `NEXT_PUBLIC_SITE_URL` is public
 | `NEXT_PUBLIC_SITE_URL` | origin check | – | Its origin is also accepted as a same-site `Origin` |
 | `SHOW_PLACEHOLDER_CONTENT` | content routes (via `data.ts`), /api/health | dev on / prod off | D-005 |
 | `NODE_ENV` | webhook URL policy | – | Set by Next.js |
-| `LEAD_GATE` | `/api/lead-gate*`, `/api/ask`, `/api/mocktest/score`, `/api/enquiries` (pass cookie) | `off` | `off` / `optional` / `required` (live site: `required`, owner decision 21 Oct 2026). Forced off with `ENQUIRY_STORE=off` or no usable secret in production; sample data does not force it off. Read per request: change `.env` and recreate the container, no rebuild |
+| `LEAD_GATE` | `/api/lead-gate*`, `/api/ask`, `/api/mocktest/score`, `/api/mocktest/attempts` (POST), `/api/enquiries` (pass cookie) | `off` | `off` / `optional` / `required` (live site: `required`, owner decision 21 Oct 2026). Forced off with `ENQUIRY_STORE=off` or no usable secret in production; sample data does not force it off. Read per request: change `.env` and recreate the container, no rebuild |
 | `LEAD_GATE_SECRET` | pass cookie | – | ≥ 32 chars, server-only. Required in production (dev: per-process fallback). Rotating it re-asks every browser |
 | `LEAD_GATE_RECORD_USE` | tool-use notes | `all` | `all` / `parent` / `off`; unknown → `off` |
 | `LEAD_GATE_ASSIGN` | new gate leads | `auto` | `auto` (same rules as enquiries) or `none` (Unassigned queue) |
 | `LEAD_GATE_MAX_NEW_LEADS_PER_HOUR` | flood breaker | `300` | Above it: 503 on new captures and the gate degrades to optional |
-| `LEAD_GATE_SINCE` | `/api/mocktest/score` | – | ISO date-time of switch-on; mock attempts started earlier are never gated |
+| `LEAD_GATE_SINCE` | `/api/mocktest/score`, `/api/mocktest/attempts` (POST) | – | ISO date-time of switch-on; mock attempts started earlier are never gated (generated papers: compared with the paper's server `created_at`) |
+| `INTEGRATIONS_SECRET` | CSV import, Meta Lead Ads, erase suppressions (`src/lib/server/secret-box.ts`) | – | Opaque, ≥ 43 chars (`openssl rand -base64 48`). Seals the Meta secrets (AES-256-GCM) and keys the CSV refs and erase fingerprints. **Set before deploying lead routing**; without it import and Meta answer 503 `not_configured` and an erase writes no suppression. Never in backups; a restore needs the same key |
+| `INTEGRATIONS_SECRET_PREVIOUS` | secret box | – | Only during a key rotation (opens old envelopes and hashes until resealed) |
+| `INTEGRATIONS_CRON_TOKEN` | `POST /api/integrations/meta/sync` | – | Optional, ≥ 32 chars. Enables the loopback Meta sync cron (deploy/README.md) |
+| `QB_GENERATION_ENABLED` | `/api/mocktest/papers*` | on | `0` = no new exam-pattern papers (kill switch; `POST /api/mocktest/papers` → 503). Read by `src/lib/mocktest/generated.ts` |
+| `QB_PAPER_GUEST_RETENTION_DAYS` | `/api/mocktest/papers*` | `14` | How long guests' generated papers are kept. Being built: nothing reads it yet (QB-CORE-B papers) |
+| `QB_FIGURE_DIR` | `/api/qb/figures/[id]` | `<folder of AUTH_DB_PATH>/qb-figures` | Where question-bank figures are stored. Being built: nothing reads it yet (QB-CORE-B figures) |
+| `QB_IMPORT_*`, `QB_FIGURE_QUOTA_MB` | admin import and figure upload only | – | See `docs/question-bank.md` §13 |
 
 ## Known limitations
 
@@ -397,3 +473,4 @@ npx vitest run src/lib/contracts/enquiry.test.ts src/lib/server src/app/api/enqu
 | Lead gate routes (GET / POST / DELETE / usage), enquiry pass cookie, sign-out, no-PII logs | `src/app/api/lead-gate/lead-gate-api.test.ts` |
 | Gate leads, passes, tool-use notes, withdrawal, erase | `src/lib/crm/gate.test.ts` |
 | `/api/ask` and `/api/mocktest/score` gate 401, per-family allowance, tool-use notes | `src/app/api/ask/ask-route.test.ts`, `src/app/api/mocktest/mocktest-api.test.ts` (tool owners) |
+| Exam-pattern papers: generate → resume → score, wrong token / expired 404, answer lock 409, ranked `use_attempts`, `bank_thin`, readiness before the gate, review delay, payload whitelist, rate limits, report without account or IP, figure route (planned in the plan's QB-MOCKTEST-API list; **being built, not yet run**) | `src/app/api/mocktest/**`, `src/app/api/qb/figures/[id]/` (QB-MOCKTEST-API) |

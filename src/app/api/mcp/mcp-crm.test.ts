@@ -6,6 +6,13 @@ vi.mock("next/server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("next/server")>()),
   connection: vi.fn(async () => undefined),
 }));
+// Lead routing (§14.3): the SLA seam as spies, to see what MCP actions pass to it (L3).
+vi.mock("@/lib/crm/sla", () => ({
+  startSlaClock: vi.fn(() => false),
+  onContactLogged: vi.fn(),
+  closeSlaClock: vi.fn(),
+  recomputeOpenClocks: vi.fn(() => 0),
+}));
 
 const { getDb, resetDatabaseForTests } = await import("@/lib/db/connection");
 const { listAudit } = await import("@/lib/db/audit");
@@ -15,6 +22,9 @@ const { createMcpToken } = await import("@/lib/mcp/tokens");
 const { resetMcpRateLimitsForTests } = await import("@/lib/mcp/auth");
 const { MCP_SERVICES } = await import("@/lib/mcp/scopes");
 const route = await import("./route");
+const { onContactLogged } = await import("@/lib/crm/sla");
+const { isSuperAdmin } = await import("@/lib/auth/super-admin");
+const { crmViewer } = await import("@/lib/mcp/tools/crm");
 
 type Json = Record<string, unknown>;
 interface ToolResult {
@@ -325,5 +335,22 @@ describe("crm:write tools", () => {
     const audit = listAudit(getDb(), { limit: 50 });
     expect(audit.filter((entry) => entry.action === "crm.lead_create")).toHaveLength(2);
     expect(JSON.stringify(audit)).not.toMatch(/8123456781|Walk-in Student/);
+  });
+});
+
+describe("lead routing (docs/lead-routing-plan.md §11, §14.3, L3)", () => {
+  it("the MCP viewer is never a super admin, even when the token's admin is one", () => {
+    expect(isSuperAdmin(adminId)).toBe(true); // the only admin: super admin in the CRM itself
+    expect(crmViewer({ caller: { createdBy: adminId } } as Parameters<typeof crmViewer>[0])).toMatchObject({ role: "admin", superAdmin: false, channel: "mcp" });
+  });
+
+  it("an assistant's contact log reaches the SLA seam as via 'mcp' (it never resolves a first-call clock)", async () => {
+    const { leadId } = capture();
+    vi.mocked(onContactLogged).mockClear();
+    const result = await call(crmWrite, "log_lead_contact", { leadId, channel: "call", outcome: "no_answer" });
+    expect(result.isError).toBeFalsy();
+    expect(vi.mocked(onContactLogged).mock.calls.at(-1)?.[1]).toMatchObject({ leadId, channel: "call", outcome: "no_answer", via: "mcp", actorId: adminId });
+    await call(crmWrite, "change_lead_stage", { leadId, stage: "contacted" });
+    expect(vi.mocked(onContactLogged).mock.calls.at(-1)?.[1]).toMatchObject({ channel: "stage", via: "mcp" });
   });
 });

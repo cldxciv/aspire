@@ -17,7 +17,7 @@ import {
 } from "./repo/gate-passes";
 import { findLeadById, findLeadByPhone, updateLead } from "./repo/leads";
 import type { Meta } from "./repo/rows";
-import { GATE_LEAD_SOURCE, LEAD_TOOLS, type CaptureLeadInput, type GateSubmitter, type LeadTool } from "./types";
+import { GATE_LEAD_SOURCE, LEAD_TOOLS, type CaptureLeadInput, type GateAccountLink, type GateSubmitter, type LeadTool } from "./types";
 
 /**
  * Lead gate, CRM side (docs/lead-gate-plan.md §3): the family shares contact details once per
@@ -59,6 +59,12 @@ export interface GateUnlockInput {
   replacePassHash?: string | null;
   /** Auto-assign a NEW lead (default true). */
   assignNew?: boolean;
+  /**
+   * The signed-in student or parent account that filled in the form (owner decision 22 Oct 2026):
+   * its id and role go on the submission activity (`accountId`, `accountRole`). Null for guests,
+   * staff and admins. Past the per-phone cap nothing is appended, so no link is written either.
+   */
+  account?: GateAccountLink | null;
 }
 
 export type GateUnlockResult =
@@ -85,6 +91,7 @@ export function unlockGateLead(input: GateUnlockInput, now: number = Date.now())
       const capture = captureLead({ ...input.lead, source: GATE_LEAD_SOURCE }, now, {
         gate: true,
         assignNew: input.assignNew !== false,
+        account: input.account ?? null,
       });
       if (!capture.ok) return capture;
       leadId = capture.leadId;
@@ -158,6 +165,8 @@ export interface ToolUseInput {
   exam?: string | null;
   /** Predictor only, e.g. "score-180-189". */
   band?: string | null;
+  /** Planner only: a feature other than a study plan (PLANNER_FEATURES: "countdown" = the homepage exam countdown). */
+  feature?: string | null;
   /** Mock test only. */
   testId?: string | null;
   /** Mock test only, e.g. "pct-40-49" (see mockScoreBand). */
@@ -168,6 +177,8 @@ export interface ToolUseInput {
 
 const BAND = /^(?:score|percentile)-\d{1,4}-\d{1,4}$/;
 const SCORE_BAND = /^pct-(?:below-0|\d{1,2}-\d{1,3})$/;
+/** Planner features noted as `feature` (the lead-gate contract's LEAD_GATE_USAGE_KEYS). */
+export const PLANNER_FEATURES = ["countdown"] as const;
 
 function toolUseFacts(input: ToolUseInput): { key: string; facts: Meta } | null {
   if (!(LEAD_TOOLS as readonly string[]).includes(input.tool)) return null;
@@ -177,6 +188,7 @@ function toolUseFacts(input: ToolUseInput): { key: string; facts: Meta } | null 
   const exam = cleanSlug(input.exam, 30);
   if (exam) facts.exam = exam;
   if (input.tool === "predictor" && typeof input.band === "string" && BAND.test(input.band)) facts.band = input.band;
+  if (input.tool === "planner" && (PLANNER_FEATURES as readonly unknown[]).includes(input.feature)) facts.feature = input.feature as string;
   if (input.tool === "mock-test") {
     const testId = cleanSlug(input.testId, 60);
     if (testId) facts.testId = testId;

@@ -7,16 +7,23 @@ import type { Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
 import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
+import type { SlaQueueItem } from "@/lib/crm/lead-ops-types";
 import type { LeadSummary, MyTask } from "@/lib/crm/types";
 import { DueLabel, MaskedPhone, RelativeTime, SourceBadges, StageBadge } from "./CrmBlocks";
 import { centreLabel, classProgramLabel, phoneLast4, withBack, type CrmMessages } from "./format";
 import { CompleteTaskButton, type LeadIslandMessages } from "./LeadActions";
+import { CallNowList } from "./sla/CallNowList";
 
 export type TodayData = {
   overdue: MyTask[];
   dueToday: MyTask[];
   /** Stage `new`, assigned to the viewer. */
   fresh: LeadSummary[];
+  /**
+   * Lead routing §15 (LR-SLA): the viewer's families waiting for a first call (`slaQueue` "mine"),
+   * shown first as "Call now". Left out = no section (older callers).
+   */
+  callNow?: { items: SlaQueueItem[]; total: number; areaNames: Readonly<Record<string, string>>; maxRetries: number };
 };
 
 const PAGE_PATH = "/crm/today";
@@ -92,6 +99,26 @@ export function TodayView({
 
   return (
     <div className="space-y-5">
+      {data.callNow && (
+        <PortalPanel
+          id="crm-today-call-now"
+          title={t.speed.callNow.title}
+          description={
+            data.callNow.maxRetries > 0 ? `${t.speed.callNow.intro} ${format(t.speed.callNow.retriesNote, { count: data.callNow.maxRetries })}` : t.speed.callNow.intro
+          }
+        >
+          <CallNowList
+            items={data.callNow.items}
+            total={data.callNow.total}
+            now={now}
+            locale={locale}
+            areaNames={data.callNow.areaNames}
+            backPath={PAGE_PATH}
+            t={{ callNow: t.speed.callNow, slaChip: t.slaChip, sources: t.sources, common: t.common }}
+          />
+        </PortalPanel>
+      )}
+
       <section>
         <h2 className="sr-only">{d.summaryLabel}</h2>
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">

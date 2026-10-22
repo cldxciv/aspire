@@ -15,12 +15,31 @@ export const MOCKTEST_MAX_BODY_BYTES = 16 * 1024;
 const TEST_ID = /^[a-z0-9-]{1,64}$/;
 const ATTEMPT_ID = /^[A-Za-z0-9_-]{8,64}$/;
 
-const answerSchema = z.union([z.number(), z.string().max(MAX_NUMERIC_LENGTH + 8), z.null()]);
+const answerSchema = z.union([
+  z.number(),
+  z.string().max(MAX_NUMERIC_LENGTH + 8),
+  // One-or-more-correct questions of generated papers: the chosen option indices.
+  z.array(z.number().int().min(0).max(9)).max(10),
+  z.null(),
+]);
+
+/**
+ * Generated question papers (plan §B10): 22-character base64url id (128 bits) … (same as
+ * `QB_PAPER_ID` in src/lib/qb/schemas.ts)
+ */
+export const PAPER_ID = /^[A-Za-z0-9_-]{22}$/;
+/** … and the 43-character base64url bearer token (32 bytes) handed out once, at creation (`QB_PAPER_TOKEN`). */
+export const PAPER_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+/** GET /api/mocktest/papers/:id: the token travels in this header, never in the URL (logs, history). */
+export const PAPER_TOKEN_HEADER = "x-paper-token";
 
 export const scoreBodySchema = z.object({
   testId: z.string().regex(TEST_ID),
   answers: z.array(answerSchema).max(MAX_QUESTIONS),
   timeSpentSec: z.array(z.number().int().min(0).max(24 * 3600)).max(MAX_QUESTIONS).optional(),
+  /** Generated papers only (`testId` "bp-<slot>…"): the paper and, for a practice paper, its token. */
+  paperId: z.string().regex(PAPER_ID).optional(),
+  paperToken: z.string().regex(PAPER_TOKEN).optional(),
 });
 export type ScoreBody = z.infer<typeof scoreBodySchema>;
 
@@ -47,6 +66,9 @@ export const START_TOKEN = /^[A-Za-z0-9_-]{20,64}$/;
 /**
  * `startedAt` / `submittedAt` are the browser's clock: kept for the student's own record only. The
  * leaderboard uses the server's start (via `startToken`) and save times (QA-SEC-M6 M1).
+ * `seen`: this browser already showed the attempt's result (the result page saves it), so the lead
+ * gate never asks again (as on /score; the browser's word). A malformed value is ignored. Fixed
+ * tests only: a generated paper's save ignores it (the server knows whether the paper was scored).
  */
 export const attemptBodySchema = scoreBodySchema.extend({
   attemptId: z.string().regex(ATTEMPT_ID),
@@ -54,10 +76,14 @@ export const attemptBodySchema = scoreBodySchema.extend({
   startedAt: z.number().int().positive(),
   submittedAt: z.number().int().positive(),
   startToken: z.string().regex(START_TOKEN).nullable().optional(),
+  seen: z.literal(true).optional().catch(undefined),
 });
 export type AttemptBody = z.infer<typeof attemptBodySchema>;
 
 export const startBodySchema = z.object({ testId: z.string().regex(TEST_ID) });
+
+// Generated question papers: the bodies of POST /api/mocktest/papers and /papers/:id/report are
+// `paperCreateSchema` / `paperReportSchema` in src/lib/qb/schemas.ts (QB-CORE-A owns every QB body).
 
 // ---------------------------------------------------------------------------------------------
 // Leaderboard profile (D-034): pseudonymous nickname, optional district and school.

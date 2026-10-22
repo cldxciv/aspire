@@ -6,6 +6,16 @@
  * Times in every shape below are ISO-8601 strings (UTC) unless the name says `Ms` (epoch ms).
  */
 
+import type {
+  CaptureExistingMode,
+  LeadOrigin,
+  LeadOriginView,
+  LeadRoutingView,
+  SlaClockView,
+  SlaFilter,
+  SystemConsentMethod,
+} from "./lead-ops-types";
+
 // ---------------------------------------------------------------------------
 // Pipeline (D-040)
 // ---------------------------------------------------------------------------
@@ -88,6 +98,11 @@ export function isGateConsentVersion(version: unknown): boolean {
 export const GATE_CONSENT_VERSION_LIKE = "%.gate.v%";
 export const MANUAL_LEAD_SOURCES = ["walk_in", "phone_call", "referral", "other"] as const;
 /**
+ * Lead routing (docs/lead-routing-plan.md §14.2): leads from Meta lead forms (live or imported from
+ * a Leads Center download) and from lists staff import with the families' consent.
+ */
+export const INTAKE_SOURCES = ["meta_lead_ad", "csv_import"] as const;
+/**
  * How a family entered by staff agreed to be contacted (admin-console plan §8, Agent B): said yes
  * in person, on the phone, signed a form, or agreed in a WhatsApp / SMS message. Kept on the
  * `created` activity as proof of consent (survives erase: it is not personal data).
@@ -100,7 +115,7 @@ export type ManualDuplicateMode = (typeof MANUAL_DUPLICATE_MODES)[number];
 /** Why an admin erased a lead's personal data (kept on the erase entry and in the audit log). */
 export const ERASE_REASONS = ["family_request", "consent_withdrawn", "wrong_or_test", "no_longer_needed", "other"] as const;
 export type EraseReason = (typeof ERASE_REASONS)[number];
-export const KNOWN_LEAD_SOURCES = [...PUBLIC_LEAD_SOURCES, ...MANUAL_LEAD_SOURCES] as const;
+export const KNOWN_LEAD_SOURCES = [...PUBLIC_LEAD_SOURCES, ...MANUAL_LEAD_SOURCES, ...INTAKE_SOURCES] as const;
 export type ManualLeadSource = (typeof MANUAL_LEAD_SOURCES)[number];
 export type KnownLeadSource = (typeof KNOWN_LEAD_SOURCES)[number];
 
@@ -167,8 +182,9 @@ export interface LeadActivity {
    *   null actor = automatic) · task_created { taskId, dueAt, assigneeId, assigneeName? } ·
    * call/whatsapp { outcome } · field_update { fields: string[] } · task_created/task_done { taskId, dueAt? } ·
    * created { source, consentMethod?, existing?: true, filled? } · erase { reason? } ·
-   * lead gate (docs/lead-gate-plan.md): submission also { submittedBy?: "student" | "parent", onLostLead?: true } ·
-   * tool_use { tool, key, exam?, band?, testId?, scoreBand?, page?, uses, lastAt } (never answers, questions,
+   * lead gate (docs/lead-gate-plan.md): submission also { submittedBy?: "student" | "parent", onLostLead?: true,
+   *   accountId?, accountRole?: "student" | "parent" (shared while signed in to that account; dropped on erase) } ·
+   * tool_use { tool, key, exam?, band?, feature?: "countdown" (planner), testId?, scoreBand?, page?, uses, lastAt } (never answers, questions,
    *   photos, exact scores, category, state, gender or dates; deleted on erase and after TOOL_USE_TTL_MS) ·
    * consent_withdrawn { via: "lead_gate", browsersForgotten }.
    */
@@ -233,6 +249,10 @@ export interface LeadSummary {
   /** Number of public submissions folded into this lead (dedupe). */
   submissionCount: number;
   erased: boolean;
+  /** Lead routing (§13): the routing area (id + names), or null without an area. Lists always set it. */
+  area?: { id: string; en: string; hi: string } | null;
+  /** The open first-call clock (§15), or null when there is none. Lists always set it. */
+  sla?: SlaClockView | null;
 }
 
 export interface LeadTask {
@@ -268,6 +288,15 @@ export interface LeadDetail extends LeadSummary {
   activities: LeadActivity[];
   /** Open tasks first (by due date), then done tasks. */
   tasks: LeadTask[];
+  /** Lead routing (§13, §20): area, how it was matched and the family's own words; null = never routed. */
+  routing?: LeadRoutingView | null;
+  /** Imported / Meta leads (§18): where the lead came from (refs only). */
+  origins?: LeadOriginView[];
+  /**
+   * A Meta lead form without the configured consent checkbox (or an imported Meta row without it):
+   * staff confirm consent and that they speak to a parent / guardian on the first call (H4).
+   */
+  confirmConsent?: boolean;
 }
 
 export type LeadSort = "recent_activity" | "newest" | "oldest" | "due" | "name";
@@ -290,6 +319,10 @@ export interface LeadFilters {
   createdTo?: string;
   includeErased?: boolean;
   sort?: LeadSort;
+  /** Lead routing (§13.5, §21): an area id, `none` (no area) or `tool_signups`. Only ever narrows the viewer's scope. */
+  area?: string;
+  /** First-call clock (§15): `open`, `overdue` or `escalated`. */
+  sla?: SlaFilter;
 }
 
 export interface LeadPage {
@@ -345,12 +378,27 @@ export interface CaptureLeadInput {
    * consent sentence id; `locale` and `text` are the language and exact sentence shown (kept on the
    * submission activity as proof of consent).
    */
-  consent: { textVersion: string; at?: number; locale?: string | null; text?: string | null };
+  consent: {
+    textVersion: string;
+    at?: number;
+    locale?: string | null;
+    text?: string | null;
+    /** System consent (§14.2, H4): Meta lead form or an imported list. Never offered by "Add enquiry". */
+    method?: SystemConsentMethod;
+  };
   context?: LeadContext;
   /** The enquiry reference shown to the family (ENQ-…), kept on the submission activity. */
   reference?: string | null;
   /** Lead gate: who filled in the form. Kept on the submission activity (not a lead field). */
   submittedBy?: GateSubmitter | null;
+  /**
+   * Lead routing (§13.4, §13.8): the place the family gave (an HP district id or `outside-hp` from
+   * the forms, a Meta `district` / `city` answer, a CSV column), ≤ 60. Routes the lead; kept on the
+   * routing row (wiped on erase), never on the lead.
+   */
+  district?: string | null;
+  /** The family's state, when given (a non-HP state only matches `border` aliases; A8). */
+  state?: string | null;
 }
 
 /** How `captureLead` treats a submission (defaults: an ordinary public enquiry). */
@@ -364,11 +412,65 @@ export interface CaptureLeadOptions {
   gate?: boolean;
   /** Auto-assign a NEW lead (default true). `LEAD_GATE_ASSIGN=none` keeps gate leads in the Unassigned queue. */
   assignNew?: boolean;
+  /**
+   * Lead gate only (`gate: true`; owner decision 22 Oct 2026): the signed-in student or parent
+   * account that shared the details. Kept on the submission activity as `accountId` (the opaque
+   * account id) + `accountRole`; nothing else from the account is copied. Not kept after an erase.
+   */
+  account?: GateAccountLink | null;
+  /**
+   * Lead routing §14.2 (CORE, additive). `origin`: idempotency (an existing `(provider, externalId)`
+   * returns `alreadyImported` and writes nothing; otherwise the ref is stored once the lead is known).
+   */
+  origin?: LeadOrigin;
+  /**
+   * `merge` (default) = today's behaviour. `attach` (imports, late Meta leads; H3, A4): an existing
+   * family only gets a `submission` entry (meta `attached: true`), +1 submission and its empty,
+   * never staff-edited fields filled — never its consent, stage, lost reason, assignee or message,
+   * and no clock. New families behave like `merge`.
+   */
+  existing?: CaptureExistingMode;
+  /**
+   * Meta chronology (H3): switch to `attach` when the Meta `createdAt` is earlier than the lead's last
+   * move to `lost` / `enrolled` or its last consent withdrawal.
+   */
+  attachIfOlderThanHistory?: { createdAt: number | null };
+  /**
+   * Erase suppression (M5): when the keyed hash of the phone is suppressed and (`createdAt` is null
+   * or earlier than the erase), return `erased_family` and write nothing.
+   */
+  suppression?: { createdAt: number | null };
+  /** ≤ 12 primitive keys added to the submission activity's meta (import batch, Meta form / ad ids …). */
+  submissionMeta?: SubmissionMeta;
+  /** ≤ 1000: the family's other answers; the submission body when there is no message; erased like a message. */
+  answers?: string | null;
+  /** CSV option: start (true) / never start (false) a first-call clock for a NEW family; undefined = policy. */
+  slaClock?: boolean;
+  clockReason?: "import";
+  /** Clock start (epoch ms): now by default; Meta uses the inbox `received_at`. */
+  arrivedAt?: number;
 }
 
+/** Structured facts a capture may add to its submission entry (primitives only). */
+export type SubmissionMeta = Record<string, string | number | boolean | null>;
+
+/** A portal account linked to a lead-gate submission (student or parent accounts only; never staff). */
+export interface GateAccountLink {
+  userId: string;
+  role: GateSubmitter;
+}
+
+export type CaptureLeadError = "consent_missing" | "invalid_phone" | "invalid_input" | "erased_family";
+
+/** §14.2: `attached` = an existing family in attach mode; `alreadyImported` = the origin ref existed (nothing written). */
 export type CaptureLeadResult =
-  | { ok: true; leadId: string; isNew: boolean; assigneeId: string | null }
-  | { ok: false; error: "invalid_phone" | "consent_missing" | "invalid_input" };
+  | { ok: true; leadId: string; isNew: boolean; assigneeId: string | null; attached?: true; alreadyImported?: true }
+  | { ok: false; error: CaptureLeadError };
+
+/** The result when no `suppression` was asked for: never `erased_family`. */
+export type UnsuppressedCaptureResult =
+  | Extract<CaptureLeadResult, { ok: true }>
+  | { ok: false; error: Exclude<CaptureLeadError, "erased_family"> };
 
 /** Staff-entered lead (walk-in, phone call…): POST /api/crm/leads. */
 export interface ManualLeadInput {
@@ -386,6 +488,8 @@ export interface ManualLeadInput {
   consent: true;
   /** How the family agreed (kept on the `created` activity). */
   consentMethod?: ConsentMethod | null;
+  /** Lead routing (§13.8): an HP district id or `outside-hp`, optional. */
+  district?: string | null;
   /**
    * The phone already has a lead: `append` (default) adds this contact to it; `report` changes
    * nothing and answers `duplicate: true` so the screen can offer "Open" / "Log a visit".
@@ -439,29 +543,77 @@ export interface CrmViewer {
   role: "admin" | CrmRole;
   /** Empty = every centre (managers) / any centre for auto-assignment (counsellors). */
   centreSlugs: string[];
+  /**
+   * Super admin (D-044): an admin with an active grant, checked per request. Never set for staff
+   * or for MCP callers. Missing = false.
+   */
+  superAdmin?: boolean;
+  /**
+   * Explicit manager scope (H2; `crm_staff_scope` mode `areas`): the areas they answer for
+   * (`responsibleAreaIds`) and the centres in those areas. Missing = the legacy centre scope.
+   */
+  areaScope?: { areaIds: string[]; centreSlugs: string[] };
+  /** Where the request came from: the CRM UI, or an assistant over MCP (never resolves a clock, L3). Missing = "ui". */
+  channel?: "ui" | "mcp";
 }
 
 export interface CrmPermissions {
   canAssign: boolean;
   canExport: boolean;
   canErase: boolean;
+  /** Staff logins, CRM role, scope and active flag (D-044, Q7): super admins only. */
   canManageStaff: boolean;
   canViewStaff: boolean;
+  /** Assignment rules and the routing mode: super admins only. */
   canEditRules: boolean;
   canCreateLeads: boolean;
+  /** Lead routing §22. */
+  isSuperAdmin: boolean;
+  /** `/crm/dashboard`: managers (their areas), admins, super admins. */
+  canViewDashboard: boolean;
+  /** `/crm/settings/**` pages (read-only unless `canEditSettings`). */
+  canViewSettings: boolean;
+  /** Areas, people, calling hours, speed rule, routing mode: super admins only. */
+  canEditSettings: boolean;
+  /** CSV import: super admins only. */
+  canImport: boolean;
+  /** Import history: admins (every super admin is an admin). */
+  canViewImportHistory: boolean;
+  /** Meta settings, secrets, actions and the Meta inbox: super admins only. */
+  canManageIntegrations: boolean;
+  /** Meta connection status (no secrets): managers and admins. */
+  canViewIntegrationStatus: boolean;
+  /** "Reassign uncalled leads of X": area heads (their own members) and super admins. */
+  canReassignBulk: boolean;
+  /**
+   * "Away until …" for themselves (staff). Who may set it for SOMEONE ELSE (an area head for their
+   * members, a super admin for anyone) is `canSetAvailability(viewer, targetId)` in access.ts.
+   */
+  canSetOwnAvailability: boolean;
 }
 
-export function crmPermissions(viewer: Pick<CrmViewer, "role">): CrmPermissions {
+export function crmPermissions(viewer: Pick<CrmViewer, "role"> & { superAdmin?: boolean }): CrmPermissions {
   const admin = viewer.role === "admin";
   const manager = viewer.role === "manager";
+  const superAdmin = admin && viewer.superAdmin === true;
   return {
     canAssign: admin || manager,
     canExport: admin || manager,
     canErase: admin,
-    canManageStaff: admin,
+    canManageStaff: superAdmin,
     canViewStaff: admin || manager,
-    canEditRules: admin,
+    canEditRules: superAdmin,
     canCreateLeads: true,
+    isSuperAdmin: superAdmin,
+    canViewDashboard: admin || manager,
+    canViewSettings: admin || manager,
+    canEditSettings: superAdmin,
+    canImport: superAdmin,
+    canViewImportHistory: admin,
+    canManageIntegrations: superAdmin,
+    canViewIntegrationStatus: admin || manager,
+    canReassignBulk: superAdmin || manager,
+    canSetOwnAvailability: !admin,
   };
 }
 

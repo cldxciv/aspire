@@ -34,8 +34,34 @@ export type LeadGateRole = (typeof LEAD_GATE_ROLES)[number];
 export const LEAD_GATE_MODES = ["off", "optional", "required"] as const;
 export type LeadGateMode = (typeof LEAD_GATE_MODES)[number];
 
-/** Why a browser may see results: the gate is off, a signed-in Aspire account, or a pass (contact details shared). */
+/**
+ * Why a browser may see results: the gate is off, a signed-in account that is let through, or a
+ * pass (contact details shared on this browser).
+ *
+ * `session` (owner decision 22 Oct 2026): ONLY a signed-in student or parent account that already
+ * has a mobile number on file. Accounts have no phone field yet, so today no account gets it:
+ * students and parents are asked once like everyone else (name pre-filled, `LeadGatePrefill`), and
+ * staff and admins always see the same form as a visitor, so testing matches reality.
+ */
 export type LeadGateVia = "off" | "session" | "pass";
+
+/**
+ * Account roles that may skip the gate (with a mobile on file) or get the form pre-filled: the
+ * gate's own "I am the" roles. Staff-side roles (admin, staff) are treated exactly like visitors.
+ */
+export const LEAD_GATE_ACCOUNT_ROLES = LEAD_GATE_ROLES;
+
+/**
+ * What <LeadGateForm> pre-fills for a signed-in student or parent account that must still share
+ * details (GET /api/lead-gate `prefill`). Every value stays editable; nothing is pre-ticked.
+ *  - `studentName`: a student account's own name; a parent account's linked learner when exactly
+ *    one is linked; else null (2–80 characters, like the form's field).
+ *  - `submittedBy`: the account's role, pre-selected under "I am the".
+ */
+export interface LeadGatePrefill {
+  studentName: string | null;
+  submittedBy: LeadGateRole;
+}
 
 // ── Consent (D-039 registry, lead-gate version) ──────────────────────────────
 
@@ -129,27 +155,40 @@ const EXAM = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const PREDICTOR_BAND_PATTERN = /^(?:score|percentile)-\d{1,4}-\d{1,4}$/;
 
 /**
- * POST /api/lead-gate/usage: one use of a browser-only tool. Only the exam and (predictor) the
- * score band: never the exact score, category, state, gender or planner dates. `ask` and
- * `mock-test` are rejected (422): their own server routes record them.
+ * Planner features other than a study plan, sent as the usage `key` (planner only):
+ * `countdown` = the homepage widget's exam countdown. The family's record then reads
+ * "Study planner · exam countdown · JEE Main" instead of a plan for that exam.
+ */
+export const LEAD_GATE_USAGE_KEYS = ["countdown"] as const;
+export type LeadGateUsageKey = (typeof LEAD_GATE_USAGE_KEYS)[number];
+
+/**
+ * POST /api/lead-gate/usage: one use of a browser-only tool. Only the exam, (predictor) the score
+ * band and (planner) which feature (`key`): never the exact score, category, state, gender or
+ * planner dates. `ask` and `mock-test` are rejected (422): their own server routes record them.
+ * The predictor's `key` and the planner's `band` are dropped.
  */
 export const leadGateUsageSchema = z
   .object({
     tool: z.enum(CLIENT_RECORDED_TOOLS, { error: "This tool is recorded by its own server route" }),
     exam: z.string().max(30).regex(EXAM, "Unknown exam"),
     band: z.string().max(30).regex(PREDICTOR_BAND_PATTERN, "Unknown band").optional(),
+    key: z.enum(LEAD_GATE_USAGE_KEYS, { error: "Unknown key" }).optional(),
     /** Locale-free or locale-prefixed site path the result was shown on ("/" = the homepage widget). */
     page: z.string().max(200).optional().catch(undefined),
   })
-  .transform((usage) => (usage.tool === "predictor" ? usage : { ...usage, band: undefined }));
+  .transform((usage) => (usage.tool === "predictor" ? { ...usage, key: undefined } : { ...usage, band: undefined }));
 export type LeadGateUsageInput = z.input<typeof leadGateUsageSchema>;
 
 // ── Responses (D-007 envelope `{ ok: true, data }`) ──────────────────────────
 
-/** GET /api/lead-gate. No name or any other lead field is ever returned. */
+/**
+ * GET /api/lead-gate. No lead field (name, number, class) is ever returned; the only name is the
+ * signed-in account's own, in `prefill`, to its own browser.
+ */
 export interface LeadGateStatusData {
   mode: LeadGateMode;
-  /** Results may be shown now (gate off, signed in, or this browser shared details). */
+  /** Results may be shown now (gate off, a student/parent account with a mobile on file, or this browser shared details). */
   unlocked: boolean;
   via: LeadGateVia | null;
   /** Tool use on this browser is noted on the family's record (pass only). */
@@ -164,6 +203,13 @@ export interface LeadGateStatusData {
    * over-claims and needs a per-result flag from the host (e.g. the predictor's hasSampleData).
    */
   sample: boolean;
+  /**
+   * A signed-in student or parent account that is asked (no mobile on file): what the form
+   * pre-fills (editable). Null for guests, staff and admins (the visitor's form), with the gate
+   * off and for an account let through. The server always sends it; optional for clients and
+   * fixtures from before 22 Oct 2026 (absent = null).
+   */
+  prefill?: LeadGatePrefill | null;
 }
 
 /** POST /api/lead-gate (201 for a pass; 200 for `session` / `off`, where nothing is stored). Identical for a new and an existing family. */

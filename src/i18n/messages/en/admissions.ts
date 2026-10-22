@@ -9,10 +9,33 @@ const admissions = {
     description:
       "Start an admissions enquiry with Aspire IIT & Medical for IIT JEE, NEET, Foundation or integrated programs, and see what happens next.",
   },
+  /**
+   * Design A · proof up front with B's "Next batch" card (2026-10-22). No figure or date lives here:
+   * the proof stats, the result card and the card's centres come from the data (DEMO-badged
+   * placeholders, hidden in production). `highlight` must appear in `title` exactly (set in gold).
+   */
   hero: {
+    eyebrow: "IIT JEE · NEET · Foundation",
     title: "Start your Aspire journey",
+    highlight: "Aspire journey",
     crumb: "Admissions",
     lead: "Tell us about the student's goals. An enquiry is the first step — the admissions team can then guide you through counselling and the next stages.",
+    primaryCta: "Send an enquiry",
+    secondaryCta: "How admission works",
+    /** Accessible name of the proof figures. */
+    statsLabel: "Aspire in numbers",
+    /** Badge on the collage's result card (previous batches, D-031). */
+    resultBadge: "Aspire result",
+    /**
+     * The "Next batch" card: no start date, seats or fees in the data yet, so it asks for them.
+     * `centres` labels the row of the visible centres' districts (e.g. the Dharamshala centre is
+     * in Kangra), so it says "Centres in", never "Centres".
+     */
+    batch: {
+      eyebrow: "Next batch",
+      centres: "Centres in",
+      action: "Ask about start dates",
+    },
   },
   enquiry: {
     title: "Admission enquiry",

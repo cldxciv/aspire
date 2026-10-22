@@ -2,12 +2,25 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
+import { isRecordId } from "@/lib/auth/roles";
 import { getDb, withTransaction } from "@/lib/db/connection";
+import { keyedHashCandidates } from "@/lib/server/secret-box";
 
 import { canSeeLead, CRM_AUDIT, CRM_MESSAGES, crmAudit, fail, ok } from "./access";
-import { autoAssign, NOTE_MAX } from "./leads";
+import { onLeadArrival } from "./arrival";
+import {
+  CAPTURE_ANSWERS_MAX,
+  DISTRICT_INPUT_VALUES,
+  EXTERNAL_PROVIDERS,
+  PLACE_INPUT_MAX,
+  SUBMISSION_META_MAX_KEYS,
+  SYSTEM_CONSENT_METHODS,
+  type LeadOrigin,
+} from "./lead-ops-types";
+import { NOTE_MAX } from "./leads";
 import { canonicalTool, cleanMultiline, cleanPagePath, cleanReferrer, cleanSlug, cleanText, normalizePhoneE164 } from "./pure";
-import { insertActivity, listActivitiesOfTypes } from "./repo/activities";
+import { insertActivity, lastActivityAt, listActivitiesOfTypes } from "./repo/activities";
+import { findExternalRef, insertExternalRef, suppressionErasedAt } from "./repo/intake";
 import { findLeadById, findLeadByPhone, insertLead, updateLead, type LeadRow, type LeadUpdate } from "./repo/leads";
 import type { Meta } from "./repo/rows";
 import {
@@ -25,11 +38,14 @@ import {
   type ManualLeadDuplicate,
   type ManualLeadInput,
   type ManualLeadResult,
+  type UnsuppressedCaptureResult,
 } from "./types";
 
 /**
  * Public forms → leads (D-039, D-040). `captureLead` is what POST /api/enquiries calls once a
- * submission is valid, not a honeypot hit, and carries the consent tick.
+ * submission is valid, not a honeypot hit, and carries the consent tick; the lead gate, the CSV
+ * import and Meta Lead Ads call it too (docs/lead-routing-plan.md §14.2). Every capture ends in
+ * `onLeadArrival` (routing, assignment, the first-call clock; §14.1).
  */
 
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
@@ -112,23 +128,85 @@ const MERGE_FIELDS: readonly EditableLeadField[] = [
   "centreSlug",
 ];
 
+/** Submission meta keys a capture writes itself; `submissionMeta` can never overwrite them. */
+const RESERVED_META_KEYS = new Set([
+  "source",
+  "consentTextVersion",
+  "consentLocale",
+  "consentText",
+  "filled",
+  "tool",
+  "page",
+  "toolExam",
+  "toolBand",
+  "locale",
+  "topic",
+  "reference",
+  "submittedBy",
+  "accountId",
+  "accountRole",
+  "attached",
+  "onLostLead",
+]);
+const META_KEY = /^[a-z][A-Za-z0-9]{0,31}$/;
+
+/** `submissionMeta`: at most 12 primitive values under safe keys; anything else is dropped. */
+function cleanSubmissionMeta(raw: CaptureLeadOptions["submissionMeta"]): Meta {
+  const out: Meta = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [key, value] of Object.entries(raw)) {
+    if (Object.keys(out).length >= SUBMISSION_META_MAX_KEYS) break;
+    if (!META_KEY.test(key) || RESERVED_META_KEYS.has(key)) continue;
+    if (typeof value === "string") {
+      const text = cleanText(value, 200);
+      if (text) out[key] = text;
+    } else if ((typeof value === "number" && Number.isFinite(value)) || typeof value === "boolean" || value === null) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+function cleanOrigin(origin: LeadOrigin | undefined): LeadOrigin | null | "invalid" {
+  if (origin === undefined) return null;
+  if (
+    !origin ||
+    !(EXTERNAL_PROVIDERS as readonly unknown[]).includes(origin.provider) ||
+    typeof origin.externalId !== "string" ||
+    !/^[A-Za-z0-9_=-]{1,200}$/.test(origin.externalId) ||
+    (origin.batchId !== undefined && (typeof origin.batchId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(origin.batchId)))
+  ) {
+    return "invalid";
+  }
+  return { provider: origin.provider, externalId: origin.externalId, ...(origin.batchId ? { batchId: origin.batchId } : {}) };
+}
+
+const finiteOrNull = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
+
 /**
- * Stores a consented public submission as a lead.
+ * Stores a consented submission as a lead.
  *
  * Dedupe by E.164 phone: an existing (not erased) lead gets a `submission` activity, its EMPTY
  * fields that no staff member has edited are filled, consent version/time and the latest message
- * are updated, first-touch attribution is kept, and a `lost` lead is reopened as `new`. A new lead
- * is auto-assigned (rules → round-robin → unassigned). Audited as `crm.lead_capture` (no personal
- * data). Synchronous; throws only on database errors. Joins the caller's transaction if one is open.
+ * are updated, first-touch attribution is kept, and a `lost` lead is reopened as `new`. Then the
+ * arrival pipeline routes, (re)assigns and times it (§14.1). Audited as `crm.lead_capture` (no
+ * personal data). Synchronous; throws only on database errors. Joins the caller's transaction.
  *
  * `options.gate` (lead gate, docs/lead-gate-plan.md): an existing lead is never reopened or
  * re-assigned and keeps its own consent fields; see `CaptureLeadOptions`.
+ *
+ * Lead routing (§14.2): `origin` (idempotency ref), `existing: "attach"` (history only for a known
+ * family), `attachIfOlderThanHistory` (Meta chronology), `suppression` (erased families stay
+ * erased), `submissionMeta`, `answers`, `slaClock` / `clockReason` / `arrivedAt` for the clock.
+ * Without `suppression` the result can never be `erased_family` (overload).
  */
 export function captureLead(
   input: CaptureLeadInput,
-  now: number = Date.now(),
-  options: CaptureLeadOptions = {},
-): CaptureLeadResult {
+  now?: number,
+  options?: CaptureLeadOptions & { suppression?: undefined },
+): UnsuppressedCaptureResult;
+export function captureLead(input: CaptureLeadInput, now?: number, options?: CaptureLeadOptions): CaptureLeadResult;
+export function captureLead(input: CaptureLeadInput, now: number = Date.now(), options: CaptureLeadOptions = {}): CaptureLeadResult {
   const gate = options.gate === true;
   const consentVersion = cleanText(input?.consent?.textVersion, 64);
   if (!consentVersion) return { ok: false, error: "consent_missing" };
@@ -136,10 +214,16 @@ export function captureLead(
   if (!phone) return { ok: false, error: "invalid_phone" };
   const source = cleanSlug(input.source, 32);
   if (!source) return { ok: false, error: "invalid_input" };
+  const origin = cleanOrigin(options.origin);
+  if (origin === "invalid") return { ok: false, error: "invalid_input" };
   const consentAt = typeof input.consent.at === "number" && Number.isFinite(input.consent.at) ? input.consent.at : now;
   const fields = cleanFields(input);
   const context = cleanContext(input.context);
   const message = cleanMultiline(input.message, 1000);
+  const answers = cleanMultiline(options.answers, CAPTURE_ANSWERS_MAX);
+  const districtInput = cleanText(input.district, PLACE_INPUT_MAX);
+  const stateInput = cleanText(input.state, PLACE_INPUT_MAX);
+  const arrivedAt = finiteOrNull(options.arrivedAt) ?? now;
   const meta: Meta = { source, consentTextVersion: consentVersion };
   if (context.tool) meta.tool = context.tool;
   if (context.page) meta.page = context.page;
@@ -151,16 +235,54 @@ export function captureLead(
   if (input.consent.locale === "en" || input.consent.locale === "hi") meta.consentLocale = input.consent.locale;
   const consentText = cleanText(input.consent.text, 1000);
   if (consentText) meta.consentText = consentText;
+  // System consent (§14.2, H4): never from "Add enquiry" (CONSENT_METHODS stays separate).
+  if ((SYSTEM_CONSENT_METHODS as readonly unknown[]).includes(input.consent.method)) meta.consentMethod = input.consent.method as string;
   const topic = cleanSlug(input.topic, 40);
   if (topic) meta.topic = topic;
   const reference = cleanText(input.reference, 40);
   if (reference && /^[A-Z]{2,5}-[0-9A-Z]{4,20}$/.test(reference)) meta.reference = reference;
   if ((GATE_SUBMITTERS as readonly unknown[]).includes(input.submittedBy)) meta.submittedBy = input.submittedBy as string;
+  // Lead gate: the signed-in student / parent account that shared the details (id + role only).
+  const account = gate ? options.account : null;
+  if (account && isRecordId(account.userId) && (GATE_SUBMITTERS as readonly unknown[]).includes(account.role)) {
+    meta.accountId = account.userId;
+    meta.accountRole = account.role;
+  }
+  Object.assign(meta, cleanSubmissionMeta(options.submissionMeta));
+  const body = message ?? answers;
+  const arrival = { source, gate, manual: false, districtInput, stateInput, slaClock: options.slaClock, clockReason: options.clockReason, arrivedAt, actorId: null, at: now } as const;
 
   const db = getDb();
   return withTransaction(db, (): CaptureLeadResult => {
+    // Idempotency (§14.2 origin): an id already imported writes nothing at all.
+    if (origin) {
+      const ref = findExternalRef(db, origin.provider, origin.externalId);
+      if (ref) return { ok: true, leadId: ref.leadId ?? "", isNew: false, assigneeId: null, alreadyImported: true };
+    }
+    // Erase suppression (M5): an erased family is not brought back by an old list or Meta lead.
+    if (options.suppression) {
+      const erasedAt = suppressionErasedAt(db, keyedHashCandidates("phone", phone));
+      const createdAt = finiteOrNull(options.suppression.createdAt);
+      if (erasedAt !== null && (createdAt === null || createdAt < erasedAt)) return { ok: false, error: "erased_family" };
+    }
+    const recordRef = (leadId: string) => {
+      if (origin) insertExternalRef(db, { provider: origin.provider, externalId: origin.externalId, leadId, batchId: origin.batchId ?? null, now });
+    };
+
     const existing = findLeadByPhone(db, phone);
     if (existing) {
+      const attach = options.existing === "attach" || olderThanHistory(existing, options.attachIfOlderThanHistory);
+      if (attach) {
+        // History only (H3, A4): never consent, stage, lost reason, assignee or message; no clock.
+        const merged = mergeSubmission(existing, fields, context, null, consentVersion, consentAt, now, { reopen: false, keepConsent: true });
+        updateLead(db, existing.id, merged.update);
+        insertActivity(db, { leadId: existing.id, type: "submission", body, meta: { ...meta, filled: merged.filled, attached: true }, actorId: null, at: now });
+        recordRef(existing.id);
+        onLeadArrival(db, { ...arrival, leadId: existing.id, kind: "attached", assignNew: false });
+        crmAudit(db, { actorId: null, action: CRM_AUDIT.leadCapture, target: existing.id, details: { source, isNew: false, attached: true }, now });
+        return { ok: true, leadId: existing.id, isNew: false, assigneeId: existing.assignedTo, attached: true };
+      }
+
       const lost = existing.stage === "lost";
       const reopen = lost && !gate;
       const merged = mergeSubmission(existing, fields, context, message, consentVersion, consentAt, now, {
@@ -171,7 +293,7 @@ export function captureLead(
       insertActivity(db, {
         leadId: existing.id,
         type: "submission",
-        body: message,
+        body,
         meta: { ...meta, filled: merged.filled, ...(lost && gate ? { onLostLead: true } : {}) },
         actorId: null,
         at: now,
@@ -185,11 +307,14 @@ export function captureLead(
           at: now,
         });
       }
-      let assigneeId = existing.assignedTo;
-      if (!gate) {
-        const fresh = findLeadById(db, existing.id);
-        assigneeId = fresh ? autoAssign(db, fresh, now) : existing.assignedTo;
-      }
+      recordRef(existing.id);
+      const result = onLeadArrival(db, {
+        ...arrival,
+        leadId: existing.id,
+        kind: reopen ? "reopened" : "repeat",
+        assignNew: options.assignNew !== false,
+      });
+      const assigneeId = gate ? existing.assignedTo : result.assigneeId;
       crmAudit(db, {
         actorId: null,
         action: CRM_AUDIT.leadCapture,
@@ -221,18 +346,31 @@ export function captureLead(
       lastActivityAt: now,
       nextTaskDueAt: null,
     });
-    insertActivity(db, { leadId: id, type: "submission", body: message, meta: { ...meta, filled: [] }, actorId: null, at: now });
-    const row = options.assignNew === false ? null : findLeadById(db, id);
-    const assigneeId = row ? autoAssign(db, row, now) : null;
+    insertActivity(db, { leadId: id, type: "submission", body, meta: { ...meta, filled: [] }, actorId: null, at: now });
+    recordRef(id);
+    const result = onLeadArrival(db, { ...arrival, leadId: id, kind: "new", assignNew: options.assignNew !== false });
     crmAudit(db, {
       actorId: null,
       action: CRM_AUDIT.leadCapture,
       target: id,
-      details: { source, isNew: true, assigned: assigneeId !== null },
+      details: { source, isNew: true, assigned: result.assigneeId !== null },
       now,
     });
-    return { ok: true, leadId: id, isNew: true, assigneeId };
+    return { ok: true, leadId: id, isNew: true, assigneeId: result.assigneeId };
   });
+}
+
+/**
+ * Meta chronology (H3): a lead created (on Meta) before the family's lead was closed (`lost` /
+ * `enrolled`) or before they withdrew consent is history, not a new request.
+ */
+function olderThanHistory(existing: LeadRow, rule: CaptureLeadOptions["attachIfOlderThanHistory"]): boolean {
+  const createdAt = finiteOrNull(rule?.createdAt);
+  if (createdAt === null) return false;
+  const db = getDb();
+  const closedAt = lastActivityAt(db, existing.id, ["stage_change"], { toStages: ["lost", "enrolled"] });
+  const withdrawnAt = lastActivityAt(db, existing.id, ["consent_withdrawn"]);
+  return (closedAt !== null && createdAt < closedAt) || (withdrawnAt !== null && createdAt < withdrawnAt);
 }
 
 function mergeSubmission(
@@ -309,7 +447,8 @@ export function leadContextFromEnquiry(context: EnquiryContextLike | null | unde
  * Builds a `CaptureLeadInput` from a validated enquiry (structural: works with the current
  * contract and additive changes). `name` is the student's name on hero / admissions / quick
  * forms and the submitter's own name on the contact form. The consent version and attribution
- * come from the enquiry's own `consentVersion` / `context` unless `extras` overrides them.
+ * come from the enquiry's own `consentVersion` / `context` unless `extras` overrides them. The
+ * optional `district` (lead routing §13.8: an HP district id or `outside-hp`) routes the lead.
  */
 export function leadInputFromEnquiry(
   enquiry: {
@@ -326,6 +465,7 @@ export function leadInputFromEnquiry(
     intent?: string | null;
     consentVersion?: string | null;
     context?: EnquiryContextLike | null;
+    district?: string | null;
   },
   extras: { consentTextVersion?: string; consentAt?: number; context?: LeadContext; reference?: string | null } = {},
 ): CaptureLeadInput {
@@ -345,6 +485,7 @@ export function leadInputFromEnquiry(
     consent: { textVersion: extras.consentTextVersion ?? enquiry.consentVersion ?? "", at: extras.consentAt },
     context: extras.context ?? leadContextFromEnquiry(enquiry.context),
     reference: extras.reference ?? null,
+    district: enquiry.district ?? null,
   };
 }
 
@@ -355,8 +496,8 @@ export function leadInputFromEnquiry(
  * `onDuplicate: "report"`, left untouched and reported as `duplicate: true` (with whether it is
  * closed or the family withdrew consent, and its id only if the viewer may open it; the check is
  * audited) so the screen can offer "Open" / "Log a visit" first. Counsellors' new leads are
- * assigned to themselves; others go through auto-assignment. `canOpen` says whether the viewer may
- * open the lead afterwards.
+ * assigned to themselves; others go through the arrival pipeline (§14.1). `canOpen` says whether
+ * the viewer may open the lead afterwards.
  */
 export function createManualLead(
   viewer: CrmViewer,
@@ -381,9 +522,23 @@ export function createManualLead(
   const fields = cleanFields(input);
   if (!fields.studentName && !fields.guardianName) fieldErrors.studentName = ["Enter the student's or the parent's name."];
   if (input.email && !fields.email) fieldErrors.email = ["Enter a valid email address."];
+  // §13.8: the same optional select as the public forms — one of the 12 HP district ids, `outside-hp`, or empty.
+  const district = input.district ? input.district.trim() : "";
+  if (district !== "" && !(DISTRICT_INPUT_VALUES as readonly string[]).includes(district)) fieldErrors.district = ["Choose a district from the list."];
   if (Object.keys(fieldErrors).length > 0 || !phone) return fail("validation", CRM_MESSAGES.validation, fieldErrors);
   const note = cleanMultiline(input.note, NOTE_MAX);
   const methodMeta: Meta = consentMethod ? { consentMethod } : {};
+  const districtInput = district === "" ? null : cleanText(district, PLACE_INPUT_MAX);
+  const arrival = {
+    source: input.source,
+    gate: false,
+    manual: true,
+    districtInput,
+    stateInput: null,
+    arrivedAt: now,
+    actorId: viewer.userId,
+    at: now,
+  } as const;
 
   const db = getDb();
   return withTransaction(db, (): CrmResult<ManualLeadAnswer> => {
@@ -417,7 +572,8 @@ export function createManualLead(
       delete merged.update.consentAt;
       merged.update.submissionCount = existing.submissionCount;
       updateLead(db, existing.id, merged.update);
-      if (existing.stage === "lost") {
+      const reopened = existing.stage === "lost";
+      if (reopened) {
         insertActivity(db, {
           leadId: existing.id,
           type: "stage_change",
@@ -434,6 +590,7 @@ export function createManualLead(
         actorId: viewer.userId,
         at: now,
       });
+      onLeadArrival(db, { ...arrival, leadId: existing.id, kind: reopened ? "reopened" : "repeat", assignNew: true });
       crmAudit(db, {
         actorId: viewer.userId,
         action: CRM_AUDIT.leadCreate,
@@ -446,6 +603,7 @@ export function createManualLead(
     }
 
     const id = randomUUID();
+    const selfAssign = viewer.role === "counsellor";
     insertLead(db, {
       id,
       createdAt: now,
@@ -453,7 +611,7 @@ export function createManualLead(
       stage: "new",
       furthestStage: "new",
       lostReason: null,
-      assignedTo: viewer.role === "counsellor" ? viewer.userId : null,
+      assignedTo: selfAssign ? viewer.userId : null,
       source: input.source,
       ...fields,
       ...cleanContext(undefined),
@@ -467,12 +625,11 @@ export function createManualLead(
       nextTaskDueAt: null,
     });
     insertActivity(db, { leadId: id, type: "created", body: note, meta: { source: input.source, ...methodMeta }, actorId: viewer.userId, at: now });
-    if (viewer.role === "counsellor") {
+    if (selfAssign) {
       insertActivity(db, { leadId: id, type: "assignment", meta: { from: null, to: viewer.userId }, actorId: viewer.userId, at: now });
-    } else {
-      const row = findLeadById(db, id);
-      if (row) autoAssign(db, row, now);
     }
+    // A counsellor keeps their own walk-in (self-assign stays); others go through auto-assignment.
+    onLeadArrival(db, { ...arrival, leadId: id, kind: "new", assignNew: !selfAssign });
     crmAudit(db, {
       actorId: viewer.userId,
       action: CRM_AUDIT.leadCreate,

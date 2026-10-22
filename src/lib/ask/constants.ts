@@ -35,7 +35,8 @@ export type AskAccount = "guest" | "student" | "member";
 /**
  * Whether this browser may get answers now (the lead gate, docs/lead-gate-plan.md §5.6), from the
  * live `LEAD_GATE` mode on every request:
- * - `open`: answers are shown (gate off, signed in, or contact details already shared here);
+ * - `open`: answers are shown (gate off, contact details already shared here, or a student / parent
+ *   account with a mobile number on file; being signed in alone does not open it since 22 Oct 2026);
  * - `gate_required`: `POST /api/ask` answers the gate 401 (`X-Lead-Gate: required`) until the
  *   family shares contact details once (`<LeadGateForm enforced>`);
  * - `gate_optional`: the form may be offered with "Continue without sharing"; the server answers anyway.

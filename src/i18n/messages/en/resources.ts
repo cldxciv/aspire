@@ -11,10 +11,23 @@ const resources = {
     description:
       "Study guidance, exam preparation articles and admissions help for IIT JEE, NEET and Foundation students from Aspire IIT & Medical.",
   },
+  /** B · editorial hero (2026-10-22 hero redesign), also the frame of each article page. */
   hero: {
+    eyebrow: "For students and families",
     title: "Resources for the next step",
+    /** Phrase of `title` underlined in gold; must appear in it exactly. */
+    highlight: "the next step",
     crumb: "Resources",
     lead: "Study guidance, exam information and answers to common admissions questions.",
+    /** Main action: jumps to the articles section. */
+    articles: "Read the articles",
+  },
+  /** The hero's white card: the newest published article (no article, no card). */
+  latest: {
+    eyebrow: "Latest article",
+    category: "Category",
+    published: "Published",
+    read: "Read the article",
   },
   types: {
     title: "Find what you need",

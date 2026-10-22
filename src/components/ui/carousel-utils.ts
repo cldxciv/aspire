@@ -2,13 +2,16 @@
  * Pure helpers for `ImageCarousel`, the home `ResultRail` and the reduced-motion stepping of
  * `ResultCardMarquee` (client-safe, no React, no messages). Unit-tested in `carousel.test.ts`.
  *
- * Motion policy (owner decision, 2026-10-20): every carousel, rail and marquee autoplays by
- * default on every device, including under `prefers-reduced-motion: reduce` (many Windows PCs
- * report it because animations are switched off for performance). Reduced motion only changes HOW
- * it moves: discrete, instant steps instead of smooth scrolling or a continuous slide, and at least
- * `REDUCED_MOTION_MIN_DELAY` between steps. A visible pause / play control (WCAG 2.2.2) is always
- * there, and rotation pauses on mouse hover, keyboard focus inside, a hidden tab and when scrolled
- * out of view (APG carousel pattern).
+ * Motion policy (owner decisions, 2026-10-20 and 2026-10-22): every carousel, rail and marquee
+ * autoplays by default on every device, one image every `AUTOPLAY_MS` (5 s), including under
+ * `prefers-reduced-motion: reduce` (many Windows PCs report it because animations are switched off
+ * for performance). Reduced motion only changes HOW it moves: discrete, instant steps instead of
+ * smooth scrolling or a continuous slide, at the same interval. Mouse hover does NOT pause it (the
+ * owner wants them moving while the pointer rests on them). A visible pause / play control
+ * (WCAG 2.2.2) is always there and a Pause sticks until Play; keyboard focus on a slide or control
+ * (not the toggle) presses Pause for the visitor, so the toggle always shows the real state (APG
+ * carousel pattern). Rotation also stops while the tab is hidden or the carousel is off screen,
+ * where nobody can see it or its toggle.
  */
 import type { ImageAsset } from "@/lib/types";
 
@@ -66,21 +69,24 @@ export function clampIndex(index: number, count: number): number {
   return Math.min(Math.max(index, 0), Math.max(count - 1, 0));
 }
 
-/** Shortest time between two automatic steps under `prefers-reduced-motion: reduce`. */
-export const REDUCED_MOTION_MIN_DELAY = 8000;
+/** Time each image (slide, result card) stays before autoplay moves on (owner: 5 s each). */
+export const AUTOPLAY_MS = 5000;
 
 /**
- * Autoplay delay: never below 2 s; a non-finite value (NaN from a bad prop) falls back to 6 s.
- * Under reduced motion the steps are instant jumps, so they come a little less often (≥ 8 s).
+ * Autoplay delay: never below 2 s; a non-finite value (NaN from a bad prop) falls back to
+ * `AUTOPLAY_MS`. The same under reduced motion, where each step is an instant swap instead.
  */
-export function autoplayDelay(intervalMs: number, reducedMotion = false): number {
-  const delay = Number.isFinite(intervalMs) ? Math.max(intervalMs, 2000) : 6000;
-  return reducedMotion ? Math.max(delay, REDUCED_MOTION_MIN_DELAY) : delay;
+export function autoplayDelay(intervalMs: number = AUTOPLAY_MS): number {
+  return Number.isFinite(intervalMs) ? Math.max(intervalMs, 2000) : AUTOPLAY_MS;
 }
 
-/** `scrollTo` behaviour for a step: smooth normally, an instant jump under reduced motion. */
+/**
+ * `scrollTo` behaviour for a step: smooth normally, an instant jump under reduced motion. `auto`
+ * is instant here (the tracks set no CSS `scroll-behavior`; the `html` one is not inherited) and,
+ * unlike `instant`, every browser accepts it.
+ */
 export function scrollBehaviorFor(reducedMotion: boolean): ScrollBehavior {
-  return reducedMotion ? "instant" : "smooth";
+  return reducedMotion ? "auto" : "smooth";
 }
 
 /** APG: the slide region is a polite live region except while it is actually auto-rotating. */
@@ -110,8 +116,9 @@ export type PlayChoice = "auto" | "playing" | "paused";
 /**
  * Whether the pause/play button shows the "playing" state (its label is then "Pause").
  * The visitor's explicit choice wins and sticks (a Pause stays paused until they press Play);
- * untouched, it follows `autoPlay`. Reduced motion does not stop autoplay: it only makes each step
- * an instant swap (`scrollBehaviorFor`) at a longer interval (`autoplayDelay`).
+ * untouched, it follows `autoPlay`. Keyboard focus inside sets the choice to "paused" (APG), so the
+ * button shows it. Reduced motion does not stop autoplay: it only makes each step an instant swap
+ * (`scrollBehaviorFor`) at the same interval (`autoplayDelay`).
  */
 export function isPlaying({ autoPlay, choice }: { autoPlay: boolean; choice: PlayChoice }): boolean {
   if (choice === "playing") return true;
@@ -120,26 +127,74 @@ export function isPlaying({ autoPlay, choice }: { autoPlay: boolean; choice: Pla
 }
 
 /**
- * Whether the carousel should advance on a timer right now: it must be playing, have 2+ slides,
- * and be visible, in view, not hovered and not holding keyboard focus (APG carousel pattern).
- * Reduced motion is deliberately not an input: it changes how a step looks, not whether it happens.
+ * Whether the carousel should advance on a timer right now: it must be playing (the toggle shows
+ * "Pause"), have 2+ slides, and be in a visible tab and on screen. Mouse hover is deliberately not
+ * an input (owner decision 2026-10-22), and keyboard focus inside pauses through `playing` (the
+ * choice becomes "paused"), so the only pauses the toggle does not show are ones nobody can see.
+ * Reduced motion is not an input either: it changes how a step looks, not whether it happens.
  */
 export function shouldAutoRotate({
   count,
   playing,
-  hovered = false,
-  focusWithin = false,
   pageHidden = false,
   inView = true,
 }: {
   count: number;
   playing: boolean;
-  hovered?: boolean;
-  focusWithin?: boolean;
   pageHidden?: boolean;
   inView?: boolean;
 }): boolean {
-  return count > 1 && playing && !hovered && !focusWithin && !pageHidden && inView;
+  return count > 1 && playing && !pageHidden && inView;
+}
+
+/**
+ * `ImageCarousel` position. `index` is the slide it shows or is moving to: the source of truth,
+ * advanced by the autoplay timer whether or not the track ever reports a scroll. `moves` counts
+ * manual moves; a change restarts the autoplay interval.
+ */
+export type CarouselState = { index: number; moves: number };
+
+export type CarouselAction =
+  /** Autoplay: the next slide, wrapping from the last to the first; the interval keeps running. */
+  | { type: "step"; count: number }
+  /** A manual move (buttons, dots, keys, a swipe that came to rest elsewhere): restarts the interval. */
+  | { type: "go"; index: number; count: number };
+
+export const initialCarouselState: CarouselState = { index: 0, moves: 0 };
+
+export function carouselReducer(state: CarouselState, action: CarouselAction): CarouselState {
+  switch (action.type) {
+    case "step":
+      return { ...state, index: nextIndex(clampIndex(state.index, action.count), action.count) };
+    case "go":
+      return { index: wrapIndex(action.index, action.count), moves: state.moves + 1 };
+  }
+}
+
+/** The slide a full-width scroll-snap track rests on, or `null` while it has no width (hidden). */
+export function settledIndex(scrollLeft: number, width: number, count: number): number | null {
+  if (!(width > 0) || count < 1) return null;
+  return clampIndex(Math.round(scrollLeft / width), count);
+}
+
+/**
+ * What to do when a carousel track comes to rest on slide `settled` while the state says `index`:
+ * - `adopt`: the visitor moved it (swipe, trackpad, wheel): that slide becomes the index.
+ * - `resync`: nobody did (a programmatic step was cancelled or cut short): scroll back to `index`,
+ *   so a lost scroll never leaves the picture, the dots and the counter out of step.
+ * - `none`: it is where it should be.
+ */
+export function settleAction({
+  settled,
+  index,
+  userGesture,
+}: {
+  settled: number;
+  index: number;
+  userGesture: boolean;
+}): "adopt" | "resync" | "none" {
+  if (settled === index) return "none";
+  return userGesture ? "adopt" : "resync";
 }
 
 /**

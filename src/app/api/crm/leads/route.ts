@@ -1,7 +1,8 @@
 import type { NextRequest } from "next/server";
 
 import { portalApiError, portalApiItem } from "@/lib/auth/responses";
-import { createManualLead, listLeads } from "@/lib/crm";
+import { createManualLead, leadFilterForbidden, listLeads } from "@/lib/crm";
+import { CRM_MESSAGES } from "@/lib/crm/access";
 import {
   crmLog,
   crmResponse,
@@ -18,7 +19,9 @@ const ROUTE = "leads";
 /**
  * GET /api/crm/leads — the inbox, scoped to the viewer (D-038). Query: stage (or `open`), centre
  * (slug or `none`), program, source, assignee (id, `me`, `unassigned`), due (`today`/`overdue`), q
- * (name or last 4+ phone digits), createdFrom, createdTo, sort, page, pageSize (≤ 100).
+ * (name or last 4+ phone digits), createdFrom, createdTo, sort, page, pageSize (≤ 100); lead routing
+ * (§21): area (an area id, `none`, `tool_signups`; 403 outside an area head's areas) and sla
+ * (`open` / `overdue` / `escalated`).
  * → `{ items: LeadSummary[], total, page, pageSize }`.
  */
 export async function GET(request: NextRequest) {
@@ -28,7 +31,13 @@ export async function GET(request: NextRequest) {
     const params = request.nextUrl.searchParams;
     const paging = pagingFromSearch(params);
     if (!paging) return portalApiError("bad_request", "page must be ≥ 1 and pageSize 1–100.");
-    return portalApiItem(listLeads(auth.viewer, leadFiltersFromSearch(params), paging, Date.now()));
+    const filters = leadFiltersFromSearch(params);
+    // Query parameters only narrow the viewer's scope (lead routing §13.5, M2).
+    if (leadFilterForbidden(auth.viewer, filters)) {
+      crmLog(ROUTE, "forbidden", "area_outside_scope");
+      return portalApiError("forbidden", CRM_MESSAGES.forbidden);
+    }
+    return portalApiItem(listLeads(auth.viewer, filters, paging, Date.now()));
   } catch (error) {
     return crmServerError(ROUTE, error);
   }

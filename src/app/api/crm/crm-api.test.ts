@@ -10,8 +10,14 @@ vi.mock("next/server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("next/server")>()),
   connection: vi.fn(async () => undefined),
 }));
+// A passthrough spy on the routing seam: the admin users API's CALLS are checked, never the seam's answers.
+vi.mock("@/lib/crm/routing", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/crm/routing")>();
+  return { ...actual, setUserAreas: vi.fn(actual.setUserAreas) };
+});
 
 const { getDb, resetDatabaseForTests } = await import("@/lib/db/connection");
+const { setUserAreas } = await import("@/lib/crm/routing");
 const { listAudit } = await import("@/lib/db/audit");
 const { createTestUser, params, TestBrowser } = await import("@/lib/auth/testing/harness");
 const { captureLead, writeStaffMembership } = await import("@/lib/crm");
@@ -262,6 +268,25 @@ describe("who may call the CRM APIs", () => {
     expect((await api.note(ba, hamirpur.leadId, { body: "x" })).status).toBe(409);
   });
 
+  it("lead routing: query parameters only narrow — an area head's ?area= outside their areas is 403 (M2)", async () => {
+    const head = await staffUser("head.kangra", { crmRole: "manager" });
+    const db = getDb();
+    const now = Date.now();
+    for (const [id, en, hi] of [["kangra", "Kangra", "कांगड़ा"], ["shimla", "Shimla", "शिमला"]]) {
+      db.prepare("INSERT INTO crm_areas (id, name_en, name_hi, created_at, updated_at) VALUES (?, ?, ?, ?, ?)").run(id, en, hi, now, now);
+    }
+    db.prepare("INSERT INTO crm_area_members (area_id, user_id, created_at) VALUES ('kangra', ?, ?)").run(head.id, now);
+    db.prepare("INSERT INTO crm_staff_scope (user_id, mode, set_at) VALUES (?, 'areas', ?)").run(head.id, now);
+    const b = await signedIn("head.kangra", "staff");
+    expect((await api.list(b, "?area=shimla")).status).toBe(403);
+    expect((await api.list(b, "?area=kangra")).status).toBe(200);
+    expect((await api.list(b, "?area=none&sla=overdue")).status).toBe(200);
+    // The CSV export answers the same way.
+    expect((await api.export(b, "?area=shimla")).status).toBe(403);
+    expect((await api.export(b, "?area=kangra")).status).toBe(200);
+    expect((await (await api.me(b)).json()).data.viewer).toMatchObject({ role: "manager", areaScope: { areaIds: ["kangra"], centreSlugs: [] } });
+  });
+
   it("enforces same-origin, JSON-only and body size on writes", async () => {
     await staffUser("couns.a", { crmRole: "counsellor", centreSlugs: ["shimla"] });
     const { leadId } = lead1("9876500021", "shimla");
@@ -287,7 +312,7 @@ describe("who may call the CRM APIs", () => {
 });
 
 describe("staff accounts via /api/admin/users", () => {
-  it("creates a staff account with its CRM membership, lists it, and the account lands on /crm", async () => {
+  it("creates a staff account with its CRM membership, lists it, and the account lands on Today's calls", async () => {
     const adminRecord = await createTestUser({ role: "admin", loginId: "admin.one", password: PASSWORD });
     const ba = await signedIn("admin.one", "admin");
     const created = await ba.send(adminUsers.POST, "/api/admin/users", {
@@ -314,6 +339,26 @@ describe("staff accounts via /api/admin/users", () => {
       body: { role: "staff", displayName: "Bad", loginId: "bad.scope", crm: { crmRole: "manager", centreSlugs: ["Not A Slug!"] } },
     });
     expect(badScope.status).toBe(422);
+    // Lead routing: unknown areas are a 422 (never a 500), and nothing is created (P2).
+    const badArea = await ba.send(adminUsers.POST, "/api/admin/users", {
+      body: { role: "staff", displayName: "No Area", loginId: "no.area", crm: { crmRole: "counsellor", areaIds: ["nowhere"] } },
+    });
+    expect(badArea.status).toBe(422);
+    expect((await badArea.json()).fieldErrors).toHaveProperty(["crm.areaIds"]);
+    expect((await (await ba.send(adminUsers.GET, "/api/admin/users?role=staff")).json()).data.map((u: { loginId: string }) => u.loginId)).not.toContain("no.area");
+    // `crm.areaIds: []` still reaches the seam (an explicit `areas` scope: assigned leads only, §13.5);
+    // a body without `areaIds` (the legacy form) never does.
+    vi.mocked(setUserAreas).mockClear();
+    const noAreas = await ba.send(adminUsers.POST, "/api/admin/users", {
+      body: { role: "staff", displayName: "Head None", loginId: "head.none", crm: { crmRole: "manager", areaIds: [] } },
+    });
+    expect(noAreas.status).toBe(201);
+    const noAreasId = (await noAreas.json()).data.user.id;
+    expect(setUserAreas).toHaveBeenCalledTimes(1);
+    expect(setUserAreas).toHaveBeenCalledWith(expect.anything(), noAreasId, [], expect.objectContaining({ actorId: adminRecord.id }));
+    const legacyForm = await ba.send(adminUsers.POST, "/api/admin/users", { body: { role: "staff", displayName: "Legacy", loginId: "legacy.form", crm: { crmRole: "manager" } } });
+    expect(legacyForm.status).toBe(201);
+    expect(setUserAreas).toHaveBeenCalledTimes(1);
 
     const audit = listAudit(getDb(), { limit: 50 });
     expect(audit.find((e) => e.action === "crm.staff_upsert" && e.target === user.id)).toMatchObject({
@@ -326,7 +371,7 @@ describe("staff accounts via /api/admin/users", () => {
     const signIn = await bs.send(login.POST, "/api/auth/login", {
       body: { loginId: "mgr.shimla", password: temporaryPassword, role: "staff", next: "/admin" },
     });
-    expect((await signIn.json()).data).toMatchObject({ role: "staff", redirectTo: "/crm", mustChangePassword: true });
+    expect((await signIn.json()).data).toMatchObject({ role: "staff", redirectTo: "/crm/today", mustChangePassword: true });
     expect((await api.me(bs)).status).toBe(403); // temporary password pending
     await bs.send(changePassword.POST, "/api/auth/change-password", {
       body: { currentPassword: temporaryPassword, newPassword: "manager-own-password-1" },

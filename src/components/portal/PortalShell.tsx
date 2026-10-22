@@ -1,8 +1,9 @@
-import { Eye, Globe } from "lucide-react";
+import { Eye, Globe, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import { LanguageSwitcher } from "@/components/layout/LanguageSwitcher";
 import { Logo } from "@/components/layout/Logo";
+import { HideInQuestionBank } from "@/components/qb-admin/HideInQuestionBank";
 import { Container } from "@/components/ui";
 import type { Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
@@ -12,11 +13,11 @@ import { getLocale, getMessages } from "@/i18n/server";
 import { isPortalPreviewEnabled } from "@/lib/auth/config";
 import { getPageSession } from "@/lib/auth/page-session";
 import { decidePortalPage } from "@/lib/auth/policy";
-import type { Role } from "@/lib/auth/roles";
+import type { Role, Session } from "@/lib/auth/roles";
 import { cn } from "@/lib/cn";
 import { resolveCrmViewer } from "@/lib/crm/access";
 import { crmPermissions } from "@/lib/crm/types";
-import { crmNavItems, portalAreas, visibleStaffNavKeys, type CrmNavKey, type PortalArea } from "./areas";
+import { adminChromeFor, crmNavItems, isQuestionBankPath, portalAreas, visibleStaffNavKeys, type CrmNavKey, type PortalArea } from "./areas";
 import { ConsoleTopBarTools } from "./ConsoleTopBar";
 import { PortalLanguageSwitcher } from "./PortalLanguageSwitcher";
 import { PortalBreadcrumb, PortalNav, PortalNavLinks, type PortalBreadcrumbMessages, type PortalNavMessages } from "./PortalNav";
@@ -49,7 +50,6 @@ export async function PortalShell({ area, children }: { area: PortalArea | null;
   const homePath = area ? portalAreas[area].nav[0].href : "/";
   const nav = area === "staff" ? staffNavMessages(t, crm) : area ? navMessages(t, area, crm) : null;
   const areaLabel = area === "staff" ? crm.area.label : area ? t.areas[area].label : "";
-  const consoleArea = area === "admin" || area === "staff";
 
   return (
     <div className="flex flex-1 flex-col bg-surface">
@@ -57,25 +57,25 @@ export async function PortalShell({ area, children }: { area: PortalArea | null;
         <div aria-hidden="true" className={cn("h-1", config ? config.strip : "bg-gold")} />
         <Container className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
           <Logo tone="dark" locale={locale} label={common.logo.homeLabel} className="shrink-0" />
-          {area && config && AreaIcon && (
-            // The area badge doubles as "Home" (the area's own home page).
-            <Link
-              href={localePath(homePath, locale)}
-              aria-label={format(t.shell.homeLink, { area: areaLabel })}
-              className="inline-flex min-h-11 shrink-0 items-center rounded-full px-0.5 hover:underline"
-            >
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide",
-                  config.badge,
-                )}
+          {area && config && AreaIcon &&
+            (area === "admin" ? (
+              // Staff (question-bank members) get "Question bank" leading to /admin/questions (§B6).
+              <Suspense
+                fallback={
+                  <AreaBadge href={localePath(homePath, locale)} label={areaLabel} ariaLabel={format(t.shell.homeLink, { area: areaLabel })} badgeClass={config.badge} Icon={AreaIcon} />
+                }
               >
-                <AreaIcon aria-hidden="true" className="size-3.5" />
-                {areaLabel}
-              </span>
-            </Link>
+                <AdminAreaBadge locale={locale} t={t} badgeClass={config.badge} Icon={AreaIcon} />
+              </Suspense>
+            ) : (
+              <AreaBadge href={localePath(homePath, locale)} label={areaLabel} ariaLabel={format(t.shell.homeLink, { area: areaLabel })} badgeClass={config.badge} Icon={AreaIcon} />
+            ))}
+          {area === "staff" && <ConsoleTopBarTools locale={locale} t={t.shell} />}
+          {area === "admin" && (
+            <Suspense fallback={<ConsoleTopBarTools locale={locale} t={t.shell} />}>
+              <AdminConsoleTools locale={locale} t={t.shell} />
+            </Suspense>
           )}
-          {consoleArea && <ConsoleTopBarTools locale={locale} t={t.shell} />}
           <div className="ml-auto flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
             <Link
               href={localePath("/", locale)}
@@ -116,7 +116,11 @@ export async function PortalShell({ area, children }: { area: PortalArea | null;
               </Suspense>
             ) : (
               <Suspense fallback={<PortalNavLinks area={area} locale={locale} messages={nav} pathname={null} />}>
-                <PortalNav area={area} locale={locale} messages={nav} />
+                {area === "admin" ? (
+                  <AdminNav locale={locale} messages={nav} crmLinkLabel={t.shell.crmLink} />
+                ) : (
+                  <PortalNav area={area} locale={locale} messages={nav} />
+                )}
               </Suspense>
             )}
           </div>
@@ -203,6 +207,60 @@ async function AdminCrmBreadcrumb({ locale, messages }: { locale: Locale; messag
   return <PortalBreadcrumb locale={locale} messages={messages} />;
 }
 
+/** The area badge: a link to the area's home ("Home"), with the area's icon and name. */
+function AreaBadge({ href, label, ariaLabel, badgeClass, Icon }: { href: string; label: string; ariaLabel: string; badgeClass: string; Icon: LucideIcon }) {
+  return (
+    <Link href={href} aria-label={ariaLabel} className="inline-flex min-h-11 shrink-0 items-center rounded-full px-0.5 hover:underline">
+      <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide", badgeClass)}>
+        <Icon aria-hidden="true" className="size-3.5" />
+        {label}
+      </span>
+    </Link>
+  );
+}
+
+/**
+ * Admin-area badge for the verified session (request time): a staff session (a question-bank
+ * member; the admin area is open to staff only at /admin/questions) gets "Question bank" leading
+ * to /admin/questions instead of the console home it cannot open (§B6).
+ */
+async function AdminAreaBadge({ locale, t, badgeClass, Icon }: { locale: Locale; t: Messages<"portal">; badgeClass: string; Icon: LucideIcon }) {
+  const session = await getPageSession();
+  const chrome = adminChromeFor(session?.mustChangePassword ? null : session?.role, false);
+  const label = chrome.staffMode ? t.shell.qbAreaLabel : t.areas.admin.label;
+  return <AreaBadge href={localePath(chrome.badgeHref, locale)} label={label} ariaLabel={format(t.shell.homeLink, { area: label })} badgeClass={badgeClass} Icon={Icon} />;
+}
+
+/** "Find an enquiry" / "+ Add enquiry" in the admin area: not for staff without a CRM membership. */
+async function AdminConsoleTools({ locale, t }: { locale: Locale; t: Messages<"portal">["shell"] }) {
+  const session = await getPageSession();
+  const chrome = adminChromeFor(session?.role, session?.role === "staff" && resolveCrmViewer(session) !== null);
+  return chrome.showConsoleTools ? <ConsoleTopBarTools locale={locale} t={t} /> : null;
+}
+
+/**
+ * Admin sidebar for the verified session: admins get the whole console; staff (question-bank
+ * members) get the "Tests & question bank" group, plus one "Admissions (CRM)" link when they are
+ * also CRM members.
+ */
+async function AdminNav({ locale, messages, crmLinkLabel }: { locale: Locale; messages: PortalNavMessages; crmLinkLabel: string }) {
+  const session = await getPageSession();
+  const chrome = adminChromeFor(session?.role, session?.role === "staff" && resolveCrmViewer(session) !== null);
+  return (
+    <>
+      <PortalNav area="admin" locale={locale} messages={messages} visibleKeys={chrome.navKeys} />
+      {chrome.crmLink && (
+        <Link
+          href={localePath(crmNavItems[0].href, locale)}
+          className="mt-2 inline-flex min-h-11 w-full items-center rounded-card border border-line bg-white px-4 text-sm font-bold text-navy hover:border-blue hover:text-blue"
+        >
+          {crmLinkLabel}
+        </Link>
+      )}
+    </>
+  );
+}
+
 /** Reads the verified session (request time). */
 async function PortalUserArea({ area, locale, t }: { area: PortalArea | null; locale: Locale; t: PortalUserMenuMessages }) {
   const session = await getPageSession();
@@ -212,9 +270,39 @@ async function PortalUserArea({ area, locale, t }: { area: PortalArea | null; lo
 /** Only for data-free previews: a signed-in account of the area's role never sees it. */
 async function PreviewBanner({ area, t }: { area: Exclude<Role, "staff">; t: Messages<"portal">["shell"] }) {
   const session = await getPageSession();
-  if (session?.mustChangePassword) return null;
-  if (decidePortalPage(session, area, isPortalPreviewEnabled()).kind !== "preview") return null;
+  const mode = previewBannerMode(session, area, isPortalPreviewEnabled());
+  if (mode === "hidden") return null;
+  if (mode === "outside_question_bank") {
+    return (
+      <HideInQuestionBank>
+        <PreviewNote t={t} />
+      </HideInQuestionBank>
+    );
+  }
   return <PreviewNote t={t} />;
+}
+
+/**
+ * When the data-free preview banner shows: only for a real preview (no session of the area's
+ * role), never for an account with a pending temporary password. A staff session in the ADMIN
+ * area gets real question-bank pages at /admin/questions/** (§B6) but the data-free preview on
+ * every other admin page, so there the banner shows everywhere except the question bank
+ * (`outside_question_bank`, decided on the client from the path). Staff in the student and parent
+ * areas are treated like anyone else.
+ */
+export type PreviewBannerMode = "hidden" | "shown" | "outside_question_bank";
+
+export function previewBannerMode(session: Session | null | undefined, area: Exclude<Role, "staff">, previewEnabled: boolean): PreviewBannerMode {
+  if (session?.mustChangePassword) return "hidden";
+  if (decidePortalPage(session, area, previewEnabled).kind !== "preview") return "hidden";
+  if (session?.role === "staff" && area === "admin") return "outside_question_bank";
+  return "shown";
+}
+
+/** `previewBannerMode` for a known LOCALE-FREE path (tests and server-side callers). */
+export function previewBannerVisible(session: Session | null | undefined, area: Exclude<Role, "staff">, previewEnabled: boolean, path: string): boolean {
+  const mode = previewBannerMode(session, area, previewEnabled);
+  return mode === "shown" || (mode === "outside_question_bank" && !isQuestionBankPath(path));
 }
 
 export function PreviewNote({ t }: { t: Messages<"portal">["shell"] }) {

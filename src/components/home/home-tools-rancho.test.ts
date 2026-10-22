@@ -6,7 +6,7 @@ import type { Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
 import { messagesFor } from "@/i18n/messages";
 import { clampToolSummary, TOOL_CONTEXT_MAX_CHARS, type RanchoOpenDetail } from "@/lib/ask/cards";
-import { countdownRanchoDetail, homeToolPanelId } from "./home-tools";
+import { askExampleDetail, countdownRanchoDetail, HOME_ASK_EXAMPLES, homeToolPanelId } from "./home-tools";
 import { getHomeToolsData } from "./home-tools-data";
 import { clickAskRancho, fakeClick, fakeDocument, fakeLauncher } from "./home-tools-rancho.testkit";
 import { HomeTools } from "./HomeTools";
@@ -136,22 +136,60 @@ describe("homepage widget hand-offs", () => {
     for (const kind of ["empty", "past", "today", "tomorrow", "tooFar"] as const) expect(countdownRanchoDetail({ kind }, exam, t), kind).toBeNull();
   });
 
-  it.each(["en", "hi"] as Locale[])("%s: the Ask tab's button opens the floating chat, with a plain /tools/ask link as fallback", (locale) => {
+  it.each(["en", "hi"] as Locale[])("%s: the Ask tab's button and example bubbles open the floating chat, with a plain /tools/ask link as fallback", (locale) => {
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
     const html = renderToStaticMarkup(createElement(HomeTools, { tools: getHomeToolsData(), locale }));
+    /** One tab panel's element (balanced divs), so the card's footer is never part of the last one. */
     const panelOf = (key: "predictor" | "ask" | "planner") => {
-      const start = html.indexOf(`id="${homeToolPanelId(key)}"`);
-      const next = html.indexOf('role="tabpanel"', start + 1);
-      return html.slice(start, next === -1 ? undefined : next);
+      const start = html.lastIndexOf("<div", html.indexOf(`id="${homeToolPanelId(key)}"`));
+      const tags = /<div\b|<\/div>/g;
+      tags.lastIndex = start;
+      let depth = 0;
+      for (let match = tags.exec(html); match; match = tags.exec(html)) {
+        depth += match[0] === "</div>" ? -1 : 1;
+        if (depth === 0) return html.slice(start, match.index + match[0].length);
+      }
+      throw new Error("unbalanced markup");
     };
+    const prefix = locale === "hi" ? "/hi" : "";
     const anchors = panelOf("ask").match(/<a\b[^>]*>/g) ?? [];
-    expect(anchors).toHaveLength(1);
-    expect(anchors[0]).toContain(`href="${locale === "hi" ? "/hi" : ""}/tools/ask"`);
-    expect(anchors[0]).toContain("data-ask-rancho");
-    expect(panelOf("ask")).toContain(esc(messagesFor(locale, "ask").form.heading));
-    // The predictor and planner buttons appear only after a result / an exam date (client state).
+    expect(anchors).toHaveLength(6);
+    const handOffs = anchors.filter((anchor) => anchor.includes("data-ask-rancho"));
+    expect(handOffs).toHaveLength(5); // "Chat with Rancho" + the four example bubbles
+    for (const anchor of handOffs) {
+      // Exactly the Ask page: no question text, query or fragment in the URL.
+      expect(anchor).toContain(`href="${prefix}/tools/ask"`);
+      expect(anchor).not.toMatch(/href="[^"]*[?#]/);
+    }
+    const others = anchors.filter((anchor) => !anchor.includes("data-ask-rancho"));
+    expect(others).toHaveLength(1);
+    expect(others[0]).toContain(`href="${prefix}/rancho"`);
+    expect(panelOf("ask")).toContain(esc(messagesFor(locale, "home").tools.ask.cta));
+    // The predictor and planner buttons appear only after a result / a countdown (client state).
     expect(panelOf("predictor")).not.toContain("data-ask-rancho");
     expect(panelOf("planner")).not.toContain("data-ask-rancho");
+  });
+
+  it.each(["en", "hi"] as Locale[])("%s: an example bubble hands over just that question (no tool context)", (locale) => {
+    const examples = messagesFor(locale, "home").tools.ask.examples;
+    for (const key of HOME_ASK_EXAMPLES) {
+      expect(clickAskRancho(askExampleDetail(examples[key])).received).toEqual([{ prompt: examples[key] }]);
+    }
+  });
+
+  it("renders a plain-styled link (the example bubbles) without the button styles, keeping the hand-off and fallback", () => {
+    const className = "flex min-h-11 w-full items-start rounded-2xl bg-white";
+    const plain = renderToStaticMarkup(createElement(Link, { href: "/tools/ask", detail: {}, appearance: "plain", mascot: false, className }, "Q"));
+    const anchor = plain.match(/<a\b[^>]*>/)?.[0] ?? "";
+    expect(anchor).toContain('href="/tools/ask"');
+    expect(anchor).toContain("data-ask-rancho");
+    expect(anchor).toContain(`class="${className}"`);
+    expect(anchor).not.toMatch(/rounded-control|justify-center/);
+    // The default is the button, as on the other tool pages.
+    const button = renderToStaticMarkup(createElement(Link, { href: "/tools/ask", detail: {}, mascot: false, className: "mt-3" }, "Q"));
+    const buttonAnchor = button.match(/<a\b[^>]*>/)?.[0] ?? "";
+    expect(buttonAnchor).toMatch(/class="[^"]*\brounded-control\b[^"]*\bmt-3"/);
+    expect(buttonAnchor).toMatch(/class="[^"]*\bjustify-center\b/);
   });
 
   it("the Ask tab hands over no prompt and no context (it just opens the chat)", () => {
@@ -161,12 +199,37 @@ describe("homepage widget hand-offs", () => {
   });
 
   it("new strings exist in both languages and the Hindi ones are in Devanagari", () => {
-    const en = messagesFor("en", "home").tools.planner;
-    const hi = messagesFor("hi", "home").tools.planner;
-    for (const key of ["askRancho", "askRanchoPrompt", "askRanchoContext"] as const) {
-      expect(en[key].trim()).not.toBe("");
-      expect(hi[key]).not.toBe(en[key]);
-      expect(hi[key]).toMatch(/[ऀ-ॿ]/);
+    const en = messagesFor("en", "home").tools;
+    const hi = messagesFor("hi", "home").tools;
+    const pairs: [string, string, string][] = [
+      ...(["askRancho", "askRanchoPrompt", "askRanchoContext", "submit", "ready", "change", "dateMissing", "pressToShow"] as const).map(
+        (key): [string, string, string] => [`planner.${key}`, en.planner[key], hi.planner[key]],
+      ),
+      ...(["cta", "app"] as const).map((key): [string, string, string] => [`ask.${key}`, en.ask[key], hi.ask[key]]),
+      ...(["score", "percentile"] as const).map((key): [string, string, string] => [`predictor.change.${key}`, en.predictor.change[key], hi.predictor.change[key]]),
+      ...(["score", "percentile"] as const).map((key): [string, string, string] => [`predictor.ready.${key}`, en.predictor.ready[key], hi.predictor.ready[key]]),
+      ...(["predictor", "mockTests", "ask", "planner"] as const).flatMap((key): [string, string, string][] => [
+        [`tabsShort.${key}`, en.tabsShort[key], hi.tabsShort[key]],
+        [`taglines.${key}`, en.taglines[key], hi.taglines[key]],
+      ]),
+    ];
+    for (const [key, enText, hiText] of pairs) {
+      expect(enText.trim(), key).not.toBe("");
+      expect(hiText, key).not.toBe(enText);
+      expect(hiText, key).toMatch(/[ऀ-ॿ]/);
     }
+    // The recaps keep their placeholders in both languages.
+    for (const text of [en.predictor.ready.score, hi.predictor.ready.score, en.predictor.ready.percentile, hi.predictor.ready.percentile]) {
+      expect(text).toContain("{exam}");
+      expect(text).toContain("{value}");
+    }
+    expect(en.planner.ready).toContain("{exam}");
+    expect(hi.planner.ready).toContain("{exam}");
+    // Names the real button in both languages.
+    expect(format(en.planner.pressToShow, { button: en.planner.submit })).toContain(en.planner.submit);
+    expect(format(hi.planner.pressToShow, { button: hi.planner.submit })).toContain(hi.planner.submit);
+    // Same word as the form's button (leadGate.submitFor.countdown).
+    expect(hi.planner.ready).toContain("काउंटडाउन");
+    expect(messagesFor("hi", "leadGate").submitFor.countdown).toContain("काउंटडाउन");
   });
 });

@@ -1,6 +1,7 @@
 import { BarChart3, CalendarDays, Clock, ListChecks, Timer, Trophy } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { ExamPatternMocks } from "@/components/mocktest/ExamPatternSection";
 import { MyAttempts, WindowStatus } from "@/components/mocktest/MyAttempts";
 import { Badge, ButtonLink, DemoBadge, EmptyState, MediaSplit, Notice, PageHero, Section, SectionHeading } from "@/components/ui";
 import { stockImages } from "@/content/images";
@@ -9,7 +10,26 @@ import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
 import { localizeImage } from "@/lib/data";
 import { getVisibleMockTests, summariseTest } from "@/lib/mocktest/catalog";
+import { blueprintTestIdFor, blueprintTestTitle } from "@/lib/mocktest/resolve";
 import { isLeaderboardTest } from "@/lib/mocktest/timing";
+import type { Bilingual } from "@/lib/mocktest/types";
+import { QB_SLOTS, type QbSlot } from "@/lib/qb/types";
+
+/** Test ids of exam-pattern papers ("bp-jee-main", "bp-neet-ug-ranked", "bp-jee-adv-p1" …) → slot and title (code constants). */
+function paperTestIds(): { slots: Record<string, QbSlot>; titles: Record<string, Bilingual> } {
+  const slots: Record<string, QbSlot> = {};
+  const titles: Record<string, Bilingual> = {};
+  for (const slot of QB_SLOTS) {
+    for (const mode of ["practice", "ranked"] as const) {
+      for (const part of slot === "jee-adv" ? [1, 2] : [null]) {
+        const id = blueprintTestIdFor(slot, mode, part);
+        slots[id] = slot;
+        titles[id] = blueprintTestTitle({ slot, mode, part });
+      }
+    }
+  }
+  return { slots, titles };
+}
 
 const PATH = "/tools/mock-tests";
 
@@ -27,7 +47,8 @@ export default async function MockTestsPage() {
   const tests = getVisibleMockTests().map(summariseTest);
   const stockLabel = tc.labels.illustrativeStockPhoto;
   const anySample = tests.some((test) => test.sample);
-  const titles = Object.fromEntries(tests.map((test) => [test.id, test.title]));
+  const papers = paperTestIds();
+  const titles = { ...papers.titles, ...Object.fromEntries(tests.map((test) => [test.id, test.title])) };
 
   return (
     <>
@@ -55,6 +76,20 @@ export default async function MockTestsPage() {
           </>
         )}
       </PageHero>
+
+      {/* Exam-pattern mocks (docs/question-bank-plan.md §B14 package 5): what the bank can serve is read at request time. */}
+      <Section id="exam-mocks" tone="surface" aria-labelledby="mt-exam-heading" className="scroll-mt-24">
+        <SectionHeading id="mt-exam-heading" eyebrow={t.paper.list.eyebrow} title={t.paper.list.title} description={t.paper.list.description} />
+        <Suspense
+          fallback={
+            <p className="text-sm text-muted" role="status">
+              {t.paper.list.loading}
+            </p>
+          }
+        >
+          <ExamPatternMocks t={t} locale={locale} />
+        </Suspense>
+      </Section>
 
       <Section id="tests" aria-labelledby="mt-tests-heading" className="scroll-mt-24">
         <SectionHeading id="mt-tests-heading" eyebrow={t.list.eyebrow} title={t.list.title} description={t.list.description} />
@@ -161,21 +196,20 @@ export default async function MockTestsPage() {
         </MediaSplit>
       </Section>
 
-      {tests.length > 0 && (
-        <Section aria-labelledby="mt-attempts-heading">
-          <MediaSplit image={localizeImage(stockImages.notebookSolutions, locale)} imageLabel={stockLabel} imageSide="right">
-            <SectionHeading id="mt-attempts-heading" title={t.attempts.title} description={t.attempts.description} />
-            <Suspense fallback={<p className="text-sm text-muted">{t.common.loading}</p>}>
-              <MyAttempts titles={titles} t={t} />
-            </Suspense>
-            <div className="mt-6 rounded-control border border-line bg-surface p-4">
-              <h3 className="font-bold text-navy">{t.parents.title}</h3>
-              <p className="mt-1 text-sm text-muted">{t.parents.body}</p>
-              <p className="mt-1 text-sm text-muted">{t.parents.notConnected}</p>
-            </div>
-          </MediaSplit>
-        </Section>
-      )}
+      {/* Shown even without fixed tests: exam-pattern papers are listed here too. */}
+      <Section aria-labelledby="mt-attempts-heading">
+        <MediaSplit image={localizeImage(stockImages.notebookSolutions, locale)} imageLabel={stockLabel} imageSide="right">
+          <SectionHeading id="mt-attempts-heading" title={t.attempts.title} description={t.attempts.description} />
+          <Suspense fallback={<p className="text-sm text-muted">{t.common.loading}</p>}>
+            <MyAttempts titles={titles} t={t} paperSlots={papers.slots} />
+          </Suspense>
+          <div className="mt-6 rounded-control border border-line bg-surface p-4">
+            <h3 className="font-bold text-navy">{t.parents.title}</h3>
+            <p className="mt-1 text-sm text-muted">{t.parents.body}</p>
+            <p className="mt-1 text-sm text-muted">{t.parents.notConnected}</p>
+          </div>
+        </MediaSplit>
+      </Section>
     </>
   );
 }

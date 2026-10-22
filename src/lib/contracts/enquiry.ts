@@ -1,10 +1,16 @@
 import { z } from "zod";
+import { DISTRICT_INPUT_VALUES } from "@/lib/crm/lead-ops-types";
 import type { ApiError } from "./api";
 
 /**
  * Enquiry contract — FROZEN (docs/agent-decisions.md D-008, D-016, D-021, D-039).
  * Shared by the client forms (client-side validation) and POST /api/enquiries
  * (authoritative server-side validation). Change only via the Orchestrator.
+ *
+ * Lead routing (docs/lead-routing-plan.md §13.8, D-045): the hero, admissions and contact variants
+ * accept an optional `district` — one of Himachal's 12 district ids, `outside-hp`, or empty. The
+ * forms show it when no centre (or "not sure") is chosen; the server re-checks it and the CRM uses
+ * it to route the enquiry to that district's team. Additive: old clients simply omit it.
  *
  * M7 / D-039 (lead capture): every variant also carries
  *  - `consentVersion` (required): the id of the consent sentence the form showed. The server
@@ -263,6 +269,11 @@ const preferredCentreField = z
   .regex(/^$|^not-sure$|^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Select a centre from the list")
   .optional();
 
+/** The family's district (§13.8): an HP district id, "outside-hp", or empty. Optional. */
+const districtField = z
+  .union([z.enum(DISTRICT_INPUT_VALUES), z.literal("")], { error: "Select a district from the list" })
+  .optional();
+
 /** Parent/guardian name (hero only). Required (D-021a); trimmed, 2–80 characters. Never logged. */
 const guardianNameField = z
   .string({ error: "Enter the parent or guardian's name" })
@@ -287,9 +298,10 @@ export const heroContactStepSchema = z.object({
   email: baseFields.email,
 });
 
-/** Step 3 — preferred centre, message and consent. */
+/** Step 3 — preferred centre, the district when no centre is chosen (§13.8), message and consent. */
 export const heroDetailsStepSchema = z.object({
   preferredCentre: preferredCentreField,
+  district: districtField,
   message: baseFields.message,
   consent: baseFields.consent,
 });
@@ -361,12 +373,14 @@ export const enquirySchema = z.discriminatedUnion("source", [
     currentClass: classField,
     programInterest: programField,
     preferredCentre: preferredCentreField,
+    district: districtField,
   }),
   // /contact form.
   z.object({
     source: z.literal("contact"),
     ...baseFields,
     topic: z.enum(values(CONTACT_TOPIC_OPTIONS), { error: "Select a topic" }),
+    district: districtField,
   }),
   // Home page hero, 3-step form (D-021).
   heroEnquirySchema,

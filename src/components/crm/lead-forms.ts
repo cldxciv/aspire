@@ -2,6 +2,7 @@
  * Pure form logic behind the lead-detail islands (client-safe, unit-tested): each turns the
  * form's raw values into either a localisable validation issue or the exact CRM request.
  */
+import { DISTRICT_INPUT_VALUES } from "@/lib/crm/lead-ops-types";
 import { normalizePhoneE164 } from "@/lib/crm/pure";
 import {
   CONSENT_METHODS,
@@ -100,6 +101,8 @@ export type ManualLeadValues = {
   currentClass: string;
   programInterest: string;
   centreSlug: string;
+  /** Lead routing (§13.8): an HP district id or `outside-hp`; only sent while no centre is chosen. */
+  district: string;
   note: string;
   consentMethod: string;
   consent: boolean;
@@ -114,6 +117,7 @@ export const EMPTY_MANUAL_LEAD: ManualLeadValues = {
   currentClass: "",
   programInterest: "",
   centreSlug: "",
+  district: "",
   note: "",
   consentMethod: "",
   consent: false,
@@ -154,7 +158,8 @@ export function manualLeadRequest(
   if (values.consent !== true) issues.consent = "required";
   if (Object.keys(issues).length > 0) return { ok: false, issues };
 
-  const body: NewLeadBody = {
+  // `district` is the routing select (§13.8): the server's schema takes it; CORE's NewLeadBody predates it.
+  const body: NewLeadBody & { district?: string } = {
     source: values.source as ManualLeadSource,
     phone: values.phone.trim(),
     consent: true,
@@ -171,6 +176,8 @@ export function manualLeadRequest(
     note: values.note.trim(),
   };
   for (const [key, value] of Object.entries(optional) as [keyof typeof optional, string][]) if (value) body[key] = value;
+  const district = values.district.trim();
+  if (!body.centreSlug && (DISTRICT_INPUT_VALUES as readonly string[]).includes(district)) body.district = district;
   return { ok: true, request: crmRequests.createLead(body) };
 }
 

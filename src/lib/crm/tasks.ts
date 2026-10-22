@@ -1,6 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
 
 import { getDb, withTransaction } from "@/lib/db/connection";
 
@@ -46,7 +47,7 @@ export function createTask(
     let assigneeId = lead.assignedTo ?? viewer.userId;
     if (input.assigneeId && input.assigneeId !== viewer.userId) {
       if (viewer.role === "counsellor") return fail("forbidden", CRM_MESSAGES.forbidden);
-      if (!assignableMember(db, viewer, input.assigneeId, lead.centreSlug)) {
+      if (!assignableMember(db, viewer, input.assigneeId, { centreSlug: lead.centreSlug, areaId: lead.areaId })) {
         return fail("validation", CRM_MESSAGES.validation, { assigneeId: ["Choose an active staff member."] });
       }
       assigneeId = input.assigneeId;
@@ -66,6 +67,35 @@ export function createTask(
     crmAudit(db, { actorId: viewer.userId, action: CRM_AUDIT.taskCreate, target: leadId, details: { taskId: task.id }, now });
     return ok(toLeadTask(task, now));
   });
+}
+
+/**
+ * A follow-up created by the SYSTEM (lead routing §15, A6: "Call again" retry tasks), inside the
+ * caller's transaction, with no viewer: `createdBy` and the activity actor are null. Skipped
+ * (null) when the lead is missing or erased, when `dueAt` is not a finite time, or — with
+ * `onlyIfNoOpenTask` — when the lead already has an open task. Audited `crm.task_create
+ * { taskId, auto: true }`; the title is the caller's fixed text (never family data).
+ */
+export function createFollowUpTask(
+  db: DatabaseSync,
+  input: { leadId: string; title: string; dueAt: number; assigneeId: string | null; now: number; onlyIfNoOpenTask?: boolean },
+): LeadTask | null {
+  const title = cleanText(input.title, TASK_TITLE_MAX);
+  if (!title || !Number.isFinite(input.dueAt)) return null;
+  const lead = findLeadById(db, input.leadId);
+  if (!lead || lead.erasedAt !== null) return null;
+  if (input.onlyIfNoOpenTask && earliestOpenDue(db, lead.id) !== null) return null;
+  const task = insertTask(db, { id: randomUUID(), leadId: lead.id, title, dueAt: input.dueAt, assigneeId: input.assigneeId, createdBy: null, now: input.now });
+  updateLead(db, lead.id, { nextTaskDueAt: earliestOpenDue(db, lead.id), updatedAt: input.now, lastActivityAt: input.now });
+  insertActivity(db, {
+    leadId: lead.id,
+    type: "task_created",
+    meta: { taskId: task.id, dueAt: toIso(input.dueAt), assigneeId: input.assigneeId, auto: true },
+    actorId: null,
+    at: input.now,
+  });
+  crmAudit(db, { actorId: null, action: CRM_AUDIT.taskCreate, target: lead.id, details: { taskId: task.id, auto: true }, now: input.now });
+  return toLeadTask(task, input.now);
 }
 
 /** Marks a task done (idempotent). Allowed for its assignee and anyone who can see the lead. */

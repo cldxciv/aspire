@@ -12,6 +12,10 @@ import { listAssignableStaff } from "./repo/staff";
  * a rule whose pool has no assignable member is skipped. Then round-robin among active
  * counsellors whose scope covers the lead's centre (empty scope = any centre). Else unassigned.
  *
+ * Lead routing (docs/lead-routing-plan.md §13.4 step C; owner LR-ROUTING): `options.skip` leaves
+ * people out of every pool — in areas mode anyone with an area membership, anyone away and the
+ * person a lead is being taken from. Without it the behaviour is exactly today's.
+ *
  * Round-robin keeps the last user id given a lead per pool and picks the next id after it in
  * sorted order (wrapping), so adding or removing members never skips or repeats unfairly.
  * Must run inside the caller's write transaction.
@@ -20,8 +24,10 @@ export function pickAssignee(
   db: DatabaseSync,
   lead: { centreSlug: string | null; programInterest: string | null },
   now: number,
+  options: { skip?: (userId: string) => boolean } = {},
 ): { userId: string; via: "rule" | "centre" } | null {
-  const members = listAssignableStaff(db);
+  const skip = options.skip ?? (() => false);
+  const members = listAssignableStaff(db).filter((member) => !skip(member.userId));
   if (members.length === 0) return null;
   const assignable = new Set(members.map((member) => member.userId));
 

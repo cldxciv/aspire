@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "origin": {
+    "base_url": "https://api.anthropic.com",
+    "organization_id": "d36a98f0-8e5b-4ed5-bb33-792d3d4ffd1b",
+    "workspace_id": "wrkspc_01EbZSg6munReHRmuXoPC4e9"
+  },
+  "resources": {
+    "./agents/aspire-ops/agent.md": {
+      "kind": "agent",
+      "id": "agent_01SwmZ144epAkMutn46UGrqq",
+      "version": "2",
+      "hash": "0fd613f06b1493a40e7c54173f5ec69c",
+      "remote_hash": "a7aef4f9e564e09facc4bdad60f99c3e"
+    },
+    "./agents/aspire-ops/deployment-daily.yaml": {
+      "kind": "deployment",
+      "id": "depl_019uQCuZ1UEv61rcgUuRcQby",
+      "hash": "7270bfc5a53b70b982dca196365e80e3",
+      "remote_hash": "7270bfc5a53b70b982dca196365e80e3"
+    },
+    "./agents/aspire-ops/deployment-weekly.yaml": {
+      "kind": "deployment",
+      "id": "depl_01NVw7az1iWcs2435xJmwDxv",
+      "hash": "144379286a695d23652f278411b922aa",
+      "remote_hash": "144379286a695d23652f278411b922aa"
+    },
+    "./agents/aspire-ops/environment.yaml": {
+      "kind": "environment",
+      "id": "env_01B8KhAHbPFYpiyexB7bwwaP",
+      "hash": "f17e2f0fcffea719abcf5f46ba3ce7de",
+      "remote_hash": "41b0da605da00c0b6b887317a2f01320"
+    },
+    "./agents/aspire-ops/vault.yaml": {
+      "kind": "vault",
+      "id": "vlt_011CgG9eWeaQbgQdU8JvYY28",
+      "hash": "61bee60ea8fca5cbe2018d91207747db",
+      "remote_hash": "61bee60ea8fca5cbe2018d91207747db"
+    }
+  }
+}

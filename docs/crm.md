@@ -27,7 +27,7 @@ membership row. A `staff` account WITHOUT an active membership row gets 403 from
 | CSV export (audited) | — | scope | all | all | — |
 | Erase a lead (D-042) | — | — | — | ✓ | — |
 | List staff / rules | — | read | read | read + write | — |
-| Create staff accounts (`/api/admin/users`) | — | — | — | ✓ | — |
+| Create staff accounts (`/api/admin/users`) | — | — | — | super admin only (D-044, §12) | — |
 
 - Leads a viewer may not see answer **404** (no existence leak). Wrong role → 403, signed out → 401,
   temporary password not yet changed → 403 (same gate as the other portal APIs).
@@ -195,6 +195,8 @@ Times are epoch ms in SQLite, ISO strings in every service/API shape.
 
 ## 9. How to create staff
 
+Since lead routing, staff logins are **super-admin only**; §12.5 has the current steps.
+
 1. Admin portal → Users → create account with role **Staff** (or `POST /api/admin/users`
    `{ role: "staff", displayName, loginId, crm: { crmRole: "manager", centreSlugs: ["shimla"] } }`).
    The temporary password is shown once; the user changes it at first sign-in.
@@ -254,3 +256,99 @@ Design and full contract: `docs/lead-gate-plan.md` (§3 data model, §5 routes).
 - **First call (no OTP).** Proposed procedure, pending Aspire's approval (checklist TG-5): confirm who holds the number
   and that they agree to be contacted before any pitch; otherwise mark `lost: wrong_number` (the gate never reopens
   it); erase on request.
+
+## 12. Lead routing: super admin, areas, the 1-hour call rule, Meta and CSV intake (D-044 – D-048)
+
+Design: `docs/lead-routing-plan.md` (Part 3 is the contract). Code: `src/lib/crm/{arrival,settings,sla-state,lead-ops-types}.ts`,
+`src/lib/crm/{routing,sla,meta,intake}/**`, `src/lib/auth/super-admin.ts`, `src/lib/server/secret-box.ts`. The three seams
+`@/lib/crm/routing`, `@/lib/crm/sla`, `@/lib/crm/meta` are the only way the packages reach each other.
+
+### 12.1 Roles (additions to §1)
+
+- **Super admin (SA, D-044)** = an enabled `admin` account with an active row in `superadmin_grants` (not a new role;
+  sessions are unchanged; checked per request). With exactly one enabled admin and no grant rows, the first request makes
+  that admin SA (audited `auth.super_admin_bootstrap`); otherwise `npm run auth:super-admin -- list | grant | revoke |
+  reset-password <login id>` on the server. At least one effective SA always exists (409/403 `last_super_admin`).
+  Grant/revoke in Admin → Users needs the SA's current password. A non-SA cannot reset, disable or edit an SA
+  (403, `superAdminTarget`).
+- **SA only:** staff logins (create / edit / disable / reset, `PUT /api/crm/staff/:userId`), assignment rules, routing
+  mode, areas and people, calling hours and the speed rule, CSV import, Meta settings / secrets / actions / inbox.
+  Ordinary admins and managers see every settings page read-only ("Read-only: only a super admin can change this").
+- **Area head** = CRM `manager` who is a member of one or more areas (`crm_staff_scope.mode = 'areas'`): sees leads
+  assigned to them, leads routed to their areas, leads at their areas' centres, plus areas with no head of their own
+  that their centre serves (one hop). An areas-scope manager with zero areas sees only assigned leads. A manager
+  without a scope row keeps the legacy centre scope (listed under "Review" on the Areas page).
+- **Executive** = CRM `counsellor` in an area (assigned leads only, unchanged). Staff land on `/crm/today`.
+
+| Action | executive | area head | admin | super admin |
+|---|---|---|---|---|
+| Dashboard `/crm/dashboard` | — | own areas | all | all + Meta health, Unassigned, Tool sign-ups |
+| SLA lists (`/api/crm/sla?view=`) | `mine` | `mine`, `area` | all but the SA queues | all (`escalated`, `unassigned`, `tool_signups`) |
+| Away until … | self | self + own members | — | anyone |
+| Reassign uncalled / open leads of a person | — | own members | — | ✓ |
+| Change a lead's area | — | leads they see | — | ✓ |
+| Settings pages | — | read | read | edit |
+| CSV import | — | — | history | ✓ |
+| Meta | — | status | status | ✓ (secrets never shown) |
+
+### 12.2 API (additions to §3; same envelope, headers, same-origin writes and zod)
+
+| Method & path | Who | Body / query → data |
+|---|---|---|
+| GET `/api/admin/super-admins` | admin | → `{ items, youAreSuperAdmin, bootstrapPending }` |
+| PUT `/api/admin/super-admins/:userId` | SA | `{ superAdmin, currentPassword }`; 409 `last_super_admin`, 422 `not_admin` |
+| GET `/api/crm/areas`, GET `/api/crm/areas/resolve?q=&state=` | manager, admin | `CrmArea[]` / `AreaResolution` |
+| POST `/api/crm/areas`; PATCH `…/:areaId`; PUT `…/:areaId/members`; POST/DELETE `…/:areaId/aliases`; POST `…/merge`, `…/setup-from-centre`, `…/reroute`; GET `…/unmatched`; PUT `…/people/:userId` | SA | §13.6 of the plan |
+| POST `/api/crm/areas/reassign` | SA; area head for own members | `{ fromUserId, scope: "uncalled" \| "open", toUserId? }` → `{ moved }` |
+| PUT `/api/crm/availability` | self; area head for own members; SA | `{ userId, awayUntil \| null, note? }` (≤ 60 days) |
+| PATCH `/api/crm/leads/:leadId/area` | SA; a manager who sees the lead | `{ areaId \| null }` |
+| GET/PUT `/api/crm/settings/routing` | read manager/admin; write SA | `{ mode: "areas" \| "legacy", expectedVersion }` |
+| GET/PUT `/api/crm/settings/speed` | read manager/admin; write SA | `{ callingHours?, speedRule?, expectedVersion: { … } }` → `{ callingHours, speedRule, recomputed }` |
+| GET `/api/crm/sla?view=mine\|area\|escalated\|unassigned\|tool_signups`, GET `/api/crm/sla/summary` | scoped (a view beyond the role → 403) | `SlaQueuePage` / `SlaSummary` |
+| GET `/api/crm/dashboard?from&to&area` | manager (area in scope, else 403), admin | `DashboardData` |
+| POST `/api/crm/import/preview`, POST `/api/crm/import/batches`, POST `…/batches/:batchId/rows`, POST `…/batches/:batchId/finish`; GET `/api/crm/import/batches` | SA (GET: admin) | ≤ 256 KB and ≤ 250 rows per request |
+| GET/PUT `/api/crm/integrations/meta`; PUT/DELETE `…/meta/secrets`; POST `…/meta/actions`; GET `…/meta/inbox?status=` | GET admin/manager (status only); the rest SA | secrets are write-only (`{ set, updatedAt, keyOk }`) |
+| GET/POST `/api/integrations/meta/webhook` | Meta (public; HMAC-SHA256 of the raw body with the App Secret) | handshake / `{ ok: true }` |
+| POST `/api/integrations/meta/sync` | loopback + `Authorization: Bearer $INTEGRATIONS_CRON_TOKEN` | `{ processed, enqueued }`; 404 without the token |
+
+Changed: `GET /api/crm/leads` gains `area` (an id, `none`, `tool_signups`) and `sla` (`open`, `overdue`, `escalated`);
+lists and `LeadDetail` carry `area` and `sla` (detail also `routing`, `origins`, `confirmConsent`). `POST /api/admin/users`
+for `role: "staff"` is SA-only and takes `crm.areaIds`. `PUT /api/crm/staff/:userId` and `PUT /api/crm/rules` are SA-only.
+
+### 12.3 Data model (features `superadmin`, then `crm_intake`, after `crm`; additive, `crm_leads` is never altered)
+
+`superadmin_grants` · `crm_settings` (versioned JSON documents: `calling_hours`, `speed_rule`, `routing`, `areas_seed`,
+`meta_config`, `meta_status`) · `crm_areas`, `crm_area_centres`, `crm_area_aliases`, `crm_area_members`,
+`crm_staff_scope`, `crm_staff_availability` · `crm_lead_routing` (one row per lead: area, how matched, typed place) ·
+`crm_sla_clocks` (one open first-call clock per lead) · `crm_external_refs` (`meta` lead ids and keyed `csv` refs:
+idempotency) · `crm_erase_suppressions` (keyed hash of an erased family's phone) · `crm_import_batches` ·
+`crm_meta_inbox` · `crm_integration_secrets` (AES-256-GCM envelopes, key `INTEGRATIONS_SECRET`).
+
+### 12.4 Routing and the first-call rule (replaces §5 step 4 in areas mode)
+
+1. **Area:** the family's centre → that centre's area; else the place they typed (website `district`, Meta
+   district/city answer, CSV column, Add enquiry) through the resolver (aliases, Hindi names, spellings, fuzzy ≤ 1–2;
+   "Bilaspur, Chhattisgarh" stays outside HP; `dharampur` is ambiguous). 12 districts are seeded once (no audit rows).
+2. **Assignee:** the area's own eligible people (enabled, active, not away; executives, or heads with "takes leads"),
+   preferring those tied to the effective centre → else the team of the area's serving centre (borrow) → else the legacy
+   rules / centre round-robin (which skip anyone in an area) → else the area's queue, or **Unassigned** (SA), or
+   **Tool sign-ups** for lead-gate-only arrivals (never auto-assigned in areas mode). Picking is load-aware (fewest open
+   first-call clocks; ties by round-robin). `routing.mode = "legacy"` keeps today's rules.
+3. **Clock:** new / reopened / first-enquiry arrivals from the policy's sources start a clock: due = arrival + 60
+   working minutes inside the IST calling hours (default Mon–Sat 09:00–19:00, Sun 10:00–13:00, carried over across
+   closing). Tier 1 (60 min) alerts the responsible heads (digest per executive), tier 2 (240 min) the SAs. The first
+   human call / WhatsApp log or a move to contacted resolves it; `no_answer` / `busy` / `switched_off` create "Call again"
+   tasks (+2 working hours, then next opening + 1 h, at most 3); "reached" is reported separately. Imported clocks are
+   reported apart from live ones. In-app only (D-041): chip, Call now, alert strip, tab count, optional chime.
+4. **Intake:** Meta Lead Ads come by webhook → inbox → Graph fetch (`appsecret_proof`, v26.0) → `captureLead` with
+   `origin`, chronology-aware attach and erase suppression; CSV/TSV files are parsed in the browser and re-validated on
+   the server, attach-only for existing families, idempotent through the refs.
+
+### 12.5 Staff via the super admin (replaces §9 steps 1–2)
+
+1. CRM → Settings → **Areas & people**: "Set up from centre" (pick a centre, its heads, its executives) or edit each
+   area's people; "Create login" there (or Admin → Users, role Staff, as a super admin). The temporary password is shown
+   once.
+2. Change role / scope / active later in the same screen or `PUT /api/crm/staff/:userId` (SA). Disable the account:
+   `PATCH /api/admin/users/:id` (SA for staff).
+3. Calling hours and the 1-hour rule: CRM → Settings → **Calling hours & speed**.

@@ -1,16 +1,21 @@
 "use client";
 
 import { Copy, LoaderCircle, Pencil, Plus, Save, Trash2, TriangleAlert, UserPlus } from "lucide-react";
-import { useId, useRef, useState, type FormEvent } from "react";
-import { Badge, Button } from "@/components/ui";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { Badge, Button, Notice } from "@/components/ui";
+import { useLocale } from "@/i18n/client";
 import { format } from "@/i18n/format";
+import enAreas from "@/i18n/messages/en/crm-areas";
+import hiAreas from "@/i18n/messages/hi/crm-areas";
 import type { Messages } from "@/i18n/messages/types";
 import type { ApiFailure } from "@/lib/auth/client-api";
 import { DISPLAY_NAME_MAX_LENGTH, LOGIN_ID_PATTERN } from "@/lib/auth/identifiers";
 import { cn } from "@/lib/cn";
 import { CRM_ROLES, type AssignmentRule, type AssignmentRuleInput, type CrmRole, type CrmStaffMember } from "@/lib/crm/types";
-import { crmRequests } from "./api";
+import type { RoutingSettings, SettingEnvelope } from "@/lib/crm/lead-ops-types";
+import { crmRequests, sendCrm } from "./api";
 import { ActionFeedback, CrmDialog, fieldClasses, labelClasses, useCrmAction } from "./client-kit";
+import { leadOpsRequests } from "./lead-ops-api";
 import type { Option } from "./types";
 
 export type StaffMessages = Pick<Messages<"crm">, "common" | "errors" | "roles" | "staff">;
@@ -499,6 +504,31 @@ function TempPasswordPanel({ temp, t, onDone }: { temp: TempPassword; t: StaffMe
   );
 }
 
+/**
+ * Lead routing (docs/lead-routing-plan.md §13.6, A9; LR-ROUTING): in areas mode the rules only
+ * cover leads with no area, or areas with no executives — say so above the rules. The mode is
+ * read from GET /api/crm/settings/routing; nothing is shown until it is known (or if it fails).
+ */
+function AreasModeNotice() {
+  const locale = useLocale();
+  const [areasMode, setAreasMode] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void sendCrm<SettingEnvelope<RoutingSettings>>(leadOpsRequests.getRoutingSettings()).then((result) => {
+      if (!cancelled && result.ok) setAreasMode(result.data.value.mode === "areas");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  if (!areasMode) return null;
+  return (
+    <Notice variant="info" role="note" className="mt-3">
+      {(locale === "hi" ? hiAreas : enAreas).rulesNotice}
+    </Notice>
+  );
+}
+
 function RulesEditor({
   rules,
   staff,
@@ -547,6 +577,7 @@ function RulesEditor({
         {s.rulesTitle}
       </h2>
       <p className="mt-1 text-sm text-muted">{s.rulesIntro}</p>
+      <AreasModeNotice />
       {!canEdit && (
         <p className="mt-2 text-sm font-semibold text-[#5c4a12]">
           <Badge variant="neutral" className="mr-2 normal-case tracking-normal">

@@ -21,6 +21,12 @@ export const AUTH_MESSAGES = {
   selfReset: "Use “Change password” to change your own password.",
   notAParent: "Links can only be made from a parent account.",
   notAStudent: "Links can only be made to a student account.",
+  // Super admin (D-044; docs/lead-routing-plan.md §11).
+  superAdminOnly: "Only a super admin can do this.",
+  staffSuperAdminOnly: "Only a super admin can create or change staff (CRM) accounts.",
+  superAdminTarget: "Only a super admin can change a super admin's account.",
+  lastSuperAdmin: "At least one super admin must remain.",
+  notAdmin: "Only an enabled admin account can be made a super admin.",
 } as const;
 
 /** Portal areas with no connected data source (D-029: no LMS / student-information system yet). */

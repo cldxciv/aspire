@@ -9,15 +9,26 @@ const hostels = {
     description:
       "Residential and hostel options for outstation students at Aspire IIT & Medical's campuses in Himachal Pradesh. Details are published once Aspire has verified them.",
   },
+  /** B · editorial hero (2026-10-22 hero redesign). */
   hero: {
+    /** Short label, distinct from the lead (no facts). */
+    eyebrow: "Studying away from home",
     title: "Hostels and residential life",
+    /** Phrase of `title` underlined in gold; must appear in it exactly. */
+    highlight: "residential life",
     crumb: "Hostels",
     lead: "Supervised residential options for outstation students, campus by campus.",
     emptyLead: "Residential options for students joining Aspire from outside their home town.",
     byCampus: "Hostels by campus",
     ask: "Ask about accommodation",
-    /** Short caption on every hero carousel slide (stock photos, D-030). */
-    photoCaption: "Not an Aspire hostel",
+    /** Under the hero's stock photos while no hostel details are published (D-030). */
+    photoCaption: "Stock photos — not an Aspire hostel",
+  },
+  /** The hero's white card: only rows the hostel data fills. */
+  heroCard: {
+    /** Neutral: some listed campuses use partner hostels, not on-campus ones. */
+    eyebrow: "Where students stay",
+    campuses: "Campuses with hostel options",
   },
   empty: {
     heading: "Hostel information",

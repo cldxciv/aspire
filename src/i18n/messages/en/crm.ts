@@ -4,7 +4,16 @@
  *
  * Honesty rules (D-041): the system never sends SMS, WhatsApp or email. Contact buttons open the
  * phone dialler or WhatsApp on the staff member's own device; the UI only records what happened.
+ *
+ * Lead routing (docs/lead-routing-plan.md): the nested files (crm-areas, crm-speed, crm-dashboard,
+ * crm-import, crm-meta) are imported below; each is owned by one package after LR-CORE.
  */
+import crmAreas from "./crm-areas";
+import crmDashboard from "./crm-dashboard";
+import crmImport from "./crm-import";
+import crmMeta from "./crm-meta";
+import crmSpeed from "./crm-speed";
+
 const crm = {
   meta: {
     title: "Leads & admissions",
@@ -20,6 +29,8 @@ const crm = {
     pipeline: "Pipeline",
     reports: "Reports",
     staff: "Staff & rules",
+    dashboard: "Lead dashboard",
+    settings: "CRM settings",
   },
   common: {
     unassigned: "Unassigned",
@@ -100,6 +111,8 @@ const crm = {
     phone_call: "Phone call",
     referral: "Referral",
     other: "Other",
+    meta_lead_ad: "Meta lead form",
+    csv_import: "Imported list",
   },
   tools: {
     predictor: "Rank predictor",
@@ -143,6 +156,75 @@ const crm = {
     rateLimited: "Too many requests. Please wait about {minutes} minutes and try again.",
     notConfigured: "This feature isn't set up on the server yet.",
     passwordChangeRequired: "Please change your temporary password before continuing.",
+    superAdminOnly: "Only a super admin can change this.",
+  },
+  /** Super admin (D-044): the gold chip and the settings pages' edit / read-only line. */
+  superAdmin: {
+    badge: "Super admin",
+    badgeLabel: "You are a super admin",
+    canEdit: "You can change these settings.",
+    readOnly: "Read-only: only a super admin can change this.",
+  },
+  /** The first-call clock on a lead (docs/lead-routing-plan.md §15). Text, never colour alone. */
+  slaChip: {
+    label: "First call",
+    due: "Call by {time}",
+    overdue: "Call overdue (due {time})",
+    escalated: "Escalated (due {time})",
+    imported: "Imported",
+  },
+  /** "Away until …" in the header (A5). */
+  away: {
+    label: "Availability",
+    available: "Available",
+    awayUntil: "Away until {date}",
+    set: "Set away",
+    change: "Change",
+    clear: "I'm back",
+    title: "Away until …",
+    intro: "While you are away, new families go to your colleagues. Families you already have stay with you until an area head reassigns them.",
+    until: "Back on",
+    note: "Note (optional)",
+    notePlaceholder: "e.g. Leave, exam duty",
+    save: "Save",
+    saved: "You are marked away until {date}.",
+    cleared: "You are marked available again.",
+    untilRequired: "Choose the day you are back.",
+    tooFar: "Choose a day within the next {days} days.",
+    past: "Choose a day after today.",
+  },
+  /** The settings hub (`/crm/settings`). */
+  settings: {
+    metaTitle: "CRM settings",
+    metaDescription: "Areas and people, calling hours and the 1-hour rule, lead imports and the Meta connection.",
+    title: "CRM settings",
+    lead: "How enquiries reach the right people and how fast they are called. Area heads and admins can look; only a super admin can change.",
+    sectionsLabel: "Settings sections",
+    open: "Open {title}",
+    notAllowedBody: "Settings are for area heads and admins. Ask an area head if something looks wrong.",
+    superAdmins: "Super admins: {names}",
+    sections: {
+      areas: {
+        title: "Areas & people",
+        body: "The 12 districts, the centre that serves each one, area heads and executives, and places the CRM did not recognise.",
+      },
+      speed: {
+        title: "Calling hours & speed",
+        body: "Hours when executives are at their phones, the 1-hour first-call rule and who is alerted when a call is late.",
+      },
+      import: {
+        title: "Import leads",
+        body: "Bring in the Meta Leads Center download (or another list) twice a day until the live Meta link runs.",
+      },
+      integrations: {
+        title: "Integrations: Meta Lead Ads",
+        body: "Connect Aspire's Facebook and Instagram lead forms to the CRM directly and check the connection.",
+      },
+      staff: {
+        title: "Staff & rules",
+        body: "Staff logins, roles and the assignment rules used for leads with no area.",
+      },
+    },
   },
   inbox: {
     metaTitle: "Enquiries",
@@ -176,6 +258,7 @@ const crm = {
       assignee: "Assigned to",
       nextTask: "Next follow-up",
       lastActivity: "Last activity",
+      area: "Area",
     },
     noTask: "No follow-up set",
     emptyTitle: "No leads yet",
@@ -183,6 +266,14 @@ const crm = {
     emptyCounsellorBody: "Leads assigned to you appear here. New enquiries are assigned automatically by your centre's rules.",
     noMatchTitle: "No leads match these filters",
     noMatchBody: "Try a different stage or clear the filters.",
+    area: "Area",
+    areaNone: "No area (Unassigned queue)",
+    areaToolSignups: "Tool sign-ups",
+    noArea: "No area",
+    sla: "First call",
+    slaOpen: "Waiting for a first call",
+    slaOverdue: "First call overdue",
+    slaEscalated: "Escalated",
   },
   /** "Add enquiry" drawer (admin-console plan §8, Agent B): walk-ins, phone calls, referrals. */
   add: {
@@ -258,6 +349,11 @@ const crm = {
         parent: "Parent or guardian",
       },
       onLostLead: "Arrived after the lead was closed; it was not reopened.",
+      /** The form was sent while signed in to that kind of portal account (owner decision 22 Oct 2026). */
+      signedIn: {
+        student: "Sent while signed in to a student account",
+        parent: "Sent while signed in to a parent account",
+      },
     },
     /** "Used a free tool" lines. Bands only: never answers, questions or exact scores. */
     toolUse: {
@@ -268,6 +364,8 @@ const crm = {
       usesToday: "{count}× today",
       usesThatDay: "{count}× that day",
       test: "test {id}",
+      /** Planner `feature: "countdown"`: the homepage widget's exam countdown (not a study plan). */
+      countdown: "exam countdown",
       unknownTool: "Free tool",
       note: "Only the tool and a rough band are noted, never answers, questions or exact scores. These notes are deleted after 90 days.",
     },
@@ -288,7 +386,7 @@ const crm = {
       intro: "For a family who asked to be deleted, or an entry that should never have been stored. Admins only.",
       button: "Erase personal data…",
       dialogTitle: "Erase this family's personal data?",
-      what: "Names, phone number, email, messages, notes and free-tool notes are deleted for good, and every browser that shared these details will be asked again. Only anonymous counts stay (stage, source, centre, dates). This cannot be undone.",
+      what: "Names, phone number, email, messages, notes, the place the family typed and free-tool notes are deleted for good, and every browser that shared these details will be asked again. What stays: anonymous counts (stage, source, centre, area, dates), the Meta lead id and a one-way coded fingerprint of the phone number, so an old list or Meta form cannot add the family back. Copies in Meta Leads Center or in downloaded sheets are not deleted: delete them there too. This cannot be undone.",
       reason: "Reason",
       reasonPlaceholder: "Choose a reason",
       reasons: {
@@ -409,6 +507,13 @@ const crm = {
         enquiry: "Website enquiry form",
         staff: "Recorded by staff",
         withdrawn: "Asked Aspire to stop contacting them",
+        meta: "Meta lead form",
+        import: "Imported list",
+      },
+      /** System consent methods (§14.2): never offered by "Add enquiry". */
+      consentSystemMethods: {
+        meta_lead_form: "Filled in a Meta lead form",
+        csv_import: "On a list imported by staff",
       },
       consentMethod: "How they agreed",
       consentLanguage: "Language",
@@ -498,6 +603,78 @@ const crm = {
     convert: {
       label: "Convert to enrolment",
       note: "Coming in Phase 2: enrolment records are not connected yet.",
+    },
+    /** Lead routing (§13, §20): the lead's area and how it was found. */
+    routing: {
+      title: "Area",
+      area: "Area",
+      noArea: "No area yet",
+      toolSignup: "Tool sign-up (no area yet)",
+      match: "How it was matched",
+      matches: {
+        centre: "From the chosen centre",
+        district: "District name",
+        town: "Town name",
+        spelling: "Another spelling",
+        hindi: "Hindi name",
+        border: "Border town",
+        fuzzy: "Close spelling",
+        manual: "Set by staff",
+      },
+      outcomes: {
+        area: "Matched",
+        unknown: "Place not recognised",
+        ambiguous: "Could be more than one district",
+        outside_hp: "Outside Himachal",
+        empty: "No place given",
+      },
+      place: "Place the family gave",
+      routedAt: "Routed",
+      routedBy: "Changed by {name}",
+      automatic: "Automatically",
+      change: "Change area",
+      changeTitle: "Change this lead's area",
+      changeIntro: "The lead moves to that area's queue. If its executive does not work in the new area, someone there is picked.",
+      chooseArea: "Area",
+      noAreaOption: "No area (Unassigned queue)",
+      save: "Change area",
+      saved: "Area changed.",
+      loading: "Loading areas…",
+      loadFailed: "Couldn't load the areas. Try again.",
+      unchanged: "That is already this lead's area.",
+    },
+    /** The first-call clock on the lead page (§15). */
+    sla: {
+      title: "First call",
+      started: "Clock started {time}",
+      due: "Due {time}",
+      tier1: "Area head alerted from {time}",
+      tier2: "Super admins alerted from {time}",
+      reasons: {
+        new: "New enquiry",
+        reopened: "Reopened",
+        import: "Imported list",
+      },
+    },
+    /** Imported / Meta leads (§18). */
+    origin: {
+      title: "Came from",
+      meta: "Meta lead form",
+      metaLeadId: "Meta lead id {id}",
+      csv: "Imported list",
+      on: "on {date}",
+    },
+    /** H4: Meta forms without Aspire's consent checkbox. */
+    confirmConsent: {
+      title: "Confirm consent on the first call",
+      body: "This family came from a Meta lead form without Aspire's consent checkbox. On the first call, check that you are speaking to a parent or guardian (or that they agree) and that they are happy to be contacted, and note it on the timeline.",
+    },
+    /** After a call from this page (tel: link): log what happened. */
+    callReturn: {
+      title: "Back from the call?",
+      body: "Log how the call went so the team can see it.",
+      log: "Log the call",
+      dismiss: "Not now",
     },
   },
   today: {
@@ -606,7 +783,7 @@ const crm = {
     metaDescription: "Admissions staff accounts, centre scope and automatic lead assignment rules.",
     title: "Staff & rules",
     lead: "Who works on leads, which centres they cover, and how new leads are assigned.",
-    managerLead: "Read only for centre managers. Ask an admin to add staff or change the assignment rules.",
+    managerLead: "Read only: only a super admin can add staff or change the assignment rules.",
     listTitle: "Admissions staff",
     listEmpty: "No admissions staff yet.",
     columns: {
@@ -675,8 +852,14 @@ const crm = {
     ruleNeedsCounsellor: "Pick at least one staff member for each active rule.",
     rulesLimit: "Up to {max} rules.",
     ruleDuplicate: "Two rules cover the same centre and program.",
-    rulesReadOnly: "Only admins can change the assignment rules.",
+    rulesReadOnly: "Only a super admin can change the assignment rules.",
   },
+  /** Nested pages (docs/lead-routing-plan.md §24 rule 7): each owned by one package after LR-CORE. */
+  areasAdmin: crmAreas,
+  speed: crmSpeed,
+  dashboard: crmDashboard,
+  importLeads: crmImport,
+  metaAds: crmMeta,
 };
 
 export default crm;

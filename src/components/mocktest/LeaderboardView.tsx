@@ -10,7 +10,7 @@ import { buildLoginHref } from "@/lib/auth/paths";
 import { SCHOOL_MIN_PARTICIPANTS } from "@/lib/mocktest/leaderboard";
 import type { IdentityIssue, NameIssue } from "@/lib/mocktest/schemas";
 import type { Bilingual, LeaderboardData, MocktestProfile, TestWindow } from "@/lib/mocktest/types";
-import { formatDate, formatDuration, formatNumber, type MocktestMessages } from "./format";
+import { formatDate, formatDuration, formatMonth, formatNumber, type MocktestMessages } from "./format";
 import { apiJson, useMounted, useSessionStatus } from "./hooks";
 
 export interface LeaderboardTest {
@@ -19,6 +19,11 @@ export interface LeaderboardTest {
   kind: "practice" | "weekly";
   windows?: TestWindow[];
   sample: boolean;
+  /**
+   * A monthly ranked paper of an exam-pattern mock ("bp-<slot>-ranked"): monthly windows, ranked by
+   * score and the official tie-break (no time column: time is not a criterion).
+   */
+  ranked?: boolean;
 }
 
 type View = LeaderboardData["view"];
@@ -97,7 +102,7 @@ function LeaderboardClient({ tests, t }: { tests: LeaderboardTest[]; t: Mocktest
         </div>
         {startedWindows.length > 0 && (
           <div>
-            <label htmlFor={ids.window} className="text-sm font-bold text-navy">{tl.window}</label>
+            <label htmlFor={ids.window} className="text-sm font-bold text-navy">{test?.ranked ? t.paper.leaderboard.month : tl.window}</label>
             <select
               id={ids.window}
               className={select}
@@ -109,7 +114,9 @@ function LeaderboardClient({ tests, t }: { tests: LeaderboardTest[]; t: Mocktest
             >
               {startedWindows.map((w, i) => (
                 <option key={w.id} value={i === 0 ? "" : w.id}>
-                  {format(tl.windowOption, { date: formatDate(Date.parse(w.startsAt), locale) })}
+                  {test?.ranked
+                    ? format(t.paper.leaderboard.monthOption, { month: formatMonth(Date.parse(w.startsAt), locale) })
+                    : format(tl.windowOption, { date: formatDate(Date.parse(w.startsAt), locale) })}
                 </option>
               ))}
             </select>
@@ -182,7 +189,7 @@ function LeaderboardClient({ tests, t }: { tests: LeaderboardTest[]; t: Mocktest
                         <th scope="col" className="px-3 py-2">{tl.nickname}</th>
                         <th scope="col" className="px-3 py-2">{tl.district}</th>
                         <th scope="col" className="px-3 py-2 text-right">{tl.score}</th>
-                        <th scope="col" className="px-3 py-2 text-right">{tl.time}</th>
+                        {!data.ranked && <th scope="col" className="px-3 py-2 text-right">{tl.time}</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -192,7 +199,7 @@ function LeaderboardClient({ tests, t }: { tests: LeaderboardTest[]; t: Mocktest
                           <th scope="row" className="px-3 py-2 font-semibold">{entry.nickname}</th>
                           <td className="px-3 py-2">{districtName(entry.district, locale) ?? "—"}</td>
                           <td className="px-3 py-2 text-right tabular-nums">{format(t.common.scoreOf, { score: entry.score, max: data.maxScore })}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{formatDuration(entry.timeTakenSec, t.common)}</td>
+                          {!data.ranked && <td className="px-3 py-2 text-right tabular-nums">{formatDuration(entry.timeTakenSec, t.common)}</td>}
                         </tr>
                       ))}
                     </tbody>

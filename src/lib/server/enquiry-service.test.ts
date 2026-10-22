@@ -7,6 +7,7 @@ import { noneDestination } from "./destinations/none";
 import {
   buildEnquiryPayload,
   checkPreferredCentre,
+  enquiryDistrict,
   ENQUIRY_REFERENCE_PATTERN,
   PREFERRED_CENTRE_ERROR,
   generateEnquiryReference,
@@ -266,5 +267,22 @@ describe("submitEnquiry", () => {
       kind: "not_configured",
       honeypot: true,
     });
+  });
+});
+
+describe("enquiryDistrict (lead routing, section 13.8)", () => {
+  it("returns a valid district of a hero, admissions or contact enquiry; nothing else", () => {
+    expect(enquiryDistrict({ ...enquiry, district: "kangra" } as Enquiry)).toBe("kangra");
+    expect(enquiryDistrict({ ...enquiry, district: "outside-hp" } as Enquiry)).toBe("outside-hp");
+    expect(enquiryDistrict({ ...enquiry, district: "" } as Enquiry)).toBeUndefined();
+    expect(enquiryDistrict(enquiry)).toBeUndefined();
+    expect(enquiryDistrict({ ...enquiry, district: "Pathankot" } as unknown as Enquiry)).toBeUndefined();
+    const quick = enquirySchema.parse({ source: "quick", name: "Test Student", phone: "9876543210", consent: true, consentVersion: CONSENT_VERSION, currentClass: "class-11", programInterest: "jee" });
+    expect(enquiryDistrict({ ...quick, district: "kangra" } as unknown as Enquiry)).toBeUndefined();
+  });
+
+  it("forwards the district to a webhook like any other field", () => {
+    const payload = buildEnquiryPayload({ ...enquiry, district: "una" } as Enquiry, "ENQ-TEST000001", new Date("2026-10-20T10:00:00.000Z"));
+    expect(payload.enquiry).toMatchObject({ district: "una" });
   });
 });

@@ -10,38 +10,44 @@ import {
   Users,
 } from "lucide-react";
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
 import { ApproachGrid } from "@/components/about/ApproachGrid";
 import { Art } from "@/components/about/Art";
 import { CtaBand } from "@/components/about/CtaBand";
 import { ExploreLinks } from "@/components/about/ExploreLinks";
 import { FillMediaSplit } from "@/components/about/FillMediaSplit";
-import { ABOUT_HERO_IMAGES } from "@/components/about/hero-images";
+import {
+  ABOUT_HERO_PHOTOS,
+  ABOUT_PROOF_STAT_IDS,
+  heroCollagePhotos,
+  heroProofStats,
+} from "@/components/about/hero-images";
 import { PhotoMosaic } from "@/components/about/PhotoMosaic";
 import { MilestoneTimeline } from "@/components/about/MilestoneTimeline";
 import { PrinciplesList } from "@/components/about/PrinciplesList";
 import { mixedResultCards } from "@/components/about/result-cards";
 import { ResultsBand } from "@/components/about/ResultsBand";
+import { HeroAction, HeroCollage, HeroFrame, ProofStats, RanchoChip } from "@/components/hero";
+import { layoutPreviewBanner } from "@/components/page-layout/preview-banner";
+import { PageLayoutFrame, type LayoutSlots } from "@/components/page-layout/render";
 import { ResultCardMosaic } from "@/components/results/ResultCardMosaic";
 import {
   ButtonLink,
   Card,
   DemoBadge,
   Notice,
-  PageHero,
   Section,
   SectionHeading,
   type CardTint,
   type SectionTone,
 } from "@/components/ui";
-import { heroSlides } from "@/components/ui/hero-slides";
 import { aspireAssets } from "@/content/aspire-assets";
 import { stockImages } from "@/content/images";
 import type { Locale } from "@/i18n/config";
 import type { Messages } from "@/i18n/messages/types";
 import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
-import { getInstituteProfile, isPlaceholder, localizeImage } from "@/lib/data";
+import { getInstituteProfile, getStats, isPlaceholder, localizeImage } from "@/lib/data";
+import { getPageLayout } from "@/lib/page-layout/loader";
 import type { InstituteProfile } from "@/lib/types";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -53,8 +59,8 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-/** A page section that takes its background tone from its position, so white/surface always alternate. */
-type ToneSection = (tone: SectionTone) => ReactNode;
+/** The sections whose content depends on the institute profile (verified profile or honest fallback). */
+type ContentSlots = Pick<LayoutSlots<"about">, "story" | "mission" | "approach" | "values" | "journey">;
 
 /** Cards per 6×2 band: every cell is a card (the section heading links to /results). */
 const MOSAIC_CARDS = 12;
@@ -68,18 +74,33 @@ type Ctx = {
   photoLabel: string;
 };
 
+/**
+ * About. Page layout (docs/page-layout-plan.md §12.3): the sections after the hero follow the
+ * published layout (`getPageLayout("about")`, editable by a super admin; the closing band stays
+ * last). Each section is a slot that takes its background tone from its position (white / surface
+ * alternate over the sections that render) and, for the photo splits, its photo side too (D8), so
+ * the default layout looks exactly as before.
+ */
 export default async function AboutPage() {
-  const [locale, t, tc] = await Promise.all([getLocale(), getMessages("about"), getMessages("common")]);
-  const profile = await getInstituteProfile(locale);
-  const ctx: Ctx = { locale, t, tc, photoLabel: tc.labels.illustrativeStockPhoto };
-
-  // D-031: previous results (alternating JEE / NEET) instead of landscapes, in two general slots —
-  // never beside a specific centre or campus (so not in the journey timeline, which names campuses).
-  // Production has no visible cards: each mosaic then shows its labelled, non-nature stock photo.
-  const [sectionCards, ctaCards] = await Promise.all([
-    mixedResultCards(locale, MOSAIC_CARDS),
-    mixedResultCards(locale, MOSAIC_CARDS, MOSAIC_CARDS),
+  const [locale, t, tc, layout] = await Promise.all([
+    getLocale(),
+    getMessages("about"),
+    getMessages("common"),
+    getPageLayout("about"),
   ]);
+  const [profile, stats, resultCards] = await Promise.all([
+    getInstituteProfile(locale),
+    getStats(undefined, locale),
+    // D-031: previous results (alternating JEE / NEET) instead of landscapes, in general slots only —
+    // the hero collage and two mosaics, never beside a specific centre or campus (so not in the
+    // journey timeline, which names campuses). Each card appears once on the page. Production has
+    // no visible cards: the collage then shows its photos alone and each mosaic its stock photo.
+    mixedResultCards(locale, 1 + 2 * MOSAIC_CARDS),
+  ]);
+  const ctx: Ctx = { locale, t, tc, photoLabel: tc.labels.illustrativeStockPhoto };
+  const [heroCard] = resultCards;
+  const sectionCards = resultCards.slice(1, 1 + MOSAIC_CARDS);
+  const ctaCards = resultCards.slice(1 + MOSAIC_CARDS);
   const [resultsMedia, ctaMedia] = await Promise.all([
     ResultCardMosaic({
       locale,
@@ -98,23 +119,26 @@ export default async function AboutPage() {
       fallbackImageLabel: ctx.photoLabel,
     }),
   ]);
-  const results: ToneSection = (tone) => (
-    <Section key="results" tone={tone} aria-labelledby="about-results-heading">
-      <ResultsBand
-        headingId="about-results-heading"
-        eyebrow={t.results.eyebrow}
-        title={t.results.title}
-        description={t.results.description}
-        link={{ label: t.results.link, href: localePath("/results", locale) }}
-        media={resultsMedia}
-      />
-    </Section>
-  );
 
-  const sections: ToneSection[] = [
-    ...(profile ? profileSections(profile, ctx, results) : [...pendingSections(ctx), results]),
-    (tone) => (
-      <Section key="explore" tone={tone} aria-labelledby="explore-heading">
+  // One slot per section, rendered in layout order. A slot is null exactly when its section would
+  // render nothing, so empty sections never take a tone.
+  const slots: LayoutSlots<"about"> = {
+    ...(profile ? profileSlots(profile, ctx) : pendingSlots(ctx)),
+    // General results band (default: before the journey, whose milestones name campuses: no cards there).
+    results: ({ tone }) => (
+      <Section tone={tone} aria-labelledby="about-results-heading">
+        <ResultsBand
+          headingId="about-results-heading"
+          eyebrow={t.results.eyebrow}
+          title={t.results.title}
+          description={t.results.description}
+          link={{ label: t.results.link, href: localePath("/results", locale) }}
+          media={resultsMedia}
+        />
+      </Section>
+    ),
+    explore: ({ tone }) => (
+      <Section tone={tone} aria-labelledby="explore-heading">
         <SectionHeading
           id="explore-heading"
           eyebrow={t.explore.eyebrow}
@@ -124,10 +148,10 @@ export default async function AboutPage() {
         <ExploreLinks messages={t.explore} locale={locale} photoLabel={ctx.photoLabel} />
       </Section>
     ),
-    // Between the hostel / campus links and the results band in the CTA (D-031: no cards beside them).
-    (tone) => <SpacesSection key="spaces" tone={tone} ctx={ctx} />,
-    (tone) => (
-      <Section key="cta" tone={tone} aria-labelledby="about-cta-heading">
+    // Default: between the hostel / campus links and the results band in the CTA (D-031: no cards beside them).
+    spaces: ({ tone }) => <SpacesSection tone={tone} ctx={ctx} />,
+    cta: ({ tone }) => (
+      <Section tone={tone} aria-labelledby="about-cta-heading">
         <CtaBand
           id="about-cta-heading"
           title={t.cta.title}
@@ -138,35 +162,60 @@ export default async function AboutPage() {
         />
       </Section>
     ),
-  ];
+  };
 
   return (
-    <>
-      <PageHero
-        title={t.hero.title}
-        lead={t.hero.lead}
-        crumbs={[{ label: t.hero.crumb }]}
-        homeLabel={tc.labels.home}
-        homeHref={localePath("/", locale)}
-        // Stock only (no landscapes or result cards), so preview and production share the first fold.
-        slides={heroSlides(
-          ABOUT_HERO_IMAGES.map((key) => stockImages[key]),
-          ctx.photoLabel,
-          locale,
-        )}
-      />
-      {sections.map((render, index) => render(index % 2 === 0 ? "white" : "surface"))}
-    </>
+    <PageLayoutFrame
+      layout={layout}
+      banner={await layoutPreviewBanner(layout)}
+      hero={
+        // Design A · proof up front (2026-10-22). Every figure comes from getStats() and the result card
+        // from getResultCards() (both DEMO-badged placeholders; production shows neither).
+        <HeroFrame
+          layout="split"
+          eyebrow={t.hero.eyebrow}
+          title={t.hero.title}
+          highlight={t.hero.highlight}
+          lead={t.hero.lead}
+          crumbs={[{ label: t.hero.crumb }]}
+          homeLabel={tc.labels.home}
+          homeHref={localePath("/", locale)}
+          actions={
+            <>
+              <HeroAction href={localePath("/admissions#enquiry", locale)}>{t.hero.primaryCta}</HeroAction>
+              <HeroAction href={localePath("/results", locale)} variant="secondary">
+                {t.hero.secondaryCta}
+              </HeroAction>
+            </>
+          }
+          below={
+            <ProofStats stats={heroProofStats(stats, ABOUT_PROOF_STAT_IDS)} label={t.hero.statsLabel} demoLabel={tc.labels.demo} />
+          }
+          aside={
+            <HeroCollage
+              photos={heroCollagePhotos(ABOUT_HERO_PHOTOS, ctx.photoLabel, locale)}
+              result={heroCard}
+              resultBadge={t.hero.resultBadge}
+              demoLabel={tc.labels.demo}
+              chip={<RanchoChip href={localePath("/tools/ask", locale)} title={t.hero.rancho.title} action={t.hero.rancho.action} />}
+            />
+          }
+        />
+      }
+      slots={slots}
+    />
   );
 }
 
 /**
  * Institute profile sections. The profile is an imported placeholder (D-020): visible
  * with DEMO badges in development / preview; getInstituteProfile() returns null in
- * production until Aspire verifies it, and the page falls back to pendingSections().
+ * production until Aspire verifies it, and the page falls back to pendingSlots().
  * Faculty / founder names, credentials and the founder message are not shown (owner instruction 2026-10-20).
+ * Photo sides follow position (D8): at the default layout story, mission, approach and values
+ * alternate right / left as before.
  */
-function profileSections(profile: InstituteProfile, { locale, t, tc, photoLabel }: Ctx, results: ToneSection): ToneSection[] {
+function profileSlots(profile: InstituteProfile, { locale, t, tc, photoLabel }: Ctx): ContentSlots {
   const demoLabel = isPlaceholder(profile) ? tc.labels.demoPending : undefined;
   const demo = demoLabel ? <DemoBadge label={demoLabel} /> : null;
   const facts = [
@@ -174,12 +223,12 @@ function profileSections(profile: InstituteProfile, { locale, t, tc, photoLabel 
     { label: t.profile.factWhere, value: profile.foundedIn },
   ];
 
-  const sections: (ToneSection | false)[] = [
-    (tone) => (
-      <Section key="story" tone={tone} aria-labelledby="story-heading">
+  return {
+    story: ({ tone, side }) => (
+      <Section tone={tone} aria-labelledby="story-heading">
         <FillMediaSplit
           image={localizeImage(stockImages.seminarFromBehind, locale)}
-          imageSide="right"
+          imageSide={side}
           imageLabel={photoLabel}
         >
           <SectionHeading id="story-heading" title={t.profile.storyTitle} action={demo} stack className="mb-0" />
@@ -198,11 +247,11 @@ function profileSections(profile: InstituteProfile, { locale, t, tc, photoLabel 
       </Section>
     ),
 
-    (tone) => (
-      <Section key="mission" tone={tone} aria-labelledby="mission-heading">
+    mission: ({ tone, side }) => (
+      <Section tone={tone} aria-labelledby="mission-heading">
         <FillMediaSplit
           image={localizeImage(stockImages.teacherChalkboard, locale)}
-          imageSide="left"
+          imageSide={side}
           imageLabel={photoLabel}
         >
           <SectionHeading
@@ -228,69 +277,70 @@ function profileSections(profile: InstituteProfile, { locale, t, tc, photoLabel 
       </Section>
     ),
 
-    profile.approach.length > 0 &&
-      ((tone) => (
-        <Section key="approach" tone={tone} aria-labelledby="approach-heading">
-          <FillMediaSplit
-            image={localizeImage(stockImages.physicsWhiteboard, locale)}
-            imageSide="right"
-            imageLabel={photoLabel}
-          >
-            <SectionHeading
-              id="approach-heading"
-              eyebrow={t.profile.approachEyebrow}
-              title={t.profile.approachTitle}
-              description={t.profile.approachDescription}
-              action={demo}
-              stack
-            />
-            <ApproachGrid points={profile.approach} columns={1} />
-          </FillMediaSplit>
-        </Section>
-      )),
+    approach:
+      profile.approach.length > 0
+        ? ({ tone, side }) => (
+            <Section tone={tone} aria-labelledby="approach-heading">
+              <FillMediaSplit
+                image={localizeImage(stockImages.physicsWhiteboard, locale)}
+                imageSide={side}
+                imageLabel={photoLabel}
+              >
+                <SectionHeading
+                  id="approach-heading"
+                  eyebrow={t.profile.approachEyebrow}
+                  title={t.profile.approachTitle}
+                  description={t.profile.approachDescription}
+                  action={demo}
+                  stack
+                />
+                <ApproachGrid points={profile.approach} columns={1} />
+              </FillMediaSplit>
+            </Section>
+          )
+        : null,
 
-    profile.pedagogyPrinciples.length > 0 &&
-      ((tone) => (
-        <Section key="values" tone={tone} aria-labelledby="values-heading">
-          <FillMediaSplit
-            image={localizeImage(stockImages.tableDiscussion, locale)}
-            imageSide="left"
-            imageLabel={photoLabel}
-          >
-            <SectionHeading
-              id="values-heading"
-              eyebrow={t.profile.valuesEyebrow}
-              title={t.profile.valuesTitle}
-              action={demo}
-              stack
-              className="mb-5"
-            />
-            <PrinciplesList principles={profile.pedagogyPrinciples} columns={1} />
-          </FillMediaSplit>
-        </Section>
-      )),
+    values:
+      profile.pedagogyPrinciples.length > 0
+        ? ({ tone, side }) => (
+            <Section tone={tone} aria-labelledby="values-heading">
+              <FillMediaSplit
+                image={localizeImage(stockImages.tableDiscussion, locale)}
+                imageSide={side}
+                imageLabel={photoLabel}
+              >
+                <SectionHeading
+                  id="values-heading"
+                  eyebrow={t.profile.valuesEyebrow}
+                  title={t.profile.valuesTitle}
+                  action={demo}
+                  stack
+                  className="mb-5"
+                />
+                <PrinciplesList principles={profile.pedagogyPrinciples} columns={1} />
+              </FillMediaSplit>
+            </Section>
+          )
+        : null,
 
-    // General results band before the journey (whose milestones name campuses: no cards there).
-    results,
-
-    profile.milestones.length > 0 &&
-      ((tone) => (
-        <Section key="journey" tone={tone} aria-labelledby="journey-heading">
-          <MilestoneTimeline
-            headingId="journey-heading"
-            milestones={profile.milestones}
-            eyebrow={t.profile.journeyEyebrow}
-            title={t.profile.journeyTitle}
-            description={t.profile.journeyDescription}
-            demoLabel={demoLabel}
-            image={localizeImage(stockImages.pocketWatchWorksheet, locale)}
-            imageLabel={photoLabel}
-          />
-        </Section>
-      )),
-  ];
-
-  return sections.filter((section): section is ToneSection => section !== false);
+    journey:
+      profile.milestones.length > 0
+        ? ({ tone }) => (
+            <Section tone={tone} aria-labelledby="journey-heading">
+              <MilestoneTimeline
+                headingId="journey-heading"
+                milestones={profile.milestones}
+                eyebrow={t.profile.journeyEyebrow}
+                title={t.profile.journeyTitle}
+                description={t.profile.journeyDescription}
+                demoLabel={demoLabel}
+                image={localizeImage(stockImages.pocketWatchWorksheet, locale)}
+                imageLabel={photoLabel}
+              />
+            </Section>
+          )
+        : null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -305,14 +355,15 @@ const VALUE_STYLES: { icon: typeof Users; tint: CardTint }[] = [
   { icon: MapPin, tint: "violet" },
 ];
 
-function pendingSections({ locale, t, photoLabel }: Ctx): ToneSection[] {
+/** Without a profile there is no mission or milestone content: those slots are empty. */
+function pendingSlots({ locale, t, photoLabel }: Ctx): ContentSlots {
   const p = t.pending;
-  return [
-    (tone) => (
-      <Section key="story" tone={tone} aria-labelledby="story-heading">
+  return {
+    story: ({ tone, side }) => (
+      <Section tone={tone} aria-labelledby="story-heading">
         <FillMediaSplit
           image={localizeImage(stockImages.seminarFromBehind, locale)}
-          imageSide="right"
+          imageSide={side}
           imageLabel={photoLabel}
         >
           <SectionHeading id="story-heading" title={p.storyTitle} className="mb-0" />
@@ -320,11 +371,12 @@ function pendingSections({ locale, t, photoLabel }: Ctx): ToneSection[] {
         </FillMediaSplit>
       </Section>
     ),
-    (tone) => (
-      <Section key="approach" tone={tone} aria-labelledby="approach-heading">
+    mission: null,
+    approach: ({ tone, side }) => (
+      <Section tone={tone} aria-labelledby="approach-heading">
         <FillMediaSplit
           image={localizeImage(stockImages.teacherChalkboard, locale)}
-          imageSide="left"
+          imageSide={side}
           imageLabel={photoLabel}
         >
           <SectionHeading id="approach-heading" title={p.approachTitle} description={p.approachLead} className="mb-0" />
@@ -353,11 +405,11 @@ function pendingSections({ locale, t, photoLabel }: Ctx): ToneSection[] {
         </FillMediaSplit>
       </Section>
     ),
-    (tone) => (
-      <Section key="values" tone={tone} aria-labelledby="values-heading">
+    values: ({ tone, side }) => (
+      <Section tone={tone} aria-labelledby="values-heading">
         <FillMediaSplit
           image={localizeImage(stockImages.tableDiscussion, locale)}
-          imageSide="right"
+          imageSide={side}
           imageLabel={photoLabel}
         >
           <SectionHeading
@@ -385,7 +437,8 @@ function pendingSections({ locale, t, photoLabel }: Ctx): ToneSection[] {
         </FillMediaSplit>
       </Section>
     ),
-  ];
+    journey: null,
+  };
 }
 
 /**

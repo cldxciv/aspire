@@ -2,25 +2,37 @@
 
 import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
 import Image from "next/image";
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useReducer, useRef, useState, type KeyboardEvent } from "react";
 import { format } from "@/i18n/format";
 import type { Messages } from "@/i18n/messages/types";
 import { cn } from "@/lib/cn";
-import { useHydrated, useInView, useInteractionPause, usePageHidden, useReducedMotion } from "./carousel-env";
 import {
+  scrollTrackTo,
+  useAutoplay,
+  useFocusPause,
+  useHydrated,
+  useInView,
+  usePageHidden,
+  useReducedMotion,
+  useScrollSettle,
+} from "./carousel-env";
+import {
+  AUTOPLAY_MS,
   autoplayDelay,
   carouselAspectClass,
   carouselBoxRatio,
+  carouselReducer,
   clampIndex,
   coverSizes,
   indexForKey,
+  initialCarouselState,
   isPlaying,
   liveMode,
   nextIndex,
   prevIndex,
-  scrollBehaviorFor,
+  settleAction,
+  settledIndex,
   shouldAutoRotate,
-  wrapIndex,
   type CarouselAspect,
   type CarouselSlide,
   type PlayChoice,
@@ -51,7 +63,7 @@ type ImageCarouselBase = {
   priority?: boolean;
   /** Default true, on every device (reduced motion makes each step an instant swap instead). */
   autoPlay?: boolean;
-  /** Autoplay interval; never below 2000, and 6000 for a non-finite value; at least 8000 under reduced motion. */
+  /** Autoplay interval (default `AUTOPLAY_MS`, 5000); never below 2000, and 5000 for a non-finite value. */
   intervalMs?: number;
   /** Control styling: `dark` = navy buttons + gold focus ring (dark heroes), `light` = white buttons + blue ring. */
   tone?: CarouselTone;
@@ -91,13 +103,19 @@ export type ImageCarouselProps = ImageCarouselBase &
  * - Fixed aspect box (no layout shift); `aspect="fill"` absolutely fills a positioned parent and
  *   then requires `sizes`. The `21/9` band is 16/10 below `md`; `hero` (PageHero) is 4/3 on tablets
  *   (`md`) and 16/10 otherwise.
- * - Autoplay (default on, 6 s) runs on every device once hydrated. Under `prefers-reduced-motion`
- *   it still runs, but each change is an instant swap (no smooth slide) every 8 s at least. It
- *   pauses on mouse hover, while keyboard focus is inside (not on the pause / play button), while
- *   the tab is hidden and while scrolled out of view; taps and clicks do not pause it. The visible
- *   pause / play button (WCAG 2.2.2) is the visitor's override, and a Pause sticks until Play. The
- *   slide track is `aria-live="polite"` whenever it is not actually rotating, so Next / Previous /
- *   dots / keys are announced.
+ * - Autoplay (default on, one slide every 5 s) runs on every device once hydrated. Under
+ *   `prefers-reduced-motion` it still runs at the same pace, but each change is an instant swap (no
+ *   smooth slide). Mouse hover, taps and clicks do not pause it. The visible pause / play button
+ *   (WCAG 2.2.2) is the visitor's override and a Pause sticks until Play (Play moves on at once,
+ *   then every 5 s); keyboard focus on a control (not the pause / play button itself) presses Pause
+ *   for them (APG), so the button always shows the real state. It also rests while the tab is
+ *   hidden or the carousel is fully off screen. A press on the track restarts the 5 s, so a step
+ *   never lands in the middle of a swipe.
+ *   The slide track is `aria-live="polite"` whenever it is not actually rotating, so Next /
+ *   Previous / dots / keys are announced.
+ * - The slide index in state is the source of truth: the timer advances it and the track is
+ *   scrolled to it, so autoplay never waits for a scroll event. A swipe that comes to rest on
+ *   another slide is adopted; a programmatic scroll that ends in the wrong place is redone.
  * - It is a named `role="group"` (not a landmark), so several carousels on a page are fine.
  * - `priority` preloads the FIRST slide only, at `fetchPriority="high"`; every other slide is lazy.
  * - One slide renders a plain static image (no controls); no slides render nothing.
@@ -116,7 +134,7 @@ export function ImageCarousel(props: ImageCarouselProps) {
     boxRatio,
     priority = false,
     autoPlay = true,
-    intervalMs = 6000,
+    intervalMs = AUTOPLAY_MS,
     tone = "dark",
     className,
   } = props;
@@ -124,46 +142,76 @@ export function ImageCarousel(props: ImageCarouselProps) {
   const baseId = useId();
   const trackRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const [active, setActive] = useState(0);
+  // The hydration run of the index → track effect leaves the track where it is.
+  const trackSynced = useRef(false);
+  const [{ index, moves }, dispatch] = useReducer(carouselReducer, initialCarouselState);
+  // Presses on the track (finger, pen, mouse): each restarts the interval, so no step lands mid-swipe.
+  const [presses, setPresses] = useState(0);
   const [choice, setChoice] = useState<PlayChoice>("auto");
-  const { hovered, focusWithin, noteKey, pointerHandlers, focusHandlers } = useInteractionPause();
   const hydrated = useHydrated();
   const reducedMotion = useReducedMotion();
   const pageHidden = usePageHidden();
-  // Pause while scrolled out of view (saves bandwidth and avoids off-screen motion).
-  const inView = useInView(rootRef, count > 1);
+  const multi = count > 1;
+  // Pause while scrolled fully out of view (saves bandwidth and avoids off-screen motion).
+  const inView = useInView(rootRef, multi);
+  // Keyboard focus on a slide or control (not the pause / play button) presses Pause (APG).
+  const focusPause = useFocusPause(() => setChoice("paused"));
 
   // `slides` can shrink after mount; never point past the end.
-  const current = clampIndex(active, count);
+  const current = clampIndex(index, count);
   // Nothing rotates before hydration, so the server markup says "not playing" (live region on).
-  // Reduced motion does not stop it: `goTo` then jumps instantly and the interval is ≥ 8 s.
+  // Reduced motion does not stop it: the track then jumps instantly, at the same interval.
   const playing = hydrated && isPlaying({ autoPlay, choice });
-  const rotate = shouldAutoRotate({ count, playing, hovered, focusWithin, pageHidden, inView });
+  const rotate = shouldAutoRotate({ count, playing, pageHidden, inView });
 
-  const goTo = useCallback(
-    (index: number) => {
+  /** A manual move (buttons, dots, keys, an adopted swipe): restarts the full interval. */
+  const go = (target: number) => dispatch({ type: "go", index: target, count });
+
+  // Autoplay: a self-repeating interval that advances the index; it never waits for the track to
+  // report a scroll, so a lost or late scroll event cannot stop it. A manual move or a press on the
+  // track restarts it (both counters only grow, so their sum changes whenever either does).
+  useAutoplay(rotate, autoplayDelay(intervalMs), () => dispatch({ type: "step", count }), moves + presses);
+
+  // Track → index, once a scroll comes to rest: adopt the visitor's swipe, redo a lost step.
+  useScrollSettle(
+    trackRef,
+    hydrated && multi,
+    (userGesture) => {
       const track = trackRef.current;
-      if (!track || count < 2) return;
-      const target = wrapIndex(index, count);
-      track.scrollTo({ left: target * track.clientWidth, behavior: scrollBehaviorFor(reducedMotion) });
+      if (!track) return;
+      const settled = settledIndex(track.scrollLeft, track.clientWidth, count);
+      if (settled === null) return;
+      const action = settleAction({ settled, index: current, userGesture });
+      if (action === "adopt") go(settled);
+      // Instant, so a browser that keeps cutting smooth scrolls short cannot loop settle → resync.
+      else if (action === "resync") scrollTrackTo(track, current, true);
     },
-    [count, reducedMotion],
+    () => setPresses((n) => n + 1),
   );
 
-  // The scroll position is the source of truth (buttons, swipe, drag and keyboard all scroll).
-  const onScroll = () => {
-    const track = trackRef.current;
-    if (!track || track.clientWidth === 0) return;
-    const index = clampIndex(Math.round(track.scrollLeft / track.clientWidth), count);
-    setActive((prev) => (prev === index ? prev : index));
-  };
-
-  // Autoplay: one timeout per slide, so a manual move restarts the full interval.
+  // Index → track: every step, button, dot or key scrolls the track to the index (`moves` makes a
+  // dot for the current slide re-align it too). An adopted swipe is already there: nothing moves.
   useEffect(() => {
-    if (!rotate) return;
-    const timer = window.setTimeout(() => goTo(nextIndex(current, count)), autoplayDelay(intervalMs, reducedMotion));
-    return () => window.clearTimeout(timer);
-  }, [rotate, current, count, intervalMs, reducedMotion, goTo]);
+    const track = trackRef.current;
+    if (!hydrated || !track) return;
+    // First run with a track (hydration, or slides growing from one): keep a swipe made before it
+    // (useScrollSettle adopts it) instead of snapping back.
+    if (!trackSynced.current) {
+      trackSynced.current = true;
+      return;
+    }
+    scrollTrackTo(track, current, reducedMotion);
+  }, [current, moves, hydrated, reducedMotion, multi]);
+
+  /** Pause / play. Play also moves on at once, so the press visibly resumes (then every 5 s). */
+  const togglePlay = () => {
+    if (playing) {
+      setChoice("paused");
+      return;
+    }
+    setChoice("playing");
+    dispatch({ type: "step", count });
+  };
 
   if (count === 0) return null;
 
@@ -208,18 +256,18 @@ export function ImageCarousel(props: ImageCarouselProps) {
   );
   const compact = count > MAX_DOTS;
 
+  // Only the carousel keys act; any other key (Space, PageDown, arrows up / down) is left to the
+  // page and never pauses rotation.
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-    // A click-focused control that is then used from the keyboard is keyboard focus too.
-    noteKey(event.target);
     const target = indexForKey(event.key, current, count);
     if (target === null) return;
     event.preventDefault();
-    goTo(target);
+    go(target);
   };
 
-  // Keyboard focus inside and mouse hover pause rotation (`useInteractionPause`), except focus on
-  // the pause / play button itself (APG), so that pressing Play from the keyboard visibly resumes.
+  // Keyboard focus on a control (not the pause / play button) presses Pause (APG), so the button
+  // shows "Play"; mouse hover never pauses (owner decision 2026-10-22).
   return (
     <div
       ref={rootRef}
@@ -229,8 +277,8 @@ export function ImageCarousel(props: ImageCarouselProps) {
       data-surface={surface}
       className={cn("group/carousel isolate overflow-hidden bg-surface", carouselAspectClass[aspect], className)}
       onKeyDown={onKeyDown}
-      {...focusHandlers}
-      {...pointerHandlers}
+      onFocus={focusPause.onFocus}
+      onBlur={focusPause.onBlur}
     >
       {hydrated && (
         // First in the tab order (APG), drawn bottom right.
@@ -239,7 +287,7 @@ export function ImageCarousel(props: ImageCarouselProps) {
           data-carousel-toggle=""
           aria-controls={`${baseId}-track`}
           aria-label={playing ? labels.pause : labels.play}
-          onClick={() => setChoice(playing ? "paused" : "playing")}
+          onClick={togglePlay}
           className={cn(button, "absolute right-2 bottom-2")}
         >
           {playing ? <Pause aria-hidden="true" className="size-4" /> : <Play aria-hidden="true" className="size-4" />}
@@ -252,11 +300,13 @@ export function ImageCarousel(props: ImageCarouselProps) {
         aria-live={liveMode(rotate)}
         // Focusable (arrow keys scroll) only without JS; after hydration the controls take over.
         tabIndex={hydrated ? -1 : 0}
-        onScroll={onScroll}
         className="peer flex h-full w-full snap-x snap-mandatory overflow-x-auto overflow-y-hidden overscroll-x-contain outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden noscript:[scrollbar-width:thin] noscript:[&::-webkit-scrollbar]:block noscript:[&::-webkit-scrollbar]:h-2"
       >
         {slides.map(({ image, label: slideLabel, caption, position }, i) => {
           const isFirst = i === 0;
+          // Once hydrated, the shown slide and the next one load eagerly, so a step never lands on
+          // a blank, still-lazy slide (the server markup keeps every other slide lazy).
+          const eager = hydrated && (i === current || i === nextIndex(current, count));
           return (
             <div
               key={`${image.src}-${i}`}
@@ -275,7 +325,7 @@ export function ImageCarousel(props: ImageCarouselProps) {
                 sizes={slideSizes(image)}
                 {...(isFirst && priority
                   ? { preload: true, fetchPriority: "high" as const }
-                  : { loading: "lazy" as const })}
+                  : { loading: eager ? ("eager" as const) : ("lazy" as const) })}
                 className="object-cover"
                 style={position ? { objectPosition: position } : undefined}
                 draggable={false}
@@ -291,14 +341,18 @@ export function ImageCarousel(props: ImageCarouselProps) {
           );
         })}
       </div>
-      {/* Visible focus for the no-JS focusable track (slides would paint over its own outline). */}
-      <span
-        aria-hidden="true"
-        className={cn(
-          "pointer-events-none absolute inset-0 hidden rounded-[inherit] ring-3 ring-inset peer-focus-visible:block",
-          tone === "dark" ? "ring-gold" : "ring-blue",
-        )}
-      />
+      {/* Visible focus for the track while it is focusable (before hydration / without JS; slides
+          would paint over its own outline). Gone once hydrated: a clicked photo then focuses the
+          track, and a key press afterwards must not ring the whole carousel. */}
+      {!hydrated && (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute inset-0 hidden rounded-[inherit] ring-3 ring-inset peer-focus-visible:block",
+            tone === "dark" ? "ring-gold" : "ring-blue",
+          )}
+        />
+      )}
 
       {hydrated && (
         <>
@@ -306,7 +360,7 @@ export function ImageCarousel(props: ImageCarouselProps) {
             type="button"
             aria-controls={`${baseId}-track`}
             aria-label={labels.previous}
-            onClick={() => goTo(prevIndex(current, count))}
+            onClick={() => go(prevIndex(current, count))}
             className={cn(button, "absolute top-1/2 left-2 -translate-y-1/2")}
           >
             <ChevronLeft aria-hidden="true" className="size-5" />
@@ -315,7 +369,7 @@ export function ImageCarousel(props: ImageCarouselProps) {
             type="button"
             aria-controls={`${baseId}-track`}
             aria-label={labels.next}
-            onClick={() => goTo(nextIndex(current, count))}
+            onClick={() => go(nextIndex(current, count))}
             className={cn(button, "absolute top-1/2 right-2 -translate-y-1/2")}
           >
             <ChevronRight aria-hidden="true" className="size-5" />
@@ -350,7 +404,7 @@ export function ImageCarousel(props: ImageCarouselProps) {
                         aria-controls={`${baseId}-slide-${i + 1}`}
                         aria-label={format(labels.goTo, { n: i + 1 })}
                         aria-current={isCurrent ? "true" : undefined}
-                        onClick={() => goTo(i)}
+                        onClick={() => go(i)}
                         className={cn("grid h-11 w-8 place-items-center rounded-full", ringHalo)}
                       >
                         <span

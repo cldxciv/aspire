@@ -7,13 +7,20 @@ import { TodayView } from "@/components/crm/TodayView";
 import type { Locale } from "@/i18n/config";
 import { getLocale, getMessages } from "@/i18n/server";
 import { listLeads, myTasks } from "@/lib/crm";
+import { listAreaNames } from "@/lib/crm/repo/areas-core";
+import { loadPolicy } from "@/lib/crm/sla/policy";
+import { slaQueue } from "@/lib/crm/sla/views";
+import { getDb } from "@/lib/db/connection";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getMessages("crm");
   return { title: t.today.metaTitle, description: t.today.metaDescription };
 }
 
-/** The viewer's own day: overdue / due-today tasks and new leads assigned to them. */
+/**
+ * The viewer's own day: "Call now" (families waiting for their first call, LR-SLA §15), overdue /
+ * due-today tasks (incl. "Call again" retries) and new leads assigned to them.
+ */
 export default async function CrmTodayPage() {
   const [locale, t] = await Promise.all([getLocale(), getMessages("crm")]);
   return (
@@ -37,6 +44,17 @@ async function Today({ access, locale, t }: { access: CrmAccess; locale: Locale;
   const overdueIds = new Set(overdue.map((task) => task.id));
   const dueToday = myTasks(viewer, "today", now).filter((task) => !overdueIds.has(task.id));
   const fresh = listLeads(viewer, { assignee: "me", stage: "new", sort: "newest" }, { pageSize: 50 }, now).items;
+  const queue = slaQueue(viewer, "mine", now);
+  const db = getDb();
+  const { retry } = loadPolicy(db).rule;
+  const callNow = queue.ok
+    ? {
+        items: queue.data.items,
+        total: queue.data.total,
+        areaNames: Object.fromEntries(listAreaNames(db).map((area) => [area.id, locale === "hi" ? area.hi || area.en : area.en])),
+        maxRetries: retry.enabled ? retry.maxAttempts : 0,
+      }
+    : undefined;
   const centres = await crmCentres(locale);
-  return <TodayView data={{ overdue, dueToday, fresh }} centres={centres.names} now={now} locale={locale} t={t} />;
+  return <TodayView data={{ overdue, dueToday, fresh, callNow }} centres={centres.names} now={now} locale={locale} t={t} />;
 }

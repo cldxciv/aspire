@@ -340,7 +340,9 @@ describe("gate copy (rancho.panel.gate, en + hi)", () => {
     // Optional mode doesn't say the number is needed; "didn't keep it" names the likely cause and a way out.
     expect(en.formShownOptional).toMatch(/or continue without it/);
     expect(en.notKept).toMatch(/cookies/i);
-    expect(en.notKept).toMatch(/sign in/);
+    // Signing in is no way out any more (owner decision 22 Oct 2026: accounts are asked too).
+    expect(en.notKept).not.toMatch(/sign in/i);
+    expect(messagesFor("hi", "rancho").panel.gate.notKept).not.toMatch(/साइन इन/);
     expect(messagesFor("hi", "rancho").panel.gate.notKept).toMatch(/कुकीज़/);
     // The Ask page uses the same strings (ask.chat = rancho.panel).
     expect(messagesFor("hi", "ask").chat.gate).toEqual(messagesFor("hi", "rancho").panel.gate);
@@ -348,11 +350,12 @@ describe("gate copy (rancho.panel.gate, en + hi)", () => {
 
   it("keeps the static privacy notes true whatever the gate's mode (plan §11.4: 'may be asked')", () => {
     const en = messagesFor("en", "ask").honest.items.privacy;
-    expect(en).toMatch(/may be asked once for a contact number \(not if you're signed in\)/);
+    // Owner decision 22 Oct 2026: signed-in accounts are asked too (only one with a mobile on file skips; none has one yet).
+    expect(en).toMatch(/may be asked once for a contact number \(even if you're signed in\)/);
     expect(en).toMatch(/never your questions, photos or answers/);
     expect(en).not.toMatch(/no sign-up|nothing is stored/i);
     const hi = messagesFor("hi", "ask").honest.items.privacy;
-    expect(hi).toMatch(/संपर्क नंबर पूछा जा सकता है/);
+    expect(hi).toMatch(/संपर्क नंबर पूछा जा सकता है \(साइन इन होने पर भी\)/);
     // "Don't type names" is about the question (the contact form asks for a name on purpose).
     expect(messagesFor("en", "rancho").panel.privacy).toMatch(/^Don't type names or personal details in your question\./);
     expect(messagesFor("hi", "rancho").panel.privacy).toMatch(/^अपने सवाल में नाम/);

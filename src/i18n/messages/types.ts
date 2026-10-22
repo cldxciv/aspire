@@ -30,6 +30,9 @@ import type crm from "./en/crm";
 import type rancho from "./en/rancho";
 import type ranchoApp from "./en/ranchoApp";
 import type leadGate from "./en/leadGate";
+import type qb from "./en/qb";
+import type qbImport from "./en/qbImport";
+import type layout from "./en/layout";
 
 export type Catalog = {
   common: typeof common;
@@ -56,6 +59,9 @@ export type Catalog = {
   rancho: typeof rancho;
   ranchoApp: typeof ranchoApp;
   leadGate: typeof leadGate;
+  qb: typeof qb;
+  qbImport: typeof qbImport;
+  layout: typeof layout;
 };
 
 export type Namespace = keyof Catalog;

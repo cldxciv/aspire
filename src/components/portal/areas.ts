@@ -5,14 +5,17 @@ import {
   CalendarCheck,
   CalendarDays,
   ChartColumn,
+  FileQuestion,
   GraduationCap,
   HeartHandshake,
   History,
   Inbox,
   LayoutDashboard,
+  ListOrdered,
   MonitorCheck,
   Megaphone,
   Route,
+  Settings2,
   ShieldCheck,
   SquareKanban,
   TrendingUp,
@@ -77,9 +80,12 @@ export interface PortalAreaConfig {
 export const crmNavItems: PortalNavItem[] = [
   { key: "inbox", href: "/crm", icon: Inbox, exact: true },
   { key: "today", href: "/crm/today", icon: CalendarCheck },
+  // Lead routing (docs/lead-routing-plan.md §16, §20): area heads, admins and super admins.
+  { key: "dashboard", href: "/crm/dashboard", icon: LayoutDashboard, managersOnly: true },
   { key: "pipeline", href: "/crm/pipeline", icon: SquareKanban },
   { key: "reports", href: "/crm/reports", icon: ChartColumn },
   { key: "staff", href: "/crm/staff", icon: UserCog, managersOnly: true },
+  { key: "settings", href: "/crm/settings", icon: Settings2, managersOnly: true },
 ];
 
 /**
@@ -96,7 +102,16 @@ const adminGroups: PortalNavGroup[] = [
     ],
   },
   { key: "admission", items: crmNavItems },
-  { key: "website", items: [{ key: "website", href: "/admin/website", icon: MonitorCheck }] },
+  // Question bank (docs/question-bank-plan.md §B6): also the whole admin nav of QB staff.
+  { key: "tests", items: [{ key: "questionBank", href: "/admin/questions", icon: FileQuestion }] },
+  {
+    key: "website",
+    items: [
+      { key: "website", href: "/admin/website", icon: MonitorCheck },
+      // Page layout (docs/page-layout-plan.md §10): reorder / show-hide the public pages' sections.
+      { key: "pageLayout", href: "/admin/page-layout", icon: ListOrdered },
+    ],
+  },
   {
     key: "access",
     items: [
@@ -182,6 +197,39 @@ export const portalAreas: Record<PortalArea, PortalAreaConfig> = {
     iconTile: "bg-[#f3eeff] text-[#5b3cc4]",
   },
 };
+
+/**
+ * What a `staff` session sees in the ADMIN area (only the question bank is open to staff there,
+ * §B6): the "Tests & question bank" group, with the question bank as the area's home.
+ */
+export const QUESTION_BANK_NAV_KEYS: readonly AnyPortalNavKey[] = ["questionBank"];
+export const QUESTION_BANK_HREF = "/admin/questions";
+
+/** Whether a LOCALE-FREE path is a question-bank page (`/admin/questions` and below). */
+export function isQuestionBankPath(path: string): boolean {
+  return path === QUESTION_BANK_HREF || path.startsWith(`${QUESTION_BANK_HREF}/`);
+}
+
+/** The admin area's chrome for the signed-in role (request time; the static shell is the admin's). */
+export type AdminChrome = {
+  /** A `staff` account (a question-bank member) inside the admin area. */
+  staffMode: boolean;
+  /** Where the area badge leads: the console home, or the question bank for staff. */
+  badgeHref: string;
+  /** "Find an enquiry" / "+ Add enquiry": hidden for staff without a CRM membership. */
+  showConsoleTools: boolean;
+  /** Sidebar items to show (`undefined` = all). */
+  navKeys: readonly AnyPortalNavKey[] | undefined;
+  /** One "Admissions (CRM)" link under the sidebar for staff who are also CRM members. */
+  crmLink: boolean;
+};
+
+export function adminChromeFor(role: Role | null | undefined, crmMember: boolean): AdminChrome {
+  if (role === "staff") {
+    return { staffMode: true, badgeHref: QUESTION_BANK_HREF, showConsoleTools: crmMember, navKeys: QUESTION_BANK_NAV_KEYS, crmLink: crmMember };
+  }
+  return { staffMode: false, badgeHref: portalAreas.admin.nav[0].href, showConsoleTools: true, navKeys: undefined, crmLink: false };
+}
 
 /** Staff nav keys a viewer may see: counsellors don't get the manager-only items. */
 export function visibleStaffNavKeys(canManage: boolean): CrmNavKey[] {

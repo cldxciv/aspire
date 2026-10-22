@@ -25,6 +25,11 @@ export function formatDateTime(epochMs: number, locale: Locale): string {
   }).format(epochMs);
 }
 
+/** "October 2026" / "अक्टूबर 2026" (India Standard Time): a monthly ranked paper's window. */
+export function formatMonth(epochMs: number, locale: Locale): string {
+  return new Intl.DateTimeFormat(localeTag(locale), { month: "long", year: "numeric", timeZone: "Asia/Kolkata" }).format(epochMs);
+}
+
 export function formatNumber(value: number, locale: Locale): string {
   return new Intl.NumberFormat(localeTag(locale)).format(value);
 }

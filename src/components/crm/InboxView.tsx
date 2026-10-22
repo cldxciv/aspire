@@ -9,6 +9,7 @@ import { cn } from "@/lib/cn";
 import { LEAD_STAGES, type CrmPermissions, type LeadPage, type LeadSummary } from "@/lib/crm/types";
 import { DueLabel, MaskedPhone, Pagination, RelativeTime, SourceBadges, StageBadge } from "./CrmBlocks";
 import {
+  areaName,
   centreLabel,
   classProgramLabel,
   hasActiveFilters,
@@ -19,6 +20,7 @@ import {
   type CrmMessages,
   type InboxFilters,
 } from "./format";
+import { SlaChip } from "./SlaChip";
 import type { Option } from "./types";
 
 export type InboxOptions = {
@@ -27,6 +29,11 @@ export type InboxOptions = {
   sources: Option[];
   /** Staff the viewer may filter by (managers / admins); counsellors only see "me". */
   assignees: Option[];
+  /**
+   * Lead routing (§21): area filter options ("No area", "Tool sign-ups", the areas). Shown to
+   * managers and admins when given; the server refuses an area outside an area head's scope.
+   */
+  areas?: Option[];
 };
 
 const selectClasses =
@@ -98,6 +105,30 @@ export function InboxFiltersForm({
             ))}
           </select>,
         )}
+        {inbox && field(
+          "crm-sla",
+          f.sla,
+          <select id="crm-sla" name="sla" defaultValue={filters.sla ?? ""} className={selectClasses}>
+            <option value="">{t.common.any}</option>
+            <option value="open">{f.slaOpen}</option>
+            <option value="overdue">{f.slaOverdue}</option>
+            <option value="escalated">{f.slaEscalated}</option>
+          </select>,
+        )}
+        {permissions.canAssign &&
+          options.areas &&
+          field(
+            "crm-area",
+            f.area,
+            <select id="crm-area" name="area" defaultValue={filters.area ?? ""} className={selectClasses}>
+              <option value="">{t.common.any}</option>
+              {options.areas.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>,
+          )}
         {inbox && field(
           "crm-due",
           f.due,
@@ -238,11 +269,11 @@ export function LeadList({ page, filters, ctx }: { page: LeadPage; filters: Inbo
             aria-labelledby="crm-inbox-list"
             tabIndex={0}
           >
-            <table className="w-full min-w-[64rem] border-collapse text-left text-sm">
+            <table className="w-full min-w-[70rem] border-collapse text-left text-sm">
               <caption className="sr-only">{t.inbox.tableCaption}</caption>
               <thead className="bg-[#f4f7fb] text-xs uppercase tracking-wide text-[#354b66]">
                 <tr>
-                  {[c.name, c.guardian, c.phone, c.program, c.centre, c.source, c.stage, c.assignee, c.nextTask, c.lastActivity].map(
+                  {[c.name, c.guardian, c.phone, c.program, c.centre, c.area, c.source, c.stage, c.assignee, c.nextTask, c.lastActivity].map(
                     (label) => (
                       <th key={label} scope="col" className="whitespace-nowrap px-3 py-2.5 font-bold">
                         {label}
@@ -296,11 +327,15 @@ function InboxRow({ lead, ctx }: { lead: LeadSummary; ctx: InboxRowContext }) {
       </td>
       <td className="px-3 py-3">{classProgramLabel(t, lead.currentClass, lead.programInterest) ?? <span className="text-muted">{t.common.none}</span>}</td>
       <td className="px-3 py-3">{centreLabel(t, centres, lead.centreSlug) ?? <span className="text-muted">{t.common.none}</span>}</td>
+      <td className="px-3 py-3">{areaName(locale, lead.area) ?? <span className="text-muted">{t.inbox.noArea}</span>}</td>
       <td className="px-3 py-3">
         <SourceBadges source={lead.source} tool={lead.tool} t={t} />
       </td>
       <td className="px-3 py-3">
-        <StageBadge stage={lead.stage} t={t} />
+        <span className="flex flex-col items-start gap-1">
+          <StageBadge stage={lead.stage} t={t} />
+          {lead.sla && <SlaChip clock={lead.sla} now={now} locale={locale} t={t} />}
+        </span>
       </td>
       <td className="px-3 py-3">{assigneeText(lead, ctx)}</td>
       <td className="px-3 py-3">
@@ -318,6 +353,7 @@ function InboxCard({ lead, ctx }: { lead: LeadSummary; ctx: InboxRowContext }) {
   const c = t.inbox.columns;
   const name = displayName(t, lead);
   const centre = centreLabel(t, centres, lead.centreSlug);
+  const area = areaName(locale, lead.area);
   const program = classProgramLabel(t, lead.currentClass, lead.programInterest);
   return (
     <li className={cn("rounded-control border border-line bg-white p-4", lead.overdue && "border-l-4 border-l-[#e9b431]")}>
@@ -329,6 +365,7 @@ function InboxCard({ lead, ctx }: { lead: LeadSummary; ctx: InboxRowContext }) {
         </h3>
         <StageBadge stage={lead.stage} t={t} />
       </div>
+      {lead.sla && <SlaChip clock={lead.sla} now={now} locale={locale} t={t} className="mt-2" />}
       <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
         {lead.guardianName && (
           <>
@@ -350,6 +387,12 @@ function InboxCard({ lead, ctx }: { lead: LeadSummary; ctx: InboxRowContext }) {
           <>
             <dt className="text-muted">{c.centre}</dt>
             <dd>{centre}</dd>
+          </>
+        )}
+        {area && (
+          <>
+            <dt className="text-muted">{c.area}</dt>
+            <dd>{area}</dd>
           </>
         )}
         <dt className="text-muted">{c.source}</dt>

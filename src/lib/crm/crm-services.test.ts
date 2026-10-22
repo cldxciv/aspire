@@ -224,6 +224,18 @@ describe("auto-assignment", () => {
     upsertStaff(admin, m.id, { crmRole: "manager", centreSlugs: ["shimla"], active: false }, NOW);
     expect(capture({ phone: "9876500005", programInterest: "neet" }).assigneeId).toBe(c1.id);
   });
+
+  it("staff memberships and rules are changed by a super admin only (D-044); ordinary admins and managers read", () => {
+    // The only admin was made super admin automatically when it first used the CRM.
+    expect(admin.superAdmin).toBe(true);
+    const second = viewerOf(makeUser("admin", "admin.two", "Admin Two").id, "admin");
+    expect(second.superAdmin).toBeUndefined();
+    const c = makeStaff("couns.sa", "counsellor");
+    expect(upsertStaff(second, c.id, { crmRole: "manager", centreSlugs: [], active: true }, NOW)).toMatchObject({ ok: false, error: "forbidden" });
+    expect(setAssignmentRules(second, [], NOW)).toMatchObject({ ok: false, error: "forbidden" });
+    expect(upsertStaff(admin, c.id, { crmRole: "manager", centreSlugs: [], active: true }, NOW).ok).toBe(true);
+    expect(setAssignmentRules(admin, [], NOW).ok).toBe(true);
+  });
 });
 
 describe("record-level access (D-038)", () => {

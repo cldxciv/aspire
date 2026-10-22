@@ -22,6 +22,8 @@ const leadGate = {
   requiredNote: "Fields marked {star} are required.",
   fields: {
     studentName: "Student's name",
+    /** Hint under the name when it was filled in from a signed-in student or parent account. */
+    studentNameFromAccount: "Filled in from your Aspire account. You can change it.",
     phone: "Parent's or guardian's mobile (WhatsApp)",
     phoneHintParent: "Aspire's counsellors may call or WhatsApp this number.",
     phoneHintStudent: "Please enter your parent's or guardian's number. Aspire will speak to them.",
@@ -58,15 +60,22 @@ const leadGate = {
    */
   sampleData:
     "Results on this site currently use sample data while Aspire adds its official data. Sharing your details does not unlock official data: Aspire will contact you with real guidance.",
-  /** `{link}` is the sign-in link (text: signInLink). */
-  signIn: "Have an Aspire student or parent account? {link}",
-  signInLink: "Sign in instead",
+  /**
+   * Shown to a signed-in student or parent account (owner decision 22 Oct 2026): the lead records
+   * which account sent the details (its id and role). No "sign in instead" line any more: signing
+   * in does not skip this step.
+   */
+  accountNote: "You're signed in, so Aspire will link these details to your account.",
   /** Submit button per tool (LEAD_GATE_TOOLS). */
   submit: {
     predictor: "Show my rank band",
     "mock-test": "Show my score",
     planner: "Make my plan",
     ask: "Ask Rancho",
+  },
+  /** Submit button for a planner feature (useLeadGate `usageKey`, LEAD_GATE_USAGE_KEYS). */
+  submitFor: {
+    countdown: "Show my countdown",
   },
   sending: "Saving…",
   /** Optional mode only. */
@@ -97,7 +106,7 @@ const leadGate = {
   },
   /** <LeadGateNote>: shown before a tool is used, from the live mode (never baked in at build time). */
   note: {
-    required: "Free. Before showing results we ask once for a contact number (not needed if you're signed in).",
+    required: "Free. Before showing results we ask once for a contact number.",
     optional: "Free. You may share a contact number before results, or continue without it.",
   },
   /** <LeadGateIdentity>: under an unlocked result. No name is ever shown (shared computers). */

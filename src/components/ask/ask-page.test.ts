@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createElement, type ComponentProps, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -88,10 +88,18 @@ describe("Rancho page (/tools/ask)", () => {
   });
 });
 
-/** Every message namespace (one file per namespace in messages/en), so new namespaces are covered too. */
-const NAMESPACES = readdirSync(fileURLToPath(new URL("../../i18n/messages/en", import.meta.url)))
+/**
+ * Every message namespace (one file per namespace in messages/en), so new namespaces are covered too.
+ * Nested sub-files (e.g. `crm-areas.ts`, which `crm.ts` imports and nests) are not namespaces: their
+ * strings are checked through the parent namespace.
+ */
+const MESSAGES_EN = fileURLToPath(new URL("../../i18n/messages/en", import.meta.url));
+const MESSAGE_FILES = readdirSync(MESSAGES_EN)
   .filter((file) => file.endsWith(".ts"))
-  .map((file) => file.replace(/\.ts$/, "") as Namespace);
+  .map((file) => file.replace(/\.ts$/, ""));
+const NAMESPACES = MESSAGE_FILES.filter(
+  (stem) => !MESSAGE_FILES.some((parent) => stem.startsWith(`${parent}-`) && readFileSync(`${MESSAGES_EN}/${parent}.ts`, "utf8").includes(`from "./${stem}"`)),
+) as Namespace[];
 
 function strings(value: unknown, path: string): [string, string][] {
   if (typeof value === "string") return [[path, value]];

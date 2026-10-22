@@ -13,8 +13,19 @@ const centres: Messages<"centres"> = {
   },
   crumb: "केंद्र",
   hero: {
-    title: "अपने पास Aspire खोजें",
+    title: "अपना नज़दीकी Aspire केंद्र खोजें",
+    highlight: "Aspire केंद्र",
     lead: "हिमाचल प्रदेश के परिवारों के लिए केंद्र निर्देशिका। केवल सत्यापित स्थानों को ही पुष्ट केंद्र के रूप में प्रकाशित किया जाता है।",
+    finderLead: "अपना ज़िला चुनें और देखें कि कौन-सा Aspire केंद्र आपके ज़िले के लिए है।",
+  },
+  finder: {
+    district: "आपका ज़िला",
+    centreFor: "{district} के लिए Aspire केंद्र",
+    mapLabel: "हिमाचल प्रदेश में Aspire के {count} केंद्रों का सांकेतिक नक्शा: {names}",
+    mapNote: "सांकेतिक नक्शा, पैमाने के अनुसार नहीं",
+    page: "केंद्र का विवरण देखें",
+    whatsapp: "WhatsApp",
+    listTitle: "हमारे केंद्र",
   },
   directory: {
     title: "केंद्र निर्देशिका",

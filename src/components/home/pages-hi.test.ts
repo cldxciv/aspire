@@ -32,6 +32,11 @@ function programProps(slug: string) {
   } as unknown as PageProps<"/[lang]/programs/[slug]">;
 }
 
+/** Visible text of the markup: the hero headlines wrap their gold phrase in a span. */
+function textOf(html: string): string {
+  return html.replace(/<[^>]+>/g, "");
+}
+
 /** Every internal <a href> must stay in Hindi (assets, API, fragments and external links excepted). */
 function nonHindiLinks(html: string): string[] {
   const hrefs = [...html.matchAll(/<a\b[^>]*\shref="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
@@ -93,10 +98,10 @@ describe("PAGES-A pages in Hindi (preview content)", () => {
   it("programs list and detail: Hindi copy, track photos labelled, Hindi links", async () => {
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
     const list = await renderHi(() => ProgramsPage());
-    expect(list).toContain(hi.programs.list.heroTitle);
+    expect(textOf(list)).toContain(hi.programs.list.heroTitle);
     expect(list).toContain(hi.programs.list.tracksTitle);
     for (const english of [en.programs.list.heroTitle, en.programs.list.directoryTitle, en.programs.card.facts.batchSize, "Learn more"]) {
-      expect(list, english).not.toContain(english);
+      expect(textOf(list), english).not.toContain(english);
     }
     expect(nonHindiLinks(list)).toEqual([]);
 
@@ -118,10 +123,10 @@ describe("PAGES-A pages in Hindi (preview content)", () => {
   it("results: Hindi copy, English quotes marked, no person photo, Hindi links", async () => {
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
     const html = await renderHi(() => ResultsPage());
-    expect(html).toContain(hi.results.hero.title);
+    expect(textOf(html)).toContain(hi.results.hero.title);
     expect(html).toContain(hi.results.rankers.title);
     for (const english of [en.results.hero.title, en.results.rankers.title, en.results.method.title, "Name withheld", "Showing 24 of"]) {
-      expect(html, english).not.toContain(english);
+      expect(textOf(html), english).not.toContain(english);
     }
     expect(html).toMatch(/<blockquote lang="en"/);
     expect(nonHindiLinks(html)).toEqual([]);
@@ -130,10 +135,10 @@ describe("PAGES-A pages in Hindi (preview content)", () => {
   it("centres: Hindi copy, the stock-photo note in Hindi, Hindi links", async () => {
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
     const html = await renderHi(() => CentresPage());
-    expect(html).toContain(hi.centres.hero.title);
+    expect(textOf(html)).toContain(hi.centres.hero.title);
     expect(html).toContain(hi.centres.photos.note);
     for (const english of [en.centres.hero.title, en.centres.directory.title, en.centres.card.contact, "Illustrative image"]) {
-      expect(html, english).not.toContain(english);
+      expect(textOf(html), english).not.toContain(english);
     }
     expect(nonHindiLinks(html)).toEqual([]);
   });

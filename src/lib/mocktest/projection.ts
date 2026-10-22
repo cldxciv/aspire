@@ -19,6 +19,21 @@ const EXAM_MAP: Record<MockExam, PredictorExam> = {
   BOH: "boh",
 };
 
+/**
+ * Generated papers (docs/question-bank-plan.md A7-12): a projection only for FULL-length papers made
+ * from real (non-sample) questions, of an exam with predictor tables (JEE Advanced has none, so
+ * null). `officialShare` (0–1) travels with it so the result can say when a paper is mostly
+ * past-year questions (students who have seen them may score higher).
+ */
+export function projectPaperRankBand(
+  input: { exam: string; short: boolean; sample: boolean; officialShare: number; score: number; maxScore: number },
+  data: PredictorData | null,
+): MockProjection | null {
+  if (input.short || input.sample || !Object.prototype.hasOwnProperty.call(EXAM_MAP, input.exam)) return null;
+  const projection = projectRankBand({ exam: input.exam as MockExam, score: input.score, maxScore: input.maxScore }, data);
+  return projection ? { ...projection, officialShare: Math.max(0, Math.min(1, input.officialShare)) } : null;
+}
+
 export function projectRankBand(
   input: { exam: MockExam; score: number; maxScore: number },
   data: PredictorData | null,

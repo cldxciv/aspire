@@ -205,8 +205,6 @@ export function MockTestsBlock({ id, level, audience, locale, t, compact = false
             <ol aria-labelledby={`${id}-recent`} className="mt-2 grid gap-2">
               {view.recent.slice(0, compact ? 3 : undefined).map((attempt) => {
                 const date = formatPortalDate(attempt.submittedAt, locale);
-                const query = `?saved=${encodeURIComponent(attempt.id)}`;
-                const base = `/tools/mock-tests/${encodeURIComponent(attempt.testId)}`;
                 const context = format(m.links.context, { test: attempt.title, date });
                 return (
                   <li key={attempt.id} className="min-w-0 rounded-control border border-line bg-white p-3">
@@ -244,19 +242,14 @@ export function MockTestsBlock({ id, level, audience, locale, t, compact = false
                     )}
                     {student && (
                       <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                        {(
-                          [
-                            ["result", m.links.result],
-                            ["certificate", m.links.certificate],
-                            ["report", m.links.report],
-                          ] as const
-                        ).map(([page, label]) => (
+                        {/* Fixed tests: result, certificate, report; exam-pattern papers: their result only. */}
+                        {attempt.links.map(({ page, path }) => (
                           <li key={page}>
                             <Link
-                              href={localePath(`${base}/${page}${query}`, locale)}
+                              href={localePath(path, locale)}
                               className="inline-flex min-h-9 items-center font-bold text-blue hover:underline"
                             >
-                              {label}
+                              {m.links[page]}
                               <span className="sr-only">: {context}</span>
                             </Link>
                           </li>

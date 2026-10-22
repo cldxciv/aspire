@@ -10,7 +10,7 @@ const planner = {
   },
   hero: {
     title: "Smart study planner",
-    lead: "A day-by-day plan to your exam date, spaced revision, formula flashcards, streaks and XP. Free, works offline and comes with the Rancho app for your phone. You may be asked for a contact number once before your first plan (not if you are signed in).",
+    lead: "A day-by-day plan to your exam date, spaced revision, formula flashcards, streaks and XP. Free, works offline and comes with the Rancho app for your phone. You may be asked for a contact number once before your first plan (even if you are signed in).",
     crumb: "Study planner",
   },
   sample: {

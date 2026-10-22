@@ -14,16 +14,15 @@ vi.mock("next/server", async (importOriginal) => ({
 
 const { connection } = await import("next/server");
 const { getDb, resetDatabaseForTests } = await import("@/lib/db/connection");
-const { createTestUser, TestBrowser } = await import("@/lib/auth/testing/harness");
+const { createTestUser, linkTestParent, TestBrowser } = await import("@/lib/auth/testing/harness");
 const { createSession } = await import("@/lib/auth/sessions");
 const { captureLead, eraseLead, resolveCrmViewer, GATE_PASS_TTL_MS } = await import("@/lib/crm");
 const { SlidingWindowRateLimiter } = await import("@/lib/server/rate-limit");
 const { createLeadGateHandlers, LEAD_GATE_SERVER_MESSAGES } = await import("@/lib/lead-gate/handlers");
 const { createLeadGateLimiters } = await import("@/lib/lead-gate/limits");
 const { LEAD_GATE_CONSENT_VERSION, LEAD_GATE_ERRORS } = await import("@/lib/lead-gate/contract");
-const { defaultLeadGateRuntime, leadGateRequiredResponse, recordLeadGateToolUse, resolveLeadGateAccess, LEAD_GATE_COOKIE } = await import(
-  "@/lib/lead-gate/server"
-);
+const { accountMobileOnFile, defaultLeadGateRuntime, leadGateRequiredResponse, recordLeadGateToolUse, resolveLeadGateAccess, LEAD_GATE_COOKIE } =
+  await import("@/lib/lead-gate/server");
 const { isLeadGateResponse } = await import("@/components/lead-gate/lead-gate-client");
 const { CONSENT_VERSION } = await import("@/lib/contracts/enquiry");
 const { createEnquiryHandler } = await import("@/lib/server/enquiry-handler");
@@ -80,11 +79,24 @@ function loggedLines(): string[] {
   return logs.flatMap((spy) => spy.mock.calls.map((call) => call.map(String).join(" ")));
 }
 
-async function signedIn(role: "student" | "parent", options: { mustChangePassword?: boolean } = {}): Promise<Browser> {
+type AccountRole = "student" | "parent" | "admin" | "staff";
+
+async function account(role: AccountRole, options: { mustChangePassword?: boolean; displayName?: string } = {}) {
   const user = await createTestUser({ role, loginId: `${role}.${ipCounter + 1}`, password: "pass-word-2026", ...options });
   const b = browser();
   b.jar.set("aspire_session", createSession(user.id).token);
-  return b;
+  return { b, user };
+}
+
+async function signedIn(role: AccountRole, options: { mustChangePassword?: boolean; displayName?: string } = {}): Promise<Browser> {
+  return (await account(role, options)).b;
+}
+
+/** GET data of a locked browser (no pass, nothing pre-filled). */
+const LOCKED = { mode: "required", unlocked: false, via: null, recordsUse: false, expiresAt: null, sample: false, prefill: null };
+
+function submissionMeta(): Record<string, unknown> {
+  return JSON.parse(String(getDb().prepare("SELECT meta FROM crm_activities WHERE type = 'submission' ORDER BY id DESC").get()?.meta));
 }
 
 beforeEach(() => {
@@ -111,10 +123,7 @@ describe("GET /api/lead-gate", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("x-robots-tag")).toMatch(/noindex/);
-    expect(await response.json()).toEqual({
-      ok: true,
-      data: { mode: "required", unlocked: false, via: null, recordsUse: false, expiresAt: null, sample: false },
-    });
+    expect(await response.json()).toEqual({ ok: true, data: LOCKED });
   });
 
   it("open as `off` when LEAD_GATE is unset (still reporting sample data)", async () => {
@@ -126,14 +135,7 @@ describe("GET /api/lead-gate", () => {
 
   it("sample data does not open the gate (owner decision 21 Oct 2026): still locked, `sample: true` for the form's note", async () => {
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", "true");
-    expect((await (await status(browser())).json()).data).toEqual({
-      mode: "required",
-      unlocked: false,
-      via: null,
-      recordsUse: false,
-      expiresAt: null,
-      sample: true,
-    });
+    expect((await (await status(browser())).json()).data).toEqual({ ...LOCKED, sample: true });
     vi.stubEnv("SHOW_PLACEHOLDER_CONTENT", ""); // development without the flag shows sample data too
     vi.stubEnv("NODE_ENV", "development");
     expect((await (await status(browser())).json()).data).toMatchObject({ mode: "required", unlocked: false, sample: true });
@@ -148,13 +150,48 @@ describe("GET /api/lead-gate", () => {
     expect((await (await status(browser())).json()).data).toMatchObject({ mode: "required", sample: false });
   });
 
+  // Owner decision 22 Oct 2026: being signed in does not open the gate by itself.
+  it.each(["admin", "staff"] as const)("a signed-in %s sees exactly the visitor's gate: locked, nothing pre-filled", async (role) => {
+    expect((await (await status(await signedIn(role))).json()).data).toEqual(LOCKED);
+    // Even if accounts one day hold a mobile number, staff-side accounts are never let through.
+    setup({ accountMobileOnFile: () => true });
+    expect((await (await status(await signedIn(role))).json()).data).toEqual(LOCKED);
+  });
+
   it.each([
     ["student", {}],
-    ["parent", {}],
     ["student", { mustChangePassword: true }],
-  ] as const)("a signed-in %s (%o) skips the gate", async (role, options) => {
-    const b = await signedIn(role, options);
-    expect((await (await status(b)).json()).data).toEqual({ mode: "required", unlocked: true, via: "session", recordsUse: false, expiresAt: null, sample: false });
+  ] as const)("a signed-in %s (%o) without a mobile on file is asked once, with the account's name and role pre-filled", async (role, options) => {
+    const b = await signedIn(role, { ...options, displayName: "Asha  Thakur" });
+    expect((await (await status(b)).json()).data).toEqual({ ...LOCKED, prefill: { studentName: "Asha Thakur", submittedBy: "student" } });
+  });
+
+  it("a signed-in parent without a mobile on file is asked: their one linked learner's name is pre-filled, otherwise none", async () => {
+    const { b, user } = await account("parent", { displayName: "Meena Parent" });
+    expect((await (await status(b)).json()).data).toEqual({ ...LOCKED, prefill: { studentName: null, submittedBy: "parent" } });
+    const kid = await createTestUser({ role: "student", loginId: "kid.one", password: "pass-word-2026", displayName: "Kabir Negi" });
+    linkTestParent(user.id, kid.id);
+    expect((await (await status(b)).json()).data).toEqual({ ...LOCKED, prefill: { studentName: "Kabir Negi", submittedBy: "parent" } });
+    const second = await createTestUser({ role: "student", loginId: "kid.two", password: "pass-word-2026", displayName: "Tara Negi" });
+    linkTestParent(user.id, second.id);
+    expect((await (await status(b)).json()).data.prefill).toEqual({ studentName: null, submittedBy: "parent" });
+    // The parent's own name is never offered as the student's.
+    expect(JSON.stringify((await (await status(b)).json()).data)).not.toContain("Meena");
+  });
+
+  it.each(["student", "parent"] as const)("a signed-in %s whose account has a mobile on file skips the gate (`session`, nothing pre-filled)", async (role) => {
+    setup({ accountMobileOnFile: () => true });
+    expect((await (await status(await signedIn(role))).json()).data).toEqual({ ...LOCKED, unlocked: true, via: "session" });
+  });
+
+  it("no account has a mobile on file today: accounts have no phone field, so the default runtime lets nobody through", async () => {
+    const { user } = await account("student");
+    expect(defaultLeadGateRuntime.accountMobileOnFile).toBe(accountMobileOnFile);
+    expect(accountMobileOnFile(user)).toBe(false);
+    // Adding a phone column to accounts must come with a real accountMobileOnFile (and privacy notice) update.
+    const columns = getDb().prepare("PRAGMA table_info(users)").all().map((row) => String(row.name));
+    expect(columns).toContain("display_name");
+    expect(columns.filter((name) => /phone|mobile/i.test(name))).toEqual([]);
   });
 
   it("re-throws a prerender bail-out untouched and logs nothing", async () => {
@@ -199,7 +236,10 @@ describe("POST /api/lead-gate", () => {
     const passId = b.jar.get(LEAD_GATE_COOKIE)?.split(".")[1] ?? "missing";
     expect(JSON.stringify(getDb().prepare("SELECT * FROM crm_gate_passes").all())).not.toContain(passId);
 
-    expect((await (await status(b)).json()).data).toEqual({ mode: "required", unlocked: true, via: "pass", recordsUse: true, expiresAt, sample: false });
+    expect((await (await status(b)).json()).data).toEqual({ mode: "required", unlocked: true, via: "pass", recordsUse: true, expiresAt, sample: false, prefill: null });
+    // A guest's submission links no account.
+    expect(submission).not.toHaveProperty("accountId");
+    expect(submission).not.toHaveProperty("accountRole");
   });
 
   it("while sample data is shown: captures the family and unlocks exactly as with real data", async () => {
@@ -313,14 +353,62 @@ describe("POST /api/lead-gate", () => {
     expect(after.headers.getSetCookie()[0]).toMatch(/^aspire_tool_pass=;.*Max-Age=0/i);
   });
 
-  it("signed in or gate off: 200, nothing stored, body never read", async () => {
+  it("an account let through (student with a mobile on file) or gate off: 200, nothing stored, body never read", async () => {
+    setup({ accountMobileOnFile: () => true });
     const student = await signedIn("student");
-    const response = await submit(student);
+    const response = await submit(student, "{not json");
     expect(response.status).toBe(200);
     expect((await response.json()).data).toEqual({ unlocked: true, via: "session", recordsUse: false, expiresAt: null });
     vi.stubEnv("LEAD_GATE", "off");
     expect((await (await submit(browser(), "{not json")).json()).data).toMatchObject({ via: "off" });
     expect(count("SELECT COUNT(*) AS n FROM crm_leads")).toBe(0);
+  });
+
+  it.each(["student", "parent"] as const)(
+    "a signed-in %s without a mobile on file is captured like a visitor; the lead records only the account id and role; the pass works as for guests",
+    async (role) => {
+      const { b, user } = await account(role, { displayName: "Account Name Only" });
+      const response = await submit(b, { ...BODY, studentName: "Typed Student", submittedBy: role });
+      expect(response.status).toBe(201);
+      expect((await response.json()).data).toEqual({ unlocked: true, via: "pass", recordsUse: true, expiresAt: new Date(NOW + GATE_PASS_TTL_MS).toISOString() });
+      expect(b.jar.get(LEAD_GATE_COOKIE)).toBeDefined();
+      expect(submissionMeta()).toMatchObject({ source: "tool", submittedBy: role, accountId: user.id, accountRole: role });
+      expect(getDb().prepare("SELECT student_name, phone_e164 FROM crm_leads").get()).toEqual({ student_name: "Typed Student", phone_e164: "+919810012345" });
+      // Nothing else from the account is copied (no display name, no login id); the account is not changed.
+      const stored = JSON.stringify([getDb().prepare("SELECT * FROM crm_leads").all(), getDb().prepare("SELECT * FROM crm_activities").all()]);
+      expect(stored).not.toContain("Account Name Only");
+      expect(stored).not.toContain(user.loginId);
+      expect(getDb().prepare("SELECT display_name, updated_at FROM users WHERE id = ?").get(user.id)).toEqual({ display_name: "Account Name Only", updated_at: user.updatedAt });
+      // From now on this browser is open by its pass (signed in or not), and tool use is noted.
+      expect((await (await status(b)).json()).data).toMatchObject({ unlocked: true, via: "pass", recordsUse: true });
+      expect((await (await usage(b, { tool: "planner", exam: "neet" })).json()).data).toEqual({ recorded: true });
+    },
+  );
+
+  it.each(["admin", "staff"] as const)("a signed-in %s goes through the visitor's path: captured, a pass, and no account link on the lead", async (role) => {
+    const b = await signedIn(role);
+    const response = await submit(b);
+    expect(response.status).toBe(201);
+    expect((await response.json()).data).toMatchObject({ unlocked: true, via: "pass" });
+    const meta = submissionMeta();
+    expect(meta).toMatchObject({ source: "tool", submittedBy: "parent" });
+    expect(meta).not.toHaveProperty("accountId");
+    expect(meta).not.toHaveProperty("accountRole");
+    expect((await (await status(b)).json()).data).toMatchObject({ unlocked: true, via: "pass", prefill: null });
+  });
+
+  it("erasing the lead drops the account link with the rest of the personal data", async () => {
+    const { b, user } = await account("student");
+    await submit(b, { ...BODY, submittedBy: "student" });
+    expect(submissionMeta()).toMatchObject({ accountId: user.id, accountRole: "student" });
+    const admin = await createTestUser({ role: "admin", loginId: "admin.eraser", password: "admin-pass-2026" });
+    const viewer = resolveCrmViewer({ userId: admin.id, role: "admin" });
+    if (!viewer) throw new Error("no viewer");
+    expect(eraseLead(viewer, String(getDb().prepare("SELECT id FROM crm_leads").get()?.id))).toMatchObject({ ok: true });
+    const meta = submissionMeta();
+    expect(meta).not.toHaveProperty("accountId");
+    expect(meta).not.toHaveProperty("accountRole");
+    expect((await (await status(b)).json()).data).toMatchObject({ unlocked: false, prefill: { submittedBy: "student" } });
   });
 
   it("a store failure is honest: 500, nothing saved, no cookie, no details in the log", async () => {
@@ -426,7 +514,12 @@ describe("POST /api/lead-gate/usage", () => {
     expect((await usage(b, { tool: "ask", exam: "rancho" })).status).toBe(422);
     expect((await usage(b, { tool: "mock-test", exam: "jee-main" })).status).toBe(422);
     expect((await (await usage(browser(), { tool: "planner", exam: "neet" })).json()).data).toEqual({ recorded: false, reason: "no_pass" });
-    expect((await (await usage(await signedIn("student"), { tool: "planner", exam: "neet" })).json()).data).toEqual({ recorded: false, reason: "session" });
+    // Signed in without a pass: nothing to record on (22 Oct 2026); an account let through: `session`.
+    expect((await (await usage(await signedIn("student"), { tool: "planner", exam: "neet" })).json()).data).toEqual({ recorded: false, reason: "no_pass" });
+    expect((await (await usage(await signedIn("admin"), { tool: "planner", exam: "neet" })).json()).data).toEqual({ recorded: false, reason: "no_pass" });
+    setup({ accountMobileOnFile: () => true });
+    expect((await (await usage(await signedIn("parent"), { tool: "planner", exam: "neet" })).json()).data).toEqual({ recorded: false, reason: "session" });
+    setup();
     vi.stubEnv("LEAD_GATE", "off");
     expect((await (await usage(b, { tool: "planner", exam: "neet" })).json()).data).toEqual({ recorded: false, reason: "off" });
     expect(count("SELECT COUNT(*) AS n FROM crm_activities WHERE type = 'tool_use'")).toBe(0);
@@ -438,6 +531,25 @@ describe("POST /api/lead-gate/usage", () => {
     expect((await (await submit(b, { ...BODY, submittedBy: "student" })).json()).data.recordsUse).toBe(false);
     expect((await (await status(b)).json()).data).toMatchObject({ unlocked: true, recordsUse: false });
     expect((await (await usage(b, { tool: "planner", exam: "neet" })).json()).data).toEqual({ recorded: false, reason: "not_recorded" });
+  });
+
+  it("the homepage planner countdown: `key: \"countdown\"` gets its own entry per exam, apart from plans; other keys are refused; the predictor's is dropped", async () => {
+    const b = browser();
+    await submit(b);
+    expect((await (await usage(b, { tool: "planner", exam: "jee-main", key: "countdown", page: "/hi" })).json()).data).toEqual({ recorded: true });
+    await usage(b, { tool: "planner", exam: "jee-main", key: "countdown", page: "/" });
+    await usage(b, { tool: "planner", exam: "jee-main" }); // a study plan for the same exam: a separate entry
+    expect((await usage(b, { tool: "planner", exam: "jee-main", key: "timetable" })).status).toBe(422);
+    await usage(b, { tool: "predictor", exam: "neet", band: "score-600-609", key: "countdown" });
+    const entries = getDb()
+      .prepare("SELECT meta FROM crm_activities WHERE type = 'tool_use' ORDER BY id")
+      .all()
+      .map((row) => JSON.parse(String(row.meta)));
+    expect(entries).toEqual([
+      { tool: "planner", key: "countdown-jee-main", exam: "jee-main", feature: "countdown", page: "/", uses: 2, lastAt: new Date(NOW).toISOString() },
+      { tool: "planner", key: "jee-main", exam: "jee-main", uses: 1, lastAt: new Date(NOW).toISOString() },
+      { tool: "predictor", key: "neet", exam: "neet", band: "score-600-609", uses: 1, lastAt: new Date(NOW).toISOString() },
+    ]);
   });
 
   it("limits uses per pass (429)", async () => {
@@ -483,10 +595,61 @@ describe("server helpers for the tool owners' routes", () => {
 
     const student = await signedIn("student");
     cookieState.jar = student.jar;
-    const session = await resolveLeadGateAccess(runtime);
+    const asked = await resolveLeadGateAccess(runtime);
+    expect(asked).toMatchObject({ via: null, enforce: true });
+    expect(recordLeadGateToolUse(asked, { tool: "ask", key: "rancho" })).toBe(false);
+    const session = await resolveLeadGateAccess({ ...runtime, accountMobileOnFile: () => true });
     expect(session).toMatchObject({ via: "session", enforce: false });
     expect(recordLeadGateToolUse(session, { tool: "ask", key: "rancho" })).toBe(false);
     expect(count("SELECT COUNT(*) AS n FROM crm_activities WHERE type = 'tool_use'")).toBe(1);
+  });
+
+  describe("resolveLeadGateAccess: who is let through (owner decision 22 Oct 2026)", () => {
+    const runtime = (mobile: boolean) => ({ ...defaultLeadGateRuntime, now: () => clock.now, limiters: () => limiters, accountMobileOnFile: () => mobile });
+    async function accessFor(b: Browser | null, mobile = false) {
+      cookieState.jar = b ? b.jar : new Map();
+      return resolveLeadGateAccess(runtime(mobile));
+    }
+    const ASKED = { mode: "required", unlocked: false, via: null, enforce: true, pass: null };
+
+    it("guest: locked and enforced, no account", async () => {
+      expect(await accessFor(null)).toMatchObject({ ...ASKED, session: null, account: null });
+    });
+
+    it.each(["admin", "staff"] as const)("%s: locked and enforced like a visitor, with or without a mobile on file", async (role) => {
+      const { b, user } = await account(role);
+      for (const mobile of [false, true]) {
+        const access = await accessFor(b, mobile);
+        expect(access).toMatchObject({ ...ASKED, account: null });
+        expect(access.session?.session).toMatchObject({ userId: user.id, role }); // kept for the cookie refresh and allowances
+      }
+    });
+
+    it.each(["student", "parent"] as const)("%s with a mobile on file: open as `session`, nothing enforced", async (role) => {
+      const { b, user } = await account(role);
+      expect(await accessFor(b, true)).toMatchObject({
+        mode: "required",
+        unlocked: true,
+        via: "session",
+        enforce: false,
+        account: { userId: user.id, role, mobileOnFile: true },
+      });
+    });
+
+    it.each(["student", "parent"] as const)("%s without a mobile on file: locked and enforced, the account kept for the lead link", async (role) => {
+      const { b, user } = await account(role);
+      expect(await accessFor(b, false)).toMatchObject({ ...ASKED, account: { userId: user.id, role, mobileOnFile: false } });
+    });
+
+    it("any signed-in role holding a pass is open by the pass; the default runtime (no phone field) asks every account", async () => {
+      for (const role of ["student", "parent", "admin", "staff"] as const) {
+        const b = await signedIn(role);
+        cookieState.jar = b.jar;
+        expect(await resolveLeadGateAccess({ ...defaultLeadGateRuntime, now: () => clock.now, limiters: () => limiters })).toMatchObject(ASKED);
+        expect((await submit(b)).status).toBe(201);
+        expect(await accessFor(b)).toMatchObject({ unlocked: true, via: "pass", enforce: false });
+      }
+    });
   });
 
   it("signing out also forgets this browser's pass", async () => {

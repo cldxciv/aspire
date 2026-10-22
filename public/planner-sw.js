@@ -49,14 +49,16 @@ async function trim(cache) {
 async function pageNetworkFirst(request, url) {
   const key = url.origin + url.pathname;
   const cache = await caches.open(PAGES);
+  let response;
   try {
-    const response = await fetch(request);
-    if (response.ok && response.type === "basic") await cache.put(key, response.clone());
-    return response;
+    response = await fetch(request);
   } catch {
     const cached = await cache.match(key);
     return cached || new Response(OFFLINE_HTML, { status: 503, headers: { "Content-Type": "text/html; charset=utf-8" } });
   }
+  // Best effort: a failed cache write (e.g. storage full) must never replace a good network answer.
+  if (response.ok && response.type === "basic") await cache.put(key, response.clone()).catch(() => {});
+  return response;
 }
 
 async function assetCacheFirst(request) {
@@ -65,8 +67,8 @@ async function assetCacheFirst(request) {
   if (cached) return cached;
   const response = await fetch(request);
   if (response.ok && response.type === "basic") {
-    await cache.put(request, response.clone());
-    await trim(cache);
+    // Best effort, as above: the asset still loads when the cache cannot store it.
+    await cache.put(request, response.clone()).then(() => trim(cache)).catch(() => {});
   }
   return response;
 }

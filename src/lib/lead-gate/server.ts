@@ -7,6 +7,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { setSessionCookie } from "@/lib/auth/cookie";
 import { privateApiHeaders } from "@/lib/auth/responses";
 import { getCurrentSession, type CurrentSession } from "@/lib/auth/session";
+import { normalizeDisplayName } from "@/lib/auth/identifiers";
 import { showPlaceholderContent } from "@/lib/content-mode";
 import type { ApiError } from "@/lib/contracts/api";
 import { CONSENT_VERSIONS } from "@/lib/contracts/enquiry";
@@ -19,15 +20,21 @@ import {
   type GateSubmitter,
   type ToolUseInput,
 } from "@/lib/crm";
+import { getDb } from "@/lib/db/connection";
+import { listLinkedStudents } from "@/lib/db/links";
+import type { UserRecord } from "@/lib/db/users";
 import type { Env } from "@/lib/server/env";
 
 import { parseLeadGateConfig, type LeadGateConfig } from "./config";
 import {
+  LEAD_GATE_ACCOUNT_ROLES,
   LEAD_GATE_BODY_MARKER,
   LEAD_GATE_CONSENT_VERSIONS,
   LEAD_GATE_HEADER,
   LEAD_GATE_HEADER_REQUIRED,
   type LeadGateMode,
+  type LeadGatePrefill,
+  type LeadGateRole,
   type LeadGateStatusData,
   type LeadGateVia,
 } from "./contract";
@@ -87,13 +94,27 @@ export interface LeadGateRuntime {
    */
   sampleData: () => boolean;
   limiters: () => LeadGateLimiters;
+  /** Whether a signed-in student or parent account already has a mobile number on file (`accountMobileOnFile`). */
+  accountMobileOnFile: (user: UserRecord) => boolean;
 }
+
+/**
+ * Owner decision 22 Oct 2026: a signed-in student or parent skips the gate ONLY when the account
+ * already has a mobile number on file. Accounts have NO phone field (the `users` table in
+ * src/lib/db/connection.ts stores the name, login id, role and password hash; login ids are not
+ * phone numbers), so there is no number on file and this is always false: every student and parent
+ * is asked once, like a visitor, with the name pre-filled. When a phone column is added to
+ * accounts, return here whether it holds a valid Indian mobile (and update the privacy notice).
+ * The gate never writes a phone into an account (profile changes are out of scope).
+ */
+export const accountMobileOnFile: (user: UserRecord) => boolean = () => false;
 
 export const defaultLeadGateRuntime: LeadGateRuntime = {
   getEnv: () => process.env,
   now: () => Date.now(),
   sampleData: showPlaceholderContent,
   limiters: sharedLeadGateLimiters,
+  accountMobileOnFile,
 };
 
 /** The live configuration (config warnings logged once per process). */
@@ -113,6 +134,14 @@ export interface LeadGatePass {
   recordsUse: boolean;
 }
 
+/** A signed-in student or parent account, as the gate sees it. Staff and admins never get one. */
+export interface LeadGateAccount {
+  userId: string;
+  role: LeadGateRole;
+  /** The account already has a mobile number on file → it skips the gate (`via: "session"`). Always false today. */
+  mobileOnFile: boolean;
+}
+
 export interface LeadGateAccess {
   /** Effective mode (`required` degrades to `optional` while the flood breaker is tripped). */
   mode: LeadGateMode;
@@ -121,8 +150,16 @@ export interface LeadGateAccess {
   via: LeadGateVia | null;
   /** `required` and not unlocked: server-enforced tools answer leadGateRequiredResponse(). */
   enforce: boolean;
-  /** Verified portal session (any role, including one that must still change its password). */
+  /**
+   * Verified portal session (any role, including one that must still change its password): kept
+   * for the session-cookie refresh and the tools' own allowances. It does NOT open the gate by itself.
+   */
   session: CurrentSession | null;
+  /**
+   * The session's student or parent account (null for guests, staff and admins). A submission made
+   * while it is set records the account id and role on the family's lead (POST /api/lead-gate).
+   */
+  account: LeadGateAccount | null;
   /** This browser's live pass (also set when signed in or off, so sign-out / "Not you?" can revoke it). */
   pass: LeadGatePass | null;
   /** A pass cookie was sent but is not a live pass (expired, revoked, tampered, old consent): clear it. */
@@ -136,11 +173,25 @@ function recordsUse(config: LeadGateConfig, mode: LeadGateMode, pass: { recordUs
   return config.recordUse === "all" || pass.submittedBy === "parent";
 }
 
+/** The student or parent account behind a session, or null (no session, or a staff-side role). */
+export function leadGateAccount(session: CurrentSession | null, runtime: LeadGateRuntime = defaultLeadGateRuntime): LeadGateAccount | null {
+  if (!session) return null;
+  const role = session.session.role;
+  if (!(LEAD_GATE_ACCOUNT_ROLES as readonly string[]).includes(role)) return null;
+  return { userId: session.session.userId, role: role as LeadGateRole, mobileOnFile: runtime.accountMobileOnFile(session.user) === true };
+}
+
 /**
- * Who may see results on this request, in order: gate off → open (`off`); any verified session →
- * open (`session`; nothing is stored for account holders); a live pass → open (`pass`); else
- * locked. A database error while reading the pass counts as "no pass" (fail closed for the
- * enforced tools; the browser-only tools fail open on their side). Prerender bail-outs re-throw.
+ * Who may see results on this request (owner decision 22 Oct 2026), in order:
+ *  1. gate off → open (`off`);
+ *  2. a signed-in student or parent account with a mobile number on file → open (`session`;
+ *     nothing stored). None has one today (accountMobileOnFile), so this never happens yet;
+ *  3. a live pass on this browser → open (`pass`), signed in or not;
+ *  4. else locked: guests, signed-in staff and admins (always asked like a visitor, so testing
+ *     matches reality), and students and parents without a number on file (asked once, name
+ *     pre-filled; their submission records the account link on the lead).
+ * A database error while reading the pass counts as "no pass" (fail closed for the enforced tools;
+ * the browser-only tools fail open on their side). Prerender bail-outs re-throw.
  */
 export async function resolveLeadGateAccess(runtime: LeadGateRuntime = defaultLeadGateRuntime): Promise<LeadGateAccess> {
   const session = await getCurrentSession();
@@ -177,19 +228,50 @@ export async function resolveLeadGateAccess(runtime: LeadGateRuntime = defaultLe
     }
   }
 
+  const account = leadGateAccount(session, runtime);
   let via: LeadGateVia | null = null;
   if (mode === "off") via = "off";
-  else if (session) via = "session";
+  else if (account?.mobileOnFile) via = "session";
   else if (pass) via = "pass";
   const unlocked = via !== null;
-  return { mode, unlocked, via, enforce: mode === "required" && !unlocked, session, pass, staleCookie, since: config.since };
+  return { mode, unlocked, via, enforce: mode === "required" && !unlocked, session, account, pass, staleCookie, since: config.since };
+}
+
+/** A name the form's studentName field accepts as is (2–80 characters after normalising), else null. */
+function prefillName(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  const name = normalizeDisplayName(raw);
+  return name.length >= 2 && name.length <= 80 ? name : null; // the contract's studentName rule (zod counts .length)
+}
+
+/**
+ * What <LeadGateForm> pre-fills for this request's student or parent account (GET /api/lead-gate
+ * `prefill`), or null: no such account, the gate off, or the account let through. A student
+ * account gives its own name; a parent account its linked learner's name when exactly one is
+ * linked (else none: the parent types it). The account's role is pre-selected. Only the
+ * account's own data, to its own browser; a database error just leaves the name empty.
+ */
+export function leadGatePrefill(access: LeadGateAccess): LeadGatePrefill | null {
+  const account = access.account;
+  if (!account || !access.session || access.via === "off" || access.via === "session") return null;
+  if (account.role === "student") return { studentName: prefillName(access.session.user.displayName), submittedBy: "student" };
+  let studentName: string | null = null;
+  try {
+    const linked = listLinkedStudents(getDb(), account.userId);
+    if (linked.length === 1) studentName = prefillName(linked[0].displayName);
+  } catch (error) {
+    unstable_rethrow(error);
+    leadGateLog({ action: "status", outcome: "error", reason: leadGateExceptionReason(error) });
+  }
+  return { studentName, submittedBy: "parent" };
 }
 
 /**
  * The GET /api/lead-gate body for an access result. No lead field is ever included. `sample`: sample
- * data is shown site-wide (LeadGateRuntime.sampleData), reported in every mode.
+ * data is shown site-wide (LeadGateRuntime.sampleData), reported in every mode. `prefill`: see
+ * leadGatePrefill (null unless a signed-in student or parent account is asked).
  */
-export function leadGateStatusData(access: LeadGateAccess, sample: boolean): LeadGateStatusData {
+export function leadGateStatusData(access: LeadGateAccess, sample: boolean, prefill: LeadGatePrefill | null = null): LeadGateStatusData {
   const viaPass = access.via === "pass" && access.pass !== null;
   return {
     mode: access.mode,
@@ -198,6 +280,7 @@ export function leadGateStatusData(access: LeadGateAccess, sample: boolean): Lea
     recordsUse: viaPass ? (access.pass?.recordsUse ?? false) : false,
     expiresAt: viaPass && access.pass ? new Date(access.pass.expiresAt).toISOString() : null,
     sample,
+    prefill,
   };
 }
 
@@ -227,7 +310,7 @@ export function leadGateRequiredResponse(message: string = LEAD_GATE_REQUIRED_ME
 
 /**
  * Notes one use of a tool on the family's lead when this request carries a pass that records use
- * (never for sessions, never when off). Swallows and logs database errors: recording must never
+ * (signed in or not; never for an account let through as `session`, never when off). Swallows and logs database errors: recording must never
  * change a tool's response. True when an entry was written or merged.
  */
 export function recordLeadGateToolUse(access: LeadGateAccess, input: ToolUseInput, now: number = Date.now()): boolean {

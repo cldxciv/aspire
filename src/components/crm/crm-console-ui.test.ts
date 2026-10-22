@@ -205,6 +205,18 @@ describe("consent list and the parent flag", () => {
     expect(list[3]).toMatchObject({ version: "2026-10-20.v2", locale: "hi" });
   });
 
+  it("lists Meta lead-form and imported-list consents as their own kinds (lead routing §14.2)", () => {
+    const list = consentHistory([
+      activity(20, "submission", { source: "meta_lead_ad", consentTextVersion: "meta:1234567:cb", consentMethod: "meta_lead_form" }),
+      activity(21, "submission", { source: "csv_import", consentTextVersion: "staff-recorded", consentMethod: "written" }),
+      ENQUIRY,
+    ]);
+    expect(list.map((entry) => entry.kind).sort()).toEqual(["enquiry", "import", "meta"]);
+    expect(list.find((entry) => entry.kind === "meta")).toMatchObject({ method: "meta_lead_form", version: "meta:1234567:cb" });
+    expect(list.find((entry) => entry.kind === "import")).toMatchObject({ method: "written" });
+    expect(list.find((entry) => entry.kind === "enquiry")?.method).toBeNull();
+  });
+
   it("flags a lead whose free-tool form only a student filled in", () => {
     expect(needsParentConfirmation([GATE_SUBMISSION])).toBe(true);
     expect(needsParentConfirmation([GATE_SUBMISSION, activity(10, "submission", { submittedBy: "parent", consentTextVersion: GATE })])).toBe(false);

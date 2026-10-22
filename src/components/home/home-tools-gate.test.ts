@@ -13,11 +13,17 @@ import { PREDICTOR_BAND_PATTERN } from "@/lib/lead-gate/contract";
 import { getPredictorData } from "@/lib/predictor/data";
 import { scoreTableFor } from "@/lib/predictor/engine";
 import {
+  countdownGateStep,
+  examCountdown,
   miniEstimate,
   miniGateStep,
   miniGateSummary,
   miniResultSlot,
+  revealCountdown,
   revealMiniResult,
+  toolGateLayout,
+  type CountdownGateEffect,
+  type ExamCountdown,
   type MiniEstimate,
   type MiniGateEffect,
 } from "./home-tools";
@@ -27,8 +33,9 @@ import { HomeToolsBand } from "./HomeToolsPredictor";
 
 /**
  * Homepage widget × lead gate (docs/lead-gate-plan.md §8.2–8.3, §13.1 "per-host pure gate
- * reducers incl. offline / 5xx / 429 fail-open"). The gate's store runs with fake transport, so
- * nothing is sent anywhere.
+ * reducers incl. offline / 5xx / 429 fail-open"): the mini predictor and, since the owner update of
+ * 22 Oct 2026, the exam countdown. The gate's store runs with fake transport, so nothing is sent
+ * anywhere.
  */
 
 afterEach(() => {
@@ -213,6 +220,14 @@ describe("homepage predictor: gate steps", () => {
   });
 });
 
+describe("homepage tools: one gate layout for both hosts", () => {
+  it("hides the up-front note while the form shows (its own lead says it) and keeps one gold action", () => {
+    expect(toolGateLayout("gate").note).toBe(false);
+    expect(toolGateLayout("gate").submitVariant).toBe("outline");
+    for (const slot of ["empty", "invalid", "result"] as const) expect(toolGateLayout(slot).note, slot).toBe(true);
+  });
+});
+
 describe("homepage predictor: the result slot", () => {
   const notLoaded: MiniEstimate = { status: "not-loaded" };
   it("shows the form while it is open, the band only once revealed with a valid value, else the placeholder", () => {
@@ -247,6 +262,12 @@ describe("homepage widget markup with the gate", () => {
       expect(html).not.toContain(gate.note.required);
       expect(html).not.toContain(gate.identity.notYou);
       expect(html).toContain(messagesFor(locale, "home").tools.predictor.empty);
+      // The countdown's panel too: its prompt and button, no form or note until the browser asks.
+      const planner = html.slice(html.indexOf('id="home-tools-panel-planner"'));
+      expect(planner).toContain(messagesFor(locale, "home").tools.planner.prompt);
+      expect(planner).toContain(messagesFor(locale, "home").tools.planner.submit);
+      expect(planner).not.toContain("data-lead-gate");
+      expect(planner).not.toContain(gate.note.required);
     }
   });
 
@@ -279,8 +300,123 @@ describe("homepage widget markup with the gate", () => {
     expect(renderToStaticMarkup(createElement(HomeToolsBand, { band, locale: "en", messages }))).not.toContain("tabindex");
   });
 
-  it("does not gate the planner countdown (plan §8.3)", () => {
+  it("gates the planner countdown (owner update, 22 Oct 2026)", () => {
     const planner = readFileSync(fileURLToPath(new URL("./HomeToolsPlanner.tsx", import.meta.url)), "utf8");
-    expect(planner).not.toMatch(/lead-gate|useLeadGate|LeadGateForm/);
+    expect(planner).toMatch(/useLeadGate\(\{\s*tool:\s*"planner",\s*usageKey:\s*"countdown"/);
+    for (const name of ["LeadGateForm", "LeadGateNote", "LeadGateIdentity"]) {
+      expect(planner).toMatch(new RegExp(`import \\{ ${name} \\} from "@/components/lead-gate/${name}"`));
+    }
+    // The note carries the exam only: never the date or the days.
+    const calls = [...planner.matchAll(/recordUse\(([^)]*)\)/g)].map((m) => m[1]);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const args of calls) expect(args).not.toMatch(/examDate|days/);
+  });
+});
+
+// ── The exam countdown (owner update, 22 Oct 2026): contact details before the days left ──
+
+const TODAY = "2026-10-21";
+const DAYS: ExamCountdown = examCountdown("2027-04-02", TODAY);
+
+describe("homepage countdown: an explicit Show days left", () => {
+  it("validates first: a missing, past or too-far date never asks for contact details", async () => {
+    const { store, deps } = storeWith();
+    for (const date of ["", "2026-10-20", "2030-01-01"]) {
+      expect(await revealCountdown(examCountdown(date, TODAY), () => store.ensure()), date || "empty").toBe("invalid");
+    }
+    expect(deps.fetchStatus).not.toHaveBeenCalled();
+  });
+
+  it("asks for contact details before the countdown, sample site included", async () => {
+    expect(DAYS.kind).toBe("days");
+    const { store, deps } = storeWith();
+    expect(await revealCountdown(DAYS, () => store.ensure())).toBe("gated");
+    expect(deps.fetchStatus).toHaveBeenCalledTimes(1);
+    expect(store.getSnapshot()).toMatchObject({ status: "locked", mode: "required", sample: true });
+    // Today and tomorrow are results too.
+    const again = storeWith();
+    expect(await revealCountdown({ kind: "today" }, () => again.store.ensure())).toBe("gated");
+  });
+
+  it.each([
+    ["a pass (details shared before)", PASS],
+    ["a signed-in account the server lets through", status({ unlocked: true, via: "session" })],
+    ["the gate switched off", status({ mode: "off", unlocked: true, via: "off" })],
+  ])("shows the countdown at once for %s", async (_label, data) => {
+    const { store } = storeWith({ fetchStatus: vi.fn(async () => ({ kind: "ok" as const, data })) });
+    expect(await revealCountdown(DAYS, () => store.ensure())).toBe("shown");
+  });
+
+  it.each([
+    ["a 5xx", () => Promise.resolve(new Response("{}", { status: 503 }))],
+    ["a 429", () => Promise.resolve(new Response(JSON.stringify({ ok: false, error: "rate_limited", message: "x" }), { status: 429 }))],
+    ["a network failure", () => Promise.reject(new TypeError("Failed to fetch"))],
+    ["a garbled answer", () => Promise.resolve(new Response("<html>", { status: 200 }))],
+  ])("fails OPEN on %s (browser-only tool; nothing recorded)", async (_label, respond) => {
+    const { store, deps } = storeWith({ fetchStatus: httpStatus(respond) });
+    expect(await revealCountdown(DAYS, () => store.ensure())).toBe("shown");
+    expect(store.getSnapshot()).toMatchObject({ status: "open", via: "unavailable", recordsUse: false });
+    store.recordUse({ tool: "planner", key: "countdown", exam: "jee-main" });
+    expect(deps.sendUsage).not.toHaveBeenCalled();
+  });
+
+  it("fails open offline without a request", async () => {
+    const { store, deps } = storeWith({ online: () => false });
+    expect(await revealCountdown(DAYS, () => store.ensure())).toBe("shown");
+    expect(deps.fetchStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe("homepage countdown: gate steps", () => {
+  const note = { exam: "jee-main" };
+
+  it("Show days left: invalid → back to the date field; gated → nothing yet; shown → the countdown and one note (exam only)", () => {
+    expect(countdownGateStep({ kind: "submit", decision: "invalid" }, { kind: "past" }, "jee-main")).toEqual({ reveal: false, note: null, focus: "date" });
+    expect(countdownGateStep({ kind: "submit", decision: "gated" }, DAYS, "jee-main")).toEqual({ reveal: false, note: null, focus: null });
+    expect(countdownGateStep({ kind: "submit", decision: "shown" }, DAYS, "jee-main")).toEqual({ reveal: true, note, focus: null });
+  });
+
+  it("unlocked by this host's own form: the countdown, one note, focus to the countdown (or the date field without days)", () => {
+    expect(countdownGateStep({ kind: "unlocked", byThisHost: true }, DAYS, "jee-main")).toEqual({ reveal: true, note, focus: "result" });
+    expect(countdownGateStep({ kind: "unlocked", byThisHost: true }, { kind: "tomorrow" }, "jee-main")).toEqual({ reveal: true, note, focus: "result" });
+    expect(countdownGateStep({ kind: "unlocked", byThisHost: true }, { kind: "past" }, "jee-main")).toEqual({ reveal: true, note: null, focus: "date" });
+  });
+
+  it("unlocked elsewhere (the predictor on this page, another tab): the countdown and the note; focus stays put", () => {
+    expect(countdownGateStep({ kind: "unlocked", byThisHost: false }, DAYS, "neet")).toEqual({ reveal: true, note: { exam: "neet" }, focus: null });
+    expect(countdownGateStep({ kind: "unlocked", byThisHost: false }, { kind: "empty" }, "neet")).toEqual({ reveal: true, note: null, focus: null });
+  });
+
+  it("unlocks after the form is sent; each press that ends in days is noted once, with the exam and the 'countdown' key only", async () => {
+    const { store, deps } = storeWith();
+    // The host's wiring (HomeToolsPlanner `apply`), with useLeadGate's recordUse mapping for
+    // { tool: "planner", usageKey: "countdown" } (it adds the tool and the key).
+    const effects: CountdownGateEffect[] = [];
+    const apply = (effect: CountdownGateEffect) => {
+      effects.push(effect);
+      if (effect.note) store.recordUse({ ...effect.note, tool: "planner", key: "countdown" });
+    };
+    const press = async (date: string) => {
+      const current = examCountdown(date, TODAY);
+      apply(countdownGateStep({ kind: "submit", decision: await revealCountdown(current, () => store.ensure()) }, current, "jee-main"));
+    };
+    store.onUnlock(({ by }) => apply(countdownGateStep({ kind: "unlocked", byThisHost: by === "home-planner" }, DAYS, "jee-main")));
+
+    await press("2027-04-02"); // gated: the form, nothing noted yet
+    expect(effects.at(-1)).toEqual({ reveal: false, note: null, focus: null });
+    expect(deps.sendUsage).not.toHaveBeenCalled();
+
+    await store.submit({}, "home-planner");
+    expect(effects.at(-1)).toEqual({ reveal: true, note: { exam: "jee-main" }, focus: "result" });
+    expect(deps.sendUsage).toHaveBeenCalledTimes(1); // the press that opened the form
+
+    await press("2027-04-02"); // no second ask
+    await press("2026-10-01"); // past: never noted
+    expect(effects.at(-1)).toEqual({ reveal: false, note: null, focus: "date" });
+    expect(deps.sendUsage).toHaveBeenCalledTimes(2);
+    for (const [input] of vi.mocked(deps.sendUsage).mock.calls) {
+      expect(input).toEqual({ tool: "planner", key: "countdown", exam: "jee-main" });
+      expect(JSON.stringify(input)).not.toMatch(/2027|days|\d{3}/);
+    }
   });
 });

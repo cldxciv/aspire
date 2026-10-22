@@ -185,3 +185,55 @@ describe("POST /api/enquiries → CRM (end to end, default ENQUIRY_STORE)", () =
     expect(JSON.parse(activity.meta as string)).toMatchObject({ reference: body.reference });
   });
 });
+
+describe("the district reaches the CRM (lead routing, section 13.8)", () => {
+  const routingOf = (leadId: string) => getDb().prepare("SELECT area_id, match, place_input FROM crm_lead_routing WHERE lead_id = ?").get(leadId) as Row | undefined;
+
+  it("passes a valid district on and drops anything else", () => {
+    expect(toCaptureLeadInput({ ...input, district: "kangra" }).district).toBe("kangra");
+    expect(toCaptureLeadInput({ ...input, district: "outside-hp" }).district).toBe("outside-hp");
+    expect(toCaptureLeadInput({ ...input, district: "Pathankot" }).district).toBeNull();
+    expect(toCaptureLeadInput(input).district).toBeNull();
+  });
+
+  it("routes the stored lead to that district", async () => {
+    const result = await crmLeadSink.capture({ ...input, district: "una" });
+    if (!result.ok) throw new Error("expected a stored lead");
+    expect(routingOf(result.leadId)).toMatchObject({ area_id: "una", match: "district", place_input: "una" });
+  });
+
+  it("routes a hero enquiry end to end", async () => {
+    const logger: Logger = { enquiry: () => undefined, configWarning: () => undefined };
+    const handler = createEnquiryHandler({
+      rateLimiter: new SlidingWindowRateLimiter({ limit: 100, windowMs: 60_000 }),
+      phoneLimiter: createPhoneCaptureLimiter(),
+      getEnv: () => ({ NEXT_PUBLIC_SITE_URL: "https://aspireiit.in", SHOW_PLACEHOLDER_CONTENT: "true" }),
+      logger,
+      now: () => new Date(RECEIVED_AT),
+    });
+    const send = (district: unknown) =>
+      handler(
+        new Request("http://localhost:3000/api/enquiries", {
+          method: "POST",
+          headers: { host: "localhost:3000", origin: "http://localhost:3000", "content-type": "application/json" },
+          body: JSON.stringify({
+            source: "hero",
+            name: "Test Student",
+            classOrExam: "neet-dropper",
+            guardianName: "Test Parent",
+            phone: "90000 00003",
+            preferredCentre: "not-sure",
+            district,
+            consent: true,
+            consentVersion: CONSENT_VERSION,
+            website: "",
+          }),
+        }),
+      );
+    expect((await send("Atlantis")).status).toBe(422);
+    expect((await send("lahaul-spiti")).status).toBe(201);
+    const rows = leadRows();
+    expect(rows).toHaveLength(1);
+    expect(routingOf(rows[0].id as string)).toMatchObject({ area_id: "lahaul-spiti", match: "district" });
+  });
+});

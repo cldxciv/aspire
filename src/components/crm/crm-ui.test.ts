@@ -17,6 +17,7 @@ import { messagesFor } from "@/i18n/messages";
 import type { ApiFailure } from "@/lib/auth/client-api";
 import {
   crmPermissions,
+  type CrmPermissions,
   type AssignmentRule,
   type CrmStaffMember,
   type CrmViewer,
@@ -29,6 +30,7 @@ import {
 import { crmFailureMessage, crmRequests, exportHref } from "./api";
 import { CrmPageHeader } from "./CrmBlocks";
 import {
+  consentHistory,
   dueStatus,
   EMPTY_FILTERS,
   inboxQuery,
@@ -37,8 +39,10 @@ import {
   parseInboxFilters,
   phoneLast4,
   reportDayRange,
+  slaChipText,
   telHref,
   toLeadCard,
+  toLeadFilters,
   toolLabel,
   whatsAppHref,
 } from "./format";
@@ -50,6 +54,16 @@ import { ReportsView } from "./ReportsView";
 import { staffFieldIssue, validateRules, validateStaffForm } from "./StaffManager";
 import { StaffPageBody } from "./StaffPageBody";
 import { TodayView } from "./TodayView";
+import { validateAwayDay } from "./AwayToggle";
+import { clearCallMark, markCallStarted, readCallMark, shouldPromptCallReturn, telLinkOf } from "./call-return";
+import { CrmViewerBar } from "./CrmBlocks";
+import { leadOpsRequests } from "./lead-ops-api";
+import { ReadOnlyNotice } from "./settings/ReadOnlyNotice";
+import { SettingsHub, visibleSettingsSections } from "./settings/SettingsHub";
+import { SlaAlertStrip } from "./sla/SlaAlertStrip";
+import { SlaChip } from "./SlaChip";
+import { SuperAdminBadge } from "./SuperAdminBadge";
+import { slaStateOf } from "@/lib/crm/sla-state";
 
 // ---------------------------------------------------------------------------------------------
 // Helpers + fixtures
@@ -362,7 +376,10 @@ describe.each(LOCALES)("pages render (%s)", (locale) => {
     expect(count(html, /<h1\b/g)).toBe(1);
     expectLabelledControls(html);
     expect(html).toContain('<caption class="sr-only">');
-    expect(count(html, /<th scope="col"/g)).toBe(10);
+    // Lead routing (§20): an Area column after Centre.
+    expect(count(html, /<th scope="col"/g)).toBe(11);
+    expect(html).toContain(t.inbox.columns.area);
+    expect(html).toContain(t.inbox.noArea);
     expect(html).toContain(t.common.overdue);
     expect(html).toContain(t.tools.predictor);
     expect(html).toContain(`href="${locale === "hi" ? "/hi" : ""}/crm/leads/lead-1"`);
@@ -545,7 +562,8 @@ describe.each(LOCALES)("pages render (%s)", (locale) => {
     inLocale(
       locale,
       createElement(StaffPageBody, {
-        permissions: crmPermissions({ role }),
+        // D-044: staff logins and rules are a super-admin action.
+        permissions: crmPermissions({ role, superAdmin: role === "admin" }),
         staff: role === "counsellor" ? [] : STAFF,
         rules: role === "counsellor" ? [] : RULES,
         centres: [{ value: "shimla", label: CENTRES.shimla }],
@@ -574,6 +592,23 @@ describe.each(LOCALES)("pages render (%s)", (locale) => {
     expect(manager).not.toContain("<select");
     expect(manager).toContain("Asha");
 
+    // An ordinary admin (no super-admin grant) reads, like an area head.
+    const ordinaryAdmin = inLocale(
+      locale,
+      createElement(StaffPageBody, {
+        permissions: crmPermissions({ role: "admin" }),
+        staff: STAFF,
+        rules: RULES,
+        centres: [{ value: "shimla", label: CENTRES.shimla }],
+        programs: [{ value: "jee", label: t.programs.jee }],
+        locale,
+        t,
+      }),
+    );
+    expect(ordinaryAdmin).toContain(t.common.readOnly);
+    expect(ordinaryAdmin).not.toContain(t.staff.createTitle);
+    expect(ordinaryAdmin).not.toContain(t.staff.saveRules);
+
     const counsellor = staffPage("counsellor");
     expect(count(counsellor, /<h1\b/g)).toBe(1);
     expect(counsellor).toContain(t.common.notAllowedTitle);
@@ -599,5 +634,247 @@ describe("crm messages", () => {
       for (const key of ak) walk((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key], `${path}.${key}`);
     };
     walk(en, hi, "crm");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Lead routing, the 1-hour rule and super admins (docs/lead-routing-plan.md §11, §15, §20; LR-CORE)
+
+describe.each(LOCALES)("lead routing UI (%s)", (locale) => {
+  const t = messagesFor(locale, "crm");
+  const prefix = locale === "hi" ? "/hi" : "";
+  const clock = {
+    state: "overdue" as const,
+    reason: "new" as const,
+    startedAt: "2026-10-20T04:00:00.000Z",
+    dueAt: "2026-10-20T05:00:00.000Z",
+    tier1At: "2026-10-20T05:00:00.000Z",
+    tier2At: "2026-10-20T08:00:00.000Z",
+  };
+  const routed: LeadSummary = { ...base, area: { id: "kangra", en: "Kangra", hi: "कांगड़ा" }, sla: clock };
+
+  it("inbox: the area column, the first-call chip and the area / first-call filters", () => {
+    const html = inLocale(locale, createElement(LeadList, { page: { ...PAGE, items: [routed] }, filters: EMPTY_FILTERS, ctx: { centres: CENTRES, viewerId: "u-manager", now: NOW, locale, t } }));
+    expect(html).toContain(locale === "hi" ? "कांगड़ा" : "Kangra");
+    expect(html).toContain('data-sla-state="overdue"');
+    expect(html).toContain(esc(t.slaChip.label));
+    expect(html).toContain('dateTime="2026-10-20T05:00:00.000Z"');
+    const form = inLocale(
+      locale,
+      createElement(InboxFiltersForm, {
+        filters: { ...EMPTY_FILTERS, area: "kangra", sla: "overdue" },
+        options: { centres: [], programs: [], sources: [], assignees: [], areas: [{ value: "none", label: t.inbox.areaNone }, { value: "kangra", label: "Kangra" }] },
+        permissions: crmPermissions({ role: "manager" }),
+        locale,
+        t,
+      }),
+    );
+    expectLabelledControls(form);
+    expect(form).toContain('name="area"');
+    expect(form).toContain('name="sla"');
+    expect(form).toContain(esc(t.inbox.slaEscalated));
+    // Counsellors never get the area filter (their list is only their own leads).
+    const counsellor = inLocale(
+      locale,
+      createElement(InboxFiltersForm, { filters: EMPTY_FILTERS, options: { centres: [], programs: [], sources: [], assignees: [], areas: [] }, permissions: crmPermissions({ role: "counsellor" }), locale, t }),
+    );
+    expect(counsellor).not.toContain('name="area"');
+    expect(counsellor).toContain('name="sla"');
+  });
+
+  it("lead page: area, how it was matched, the clock, the Meta origin, the consent flag and Change area", () => {
+    const lead: LeadDetail = {
+      ...DETAIL,
+      area: routed.area,
+      sla: clock,
+      routing: {
+        areaId: "kangra",
+        areaName: { en: "Kangra", hi: "कांगड़ा" },
+        match: "town",
+        outcome: "area",
+        placeInput: "Dharamsala town",
+        gateOnly: false,
+        routedAt: "2026-10-18T05:00:00.000Z",
+        routedBy: null,
+      },
+      origins: [{ provider: "meta", metaLeadId: "123456789012345", createdAt: "2026-10-18T05:00:00.000Z" }],
+      confirmConsent: true,
+    };
+    const props = { lead, viewer: viewer("manager"), permissions: crmPermissions({ role: "manager" }), centres: CENTRES, assigneeOptions: [], staffNames: {}, now: NOW, locale, t };
+    const html = inLocale(locale, createElement(LeadDetailView, props));
+    expect(count(html, /<h1\b/g)).toBe(1);
+    expectLabelledControls(html);
+    expect(html).toContain('id="crm-lead-routing"');
+    expect(html).toContain(esc(t.lead.routing.matches.town));
+    expect(html).toContain("Dharamsala town");
+    expect(html).toContain(esc(t.lead.routing.automatic));
+    expect(html).toContain(esc(t.lead.sla.reasons.new));
+    expect(html).toContain(t.lead.origin.metaLeadId.replace("{id}", "123456789012345"));
+    expect(html).toContain(esc(t.lead.confirmConsent.title));
+    expect(html).toContain(esc(t.lead.routing.change));
+    // Change area: super admins and managers; never counsellors or ordinary admins (§22).
+    const counsellor = inLocale(locale, createElement(LeadDetailView, { ...props, viewer: viewer("counsellor"), permissions: crmPermissions({ role: "counsellor" }) }));
+    expect(counsellor).not.toContain(esc(t.lead.routing.change));
+    const admin = inLocale(locale, createElement(LeadDetailView, { ...props, viewer: viewer("admin"), permissions: crmPermissions({ role: "admin" }) }));
+    expect(admin).not.toContain(esc(t.lead.routing.change));
+    const superAdmin = inLocale(locale, createElement(LeadDetailView, { ...props, viewer: viewer("admin"), permissions: crmPermissions({ role: "admin", superAdmin: true }) }));
+    expect(superAdmin).toContain(esc(t.lead.routing.change));
+  });
+
+  it("settings hub: links for heads and admins, the edit / read-only line, no hub for counsellors", () => {
+    const hub = (permissions: CrmPermissions) => inLocale(locale, createElement(SettingsHub, { permissions, superAdminNames: ["Owner"], locale, t }));
+    const sa = hub(crmPermissions({ role: "admin", superAdmin: true }));
+    for (const href of ["/crm/settings/areas", "/crm/settings/speed", "/crm/settings/import", "/crm/settings/integrations", "/crm/staff"]) {
+      expect(sa).toContain(`href="${prefix}${href}"`);
+    }
+    expect(sa).toContain(esc(t.superAdmin.canEdit));
+    expect(sa).toContain(esc(t.superAdmin.badge));
+    expect(sa).toContain(esc(t.settings.superAdmins.replace("{names}", "Owner")));
+    const admin = hub(crmPermissions({ role: "admin" }));
+    expect(admin).toContain(esc(t.superAdmin.readOnly));
+    expect(admin).toContain(`href="${prefix}/crm/settings/import"`);
+    const manager = hub(crmPermissions({ role: "manager" }));
+    expect(manager).toContain(esc(t.superAdmin.readOnly));
+    expect(manager).not.toContain(`href="${prefix}/crm/settings/import"`);
+    expect(visibleSettingsSections(crmPermissions({ role: "counsellor" }))).toEqual([]);
+  });
+
+  it("viewer bar: the super-admin chip, and 'Away until …' for staff only", () => {
+    const sa = inLocale(locale, createElement(CrmViewerBar, { viewer: { userId: "u1", role: "admin", superAdmin: true }, awayUntil: null, pagePath: "/crm", t }));
+    expect(sa).toContain(esc(t.superAdmin.badge));
+    expect(sa).not.toContain(esc(t.away.set));
+    const head = inLocale(locale, createElement(CrmViewerBar, { viewer: { userId: "u2", role: "manager" }, awayUntil: "2026-10-25T18:30:00.000Z", pagePath: "/crm", t }));
+    expect(head).toContain(esc(t.away.clear));
+    expect(head).not.toContain(esc(t.superAdmin.badge));
+    const counsellor = inLocale(locale, createElement(CrmViewerBar, { viewer: { userId: "u3", role: "counsellor" }, awayUntil: null, pagePath: "/crm", t }));
+    expect(counsellor).toContain(esc(t.away.available));
+    expect(inLocale(locale, createElement(CrmViewerBar, { viewer: { userId: "u4", role: "admin" }, awayUntil: null, pagePath: "/crm", t }))).toBe("");
+  });
+
+  it("read-only notice, the chip and the alert-strip stub", () => {
+    expect(inLocale(locale, createElement(ReadOnlyNotice, { canEdit: false, t }))).toContain(esc(t.superAdmin.readOnly));
+    expect(inLocale(locale, createElement(SuperAdminBadge, { label: t.superAdmin.badge, title: t.superAdmin.badgeLabel }))).toContain(esc(t.superAdmin.badgeLabel));
+    // LR-SLA replaces the strip; CORE's stub renders nothing.
+    expect(inLocale(locale, createElement(SlaAlertStrip, { locale, role: "manager", superAdmin: false, pagePath: "/crm", t: { strip: t.speed.strip, errors: t.errors } }))).toBe("");
+  });
+});
+
+describe("lead routing helpers (LR-CORE)", () => {
+  const t = messagesFor("en", "crm");
+
+  it("states the first-call chip in words for every state (never colour alone)", () => {
+    const due = { dueAt: "2026-10-20T07:00:00.000Z" };
+    expect(slaStateOf({ ...due, tier1At: null, tier2At: null }, NOW)).toBe("due");
+    expect(slaStateOf({ ...due, tier1At: "2026-10-20T06:00:00.000Z", tier2At: null }, NOW)).toBe("overdue");
+    expect(slaStateOf({ ...due, tier2At: "2026-10-20T06:00:00.000Z" }, NOW)).toBe("escalated");
+    expect(slaStateOf({ ...due, resolvedAt: "2026-10-20T06:00:00.000Z" }, NOW)).toBeNull();
+    for (const state of ["due", "overdue", "escalated"] as const) {
+      const html = inLocale(
+        "en",
+        createElement(SlaChip, { clock: { state, reason: "import", startedAt: "2026-10-20T04:00:00.000Z", dueAt: "2026-10-20T07:00:00.000Z", tier1At: null, tier2At: null }, now: NOW, locale: "en", t }),
+      );
+      expect(html).toContain(`data-sla-state="${state}"`);
+      expect(html).toContain(t.slaChip.imported);
+      expect(html).toContain(t.slaChip.label);
+    }
+    expect(slaChipText(t, { state: "due", dueAt: "2026-10-20T07:00:00.000Z" }, NOW, "en")).toMatch(/^Call by 12:30/i);
+  });
+
+  it("round-trips the area and first-call filters through the URL", () => {
+    const filters = parseInboxFilters({ area: "tool_signups", sla: "escalated" });
+    expect(filters).toMatchObject({ area: "tool_signups", sla: "escalated" });
+    expect(inboxQuery(filters)).toBe("?area=tool_signups&sla=escalated");
+    expect(toLeadFilters(filters)).toMatchObject({ area: "tool_signups", sla: "escalated" });
+    expect(parseInboxFilters({ area: "<script>", sla: "late" })).toMatchObject({ area: "", sla: "" });
+  });
+
+  it("lists Meta and imported consents with how the family agreed", () => {
+    const entries = consentHistory([
+      { id: 1, type: "submission", body: null, meta: { source: "meta_lead_ad", consentTextVersion: "meta:12345", consentMethod: "meta_lead_form" }, actorId: null, actorName: null, at: "2026-10-18T05:00:00.000Z" },
+      { id: 2, type: "submission", body: null, meta: { source: "csv_import", consentTextVersion: "staff-recorded", consentMethod: "phone" }, actorId: null, actorName: null, at: "2026-10-19T05:00:00.000Z" },
+    ]);
+    expect(entries.map((entry) => [entry.kind, entry.method])).toEqual([
+      ["import", "phone"],
+      ["meta", "meta_lead_form"],
+    ]);
+  });
+
+  it("builds every lead-routing request exactly (§21)", () => {
+    expect(leadOpsRequests.setSuperAdmin("u 1", { superAdmin: true, currentPassword: "pw" })).toEqual({
+      path: "/api/admin/super-admins/u%201",
+      method: "PUT",
+      body: { superAdmin: true, currentPassword: "pw" },
+    });
+    expect(leadOpsRequests.createStaffLogin({ displayName: " Ravi  K ", loginId: " Ravi.K ", crmRole: "counsellor", centreSlugs: ["dharamshala"], areaIds: ["kangra"] })).toEqual({
+      path: "/api/admin/users",
+      method: "POST",
+      body: { role: "staff", displayName: "Ravi K", loginId: "ravi.k", crm: { crmRole: "counsellor", centreSlugs: ["dharamshala"], areaIds: ["kangra"] } },
+    });
+    expect(leadOpsRequests.changeLeadArea("lead-1", null)).toEqual({ path: "/api/crm/leads/lead-1/area", method: "PATCH", body: { areaId: null } });
+    expect(leadOpsRequests.resolvePlace(" Dharamsala ", "HP")).toEqual({ path: "/api/crm/areas/resolve?q=Dharamsala&state=HP", method: "GET" });
+    expect(leadOpsRequests.reassignLeads({ fromUserId: "u2", scope: "uncalled" })).toEqual({ path: "/api/crm/areas/reassign", method: "POST", body: { fromUserId: "u2", scope: "uncalled" } });
+    expect(leadOpsRequests.setAvailability({ userId: "u2", awayUntil: null, note: "  " })).toEqual({ path: "/api/crm/availability", method: "PUT", body: { userId: "u2", awayUntil: null } });
+    expect(leadOpsRequests.setRoutingMode("legacy", 3)).toEqual({ path: "/api/crm/settings/routing", method: "PUT", body: { mode: "legacy", expectedVersion: 3 } });
+    expect(leadOpsRequests.slaQueue("escalated")).toEqual({ path: "/api/crm/sla?view=escalated", method: "GET" });
+    expect(leadOpsRequests.dashboard({ area: "kangra" })).toEqual({ path: "/api/crm/dashboard?area=kangra", method: "GET" });
+    expect(leadOpsRequests.importRows("b1", [], 250)).toEqual({ path: "/api/crm/import/batches/b1/rows", method: "POST", body: { rows: [], offset: 250 } });
+    expect(leadOpsRequests.metaAction({ action: "test_mode", on: true, phone: "+916000012345" })).toEqual({
+      path: "/api/crm/integrations/meta/actions",
+      method: "POST",
+      body: { action: "test_mode", on: true, phone: "+916000012345" },
+    });
+    expect(leadOpsRequests.metaInbox("failed")).toEqual({ path: "/api/crm/integrations/meta/inbox?status=failed", method: "GET" });
+  });
+
+  it("offers 'Log the call' only after a tel: call from the same lead, within two hours", () => {
+    const store = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+      removeItem: (key: string) => void store.delete(key),
+    };
+    expect(readCallMark(storage)).toBeNull();
+    markCallStarted(storage, "lead-1", NOW);
+    expect(readCallMark(storage)).toEqual({ leadId: "lead-1", at: NOW });
+    expect(shouldPromptCallReturn(readCallMark(storage), "lead-1", NOW + 1_000)).toBe(false);
+    expect(shouldPromptCallReturn(readCallMark(storage), "lead-1", NOW + 60_000)).toBe(true);
+    expect(shouldPromptCallReturn(readCallMark(storage), "lead-2", NOW + 60_000)).toBe(false);
+    expect(shouldPromptCallReturn(readCallMark(storage), "lead-1", NOW + 3 * 60 * 60_000)).toBe(false);
+    clearCallMark(storage);
+    expect(readCallMark(storage)).toBeNull();
+    markCallStarted(storage, "bad id!", NOW);
+    expect(readCallMark(storage)).toBeNull();
+    // A blocked storage never throws.
+    const blocked = {
+      getItem: (): string | null => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+      removeItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    expect(() => markCallStarted(blocked, "lead-1", NOW)).not.toThrow();
+    expect(readCallMark(blocked)).toBeNull();
+    const link = { getAttribute: (name: string) => (name === "href" ? "tel:+916000012345" : null) };
+    expect(telLinkOf({ closest: () => link } as unknown as EventTarget)).toBe(link);
+    expect(telLinkOf({ closest: () => ({ getAttribute: () => "https://wa.me/1" }) } as unknown as EventTarget)).toBeNull();
+  });
+
+  it("checks the 'back on' day: after today, within 60 days", () => {
+    expect(validateAwayDay("", NOW)).toBe("untilRequired");
+    expect(validateAwayDay("2026-10-20", NOW)).toBe("past");
+    expect(validateAwayDay("2026-10-21", NOW)).toBeNull();
+    expect(validateAwayDay("2026-12-19", NOW)).toBeNull();
+    expect(validateAwayDay("2026-12-31", NOW)).toBe("tooFar");
+  });
+
+  it("gives area heads and admins the Dashboard and Settings items; counsellors are unchanged", () => {
+    expect(visibleStaffNavKeys(false)).toEqual(["inbox", "today", "pipeline", "reports"]);
+    expect(visibleStaffNavKeys(true)).toEqual(["inbox", "today", "dashboard", "pipeline", "reports", "staff", "settings"]);
+    expect(t.nav.dashboard).toBeTruthy();
+    expect(messagesFor("hi", "crm").nav.settings).toMatch(/[ऀ-ॿ]/);
   });
 });

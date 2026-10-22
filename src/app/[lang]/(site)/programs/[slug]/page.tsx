@@ -5,10 +5,11 @@ import { BleedSplit } from "@/components/home/BleedSplit";
 import { CtaBleedSplit } from "@/components/home/CtaSplit";
 import { EXAM_META, programTracks, trackLabel } from "@/components/programs/exam-meta";
 import { ProgramGrid } from "@/components/programs/ProgramGrid";
+import { PROGRAM_SCHEDULE_ID, ProgramDetailHero } from "@/components/programs/ProgramHero";
 import { programCardMessages, trackPhotos } from "@/components/programs/program-view";
 import { ScheduleFees } from "@/components/programs/ScheduleFees";
 import { interleaveCards, resultMosaicMedia } from "@/components/results/ResultMosaicMedia";
-import { AspireImage, ButtonLink, DemoBadge, Notice, PageHero, Section, SectionHeading } from "@/components/ui";
+import { AspireImage, Notice, Section, SectionHeading } from "@/components/ui";
 import { format } from "@/i18n/format";
 import { getLocale, getMessages, localeAlternates } from "@/i18n/server";
 import { localePath } from "@/i18n/paths";
@@ -79,25 +80,7 @@ export default async function ProgramPage({ params }: PageProps<"/[lang]/program
 
   return (
     <>
-      <PageHero
-        title={program.title}
-        lead={
-          <>
-            <p>{program.shortDescription}</p>
-            {placeholder && <DemoBadge label={common.labels.demoPending} className="mt-3" />}
-          </>
-        }
-        crumbs={[{ label: t.list.crumb, href: localePath("/programs", locale) }, { label: program.title }]}
-        homeLabel={common.labels.home}
-        homeHref={localePath("/", locale)}
-        image={photos.hero}
-        imageLabel={stockLabel}
-      >
-        <ButtonLink href={localePath("/admissions#enquiry", locale)}>{td.enquire}</ButtonLink>
-        <ButtonLink href={localePath("/programs", locale)} variant="outline">
-          {td.allPrograms}
-        </ButtonLink>
-      </PageHero>
+      <ProgramDetailHero locale={locale} program={program} t={t} common={common} />
 
       {/* D-030: half-bleed photo splits — overview beside a track photo, then highlights and
           "Schedule & fees" beside another. */}
@@ -147,7 +130,7 @@ export default async function ProgramPage({ params }: PageProps<"/[lang]/program
       </BleedSplit>
 
       <BleedSplit
-        aria-labelledby={program.highlights.length > 0 ? "program-highlights" : "program-schedule"}
+        aria-labelledby={program.highlights.length > 0 ? "program-highlights" : PROGRAM_SCHEDULE_ID}
         tone={tone("schedule")}
         image={photos.highlights}
         imageSide="left"
@@ -174,7 +157,7 @@ export default async function ProgramPage({ params }: PageProps<"/[lang]/program
             </ul>
           </div>
         )}
-        <ScheduleFees program={program} headingId="program-schedule" locale={locale} />
+        <ScheduleFees program={program} headingId={PROGRAM_SCHEDULE_ID} locale={locale} />
       </BleedSplit>
 
       {otherPrograms.length > 0 && (

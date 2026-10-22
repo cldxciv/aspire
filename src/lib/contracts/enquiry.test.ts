@@ -321,7 +321,7 @@ describe("hero step schemas", () => {
     expect(HERO_STEP_FIELDS).toEqual([
       ["name", "classOrExam"],
       ["guardianName", "phone", "email"],
-      ["preferredCentre", "message", "consent"],
+      ["preferredCentre", "district", "message", "consent"],
     ]);
   });
 
@@ -387,6 +387,7 @@ describe("hero step schemas", () => {
     expect(heroStepOfField("phone")).toBe(1);
     expect(heroStepOfField("email")).toBe(1);
     expect(heroStepOfField("preferredCentre")).toBe(2);
+    expect(heroStepOfField("district")).toBe(2);
     expect(heroStepOfField("message")).toBe(2);
     expect(heroStepOfField("consent")).toBe(2);
     for (const field of ["source", "website", "topic", "currentClass", "intent"]) expect(heroStepOfField(field)).toBeNull();
@@ -498,5 +499,38 @@ describe("enquirySchema — context (attribution only, D-039)", () => {
 
   it("trims utm values and treats tool null as absent", () => {
     expect(enquiryContextSchema.parse({ utm_source: "  google  ", tool: null })).toEqual({ utm_source: "google" });
+  });
+});
+
+// -- Lead routing (docs/lead-routing-plan.md section 13.8): the optional district --------------------
+
+describe("enquirySchema - district (lead routing)", () => {
+  const heroPayload = {
+    ...base,
+    source: "hero",
+    classOrExam: "jee-class-11",
+    guardianName: "Test Parent",
+  };
+
+  it.each([heroPayload, admissions, contact])("is optional and accepts the 12 district ids, outside-hp and empty ($source)", (payload) => {
+    expect(enquirySchema.safeParse(payload).success).toBe(true);
+    for (const district of ["kangra", "lahaul-spiti", "una", "outside-hp", ""]) {
+      const parsed = enquirySchema.safeParse({ ...payload, district });
+      expect(parsed.success, district).toBe(true);
+      if (parsed.success && "district" in parsed.data) expect(parsed.data.district).toBe(district);
+    }
+  });
+
+  it.each([heroPayload, admissions, contact])("rejects anything else on the district field ($source)", (payload) => {
+    for (const district of ["Kangra", "Pathankot", "kangra ", "outside", 12]) {
+      expect(fieldErrors({ ...payload, district })).toEqual({ district: ["Select a district from the list"] });
+    }
+  });
+
+  it("is a hero step-3 field and never reaches the quick form", () => {
+    expect(validateHeroStep(2, { consent: true, district: "una" })).toBeNull();
+    expect(validateHeroStep(2, { consent: true, district: "Atlantis" })).toEqual({ district: ["Select a district from the list"] });
+    const parsed = enquirySchema.safeParse({ ...quick, district: "kangra" });
+    expect(parsed.success && "district" in parsed.data).toBe(false);
   });
 });

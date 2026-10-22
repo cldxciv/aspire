@@ -1,0 +1,3 @@
+# Holds the read-only Aspire MCP token for aspire-ops. The token itself is added separately (README step 5) and never lives in this repo.
+type: vault
+display_name: aspire-ops

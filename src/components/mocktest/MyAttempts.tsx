@@ -10,26 +10,30 @@ import { localePath } from "@/i18n/paths";
 import { computeBadges, type BadgeId } from "@/lib/mocktest/badges";
 import { listLocalAttempts, type LocalAttempt } from "@/lib/mocktest/local-store";
 import type { AttemptsSummary, Bilingual, SavedAttemptSummary, TestWindow } from "@/lib/mocktest/types";
+import type { QbSlot } from "@/lib/qb/types";
 import { formatDate, formatDateTime, type MocktestMessages } from "./format";
 import { apiJson, useMounted, useSessionStatus } from "./hooks";
+import { listPaperAttempts, type PaperLocalAttempt } from "./paper-store";
 
 const BADGE_ICON: Record<BadgeId, typeof Award> = { "first-test": Award, "streak-3": Flame, "top-10": Trophy };
 
 /**
  * "Your attempts" on the list page: this browser's attempts (guests and students) plus, for
- * signed-in students, the attempts saved to their account, and the badges earned.
+ * signed-in students, the attempts saved to their account, and the badges earned. Exam-pattern
+ * papers (`paperSlots`: their test ids "bp-…" → slot) link to their own result page.
  */
-export function MyAttempts({ titles, t }: { titles: Record<string, Bilingual>; t: MocktestMessages }) {
+export function MyAttempts({ titles, t, paperSlots = {} }: { titles: Record<string, Bilingual>; t: MocktestMessages; paperSlots?: Record<string, QbSlot> }) {
   const mounted = useMounted();
   if (!mounted) return <p className="text-sm text-muted">{t.common.loading}</p>;
-  return <MyAttemptsClient titles={titles} t={t} />;
+  return <MyAttemptsClient titles={titles} t={t} paperSlots={paperSlots} />;
 }
 
-function MyAttemptsClient({ titles, t }: { titles: Record<string, Bilingual>; t: MocktestMessages }) {
+function MyAttemptsClient({ titles, t, paperSlots }: { titles: Record<string, Bilingual>; t: MocktestMessages; paperSlots: Record<string, QbSlot> }) {
   const locale = useLocale();
   const session = useSessionStatus();
   const ta = t.attempts;
   const [local] = useState<LocalAttempt[]>(() => listLocalAttempts().filter((a) => titles[a.testId]));
+  const [papers] = useState<PaperLocalAttempt[]>(() => listPaperAttempts().filter((a) => titles[a.testId] && paperSlots[a.testId]));
   const [server, setServer] = useState<{ attempts: SavedAttemptSummary[]; summary: AttemptsSummary } | null>(null);
   const isStudent = session.state === "signedIn" && session.role === "student";
 
@@ -44,9 +48,20 @@ function MyAttemptsClient({ titles, t }: { titles: Record<string, Bilingual>; t:
     };
   }, [isStudent]);
 
-  const savedIds = new Set(local.map((a) => a.savedId).filter(Boolean));
+  const savedIds = new Set([...local, ...papers].map((a) => a.savedId).filter(Boolean));
   const serverOnly = (server?.attempts ?? []).filter((a) => !savedIds.has(a.id) && titles[a.testId]);
-  const badges = new Set<BadgeId>([...computeBadges({ attemptTimes: local.map((a) => a.submittedAt) }), ...(server?.summary.badges ?? [])]);
+  const badges = new Set<BadgeId>([
+    ...computeBadges({ attemptTimes: [...local, ...papers].map((a) => a.submittedAt) }),
+    ...(server?.summary.badges ?? []),
+  ]);
+  /** A saved attempt's result page: generated papers have their own (`/exam/<slot>/result`). */
+  const savedHref = (testId: string, id: string) => {
+    const slot = paperSlots[testId];
+    return localePath(
+      slot ? `/tools/mock-tests/exam/${slot}/result?saved=${encodeURIComponent(id)}` : `/tools/mock-tests/${testId}/result?saved=${encodeURIComponent(id)}`,
+      locale,
+    );
+  };
   const badgeText: Record<BadgeId, [string, string]> = {
     "first-test": [ta.badges.firstTest, ta.badges.firstTestBody],
     "streak-3": [ta.badges.streak3, ta.badges.streak3Body],
@@ -72,7 +87,7 @@ function MyAttemptsClient({ titles, t }: { titles: Record<string, Bilingual>; t:
 
   return (
     <div className="space-y-5">
-      {local.length === 0 && serverOnly.length === 0 ? (
+      {local.length === 0 && papers.length === 0 && serverOnly.length === 0 ? (
         <p className="rounded-control border border-dashed border-line bg-white p-5 text-center text-muted">{ta.empty}</p>
       ) : (
         <ul className="space-y-2">
@@ -86,13 +101,23 @@ function MyAttemptsClient({ titles, t }: { titles: Record<string, Bilingual>; t:
               a.savedId ? `${ta.onDevice} · ${ta.inAccount}` : ta.onDevice,
             ),
           )}
+          {papers.map((a) =>
+            row(
+              a.id,
+              a.testId,
+              a.submittedAt,
+              a.score !== undefined ? format(t.common.scoreOf, { score: a.score, max: a.maxScore }) : ta.unscored,
+              localePath(`/tools/mock-tests/exam/${paperSlots[a.testId]}/result?attempt=${encodeURIComponent(a.id)}`, locale),
+              a.savedId ? `${ta.onDevice} · ${ta.inAccount}` : ta.onDevice,
+            ),
+          )}
           {serverOnly.map((a) =>
             row(
               a.id,
               a.testId,
               a.submittedAt,
               format(t.common.scoreOf, { score: a.score, max: a.maxScore }),
-              localePath(`/tools/mock-tests/${a.testId}/result?saved=${encodeURIComponent(a.id)}`, locale),
+              savedHref(a.testId, a.id),
               ta.inAccount,
             ),
           )}
