@@ -24,7 +24,7 @@ export const siteStatus = defineTool({
   description:
     "Reports the Aspire website's current configuration as non-secret facts: content mode (demo vs production), where enquiries go " +
     "(stored as CRM leads and/or forwarded to a webhook, or 'not_configured' when neither; leads are reachable through the 'crm' service tools " +
-    "when this token has crm permissions), whether Ask Aspire (AI doubt solver) has an API key, preview/password gates, account counts, " +
+    "when this token has crm permissions), whether Rancho (the AI doubt solver) has an API key, preview/password gates, account counts, " +
     "and this MCP token's name, expiry and permissions per service (none / read / write) with the tools it may use. " +
     "Call it first to understand what data is real and what is DEMO, and what this token can do.",
   scope: "read",
@@ -96,7 +96,7 @@ export const siteStatus = defineTool({
       ok: true,
       summary:
         `Aspire website ${MCP_SERVER_VERSION}: ${data.contentMode.mode} mode; enquiries ${enquiryDelivery}${storedAsLeads ? " (stored as CRM leads)" : ""}; ` +
-        `Ask Aspire ${ask.configured ? "configured" : "not configured"}; token "${ctx.caller.tokenName}" can use: ${granted || "nothing"}.`,
+        `Rancho (the AI doubt solver) ${ask.configured ? "configured" : "not configured"}; token "${ctx.caller.tokenName}" can use: ${granted || "nothing"}.`,
       data,
     };
   },

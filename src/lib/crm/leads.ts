@@ -5,8 +5,10 @@ import type { DatabaseSync } from "node:sqlite";
 import { getDb, withTransaction } from "@/lib/db/connection";
 
 import { assignableMember, canSeeLead, CRM_AUDIT, CRM_MESSAGES, crmAudit, fail, leadScopeFor, ok } from "./access";
+import { istDayStart, istWeekStart } from "./console/session";
+import { TEMPLATE_KEY_PATTERN, TEMPLATE_LANGS, type TemplateLang } from "./console/types";
 import { AREA_FILTER_NONE, AREA_FILTER_TOOL_SIGNUPS, type RoutingResult } from "./lead-ops-types";
-import { canonicalTool, cleanMultiline, cleanSlug, cleanText, istDayBounds, maskPhone, parseTime, phoneLastDigits, toIso } from "./pure";
+import { canonicalTool, cleanMultiline, cleanSlug, cleanText, DAY_MS, istDayBounds, maskPhone, parseTime, phoneLastDigits, toIso } from "./pure";
 import { insertActivity, listActivities, listActivitiesOfTypes, type ActivityRow } from "./repo/activities";
 import { findLeadRouting } from "./repo/areas-core";
 import { listExternalRefsOfLead } from "./repo/intake";
@@ -62,6 +64,7 @@ export function toLeadSummary(row: LeadRow, now: number, options: { fullPhone?: 
     phone: options.fullPhone ? row.phoneE164 : maskPhone(row.phoneE164),
     phoneLast4: phoneLastDigits(row.phoneE164),
     centreSlug: row.centreSlug,
+    effectiveCentreSlug: row.centreSlug ?? row.areaDefaultCentre,
     programInterest: row.programInterest,
     currentClass: row.currentClass,
     source: row.source,
@@ -256,6 +259,20 @@ export function buildLeadQuery(
   if (createdFrom !== null) query.createdFrom = createdFrom;
   const createdTo = parseTime(filters.createdTo);
   if (createdTo !== null) query.createdTo = createdTo;
+  // Admin console 1b (§4.3): relative `created` values, resolved with the request time in IST.
+  // They replace createdFrom / createdTo (links never carry both).
+  if (filters.created === "today") {
+    query.createdFrom = istDayStart(now);
+    delete query.createdTo;
+  } else if (filters.created === "week") {
+    query.createdFrom = istWeekStart(now);
+    delete query.createdTo;
+  } else if (filters.created === "over24h") {
+    delete query.createdFrom;
+    query.createdTo = now - DAY_MS;
+  }
+  if (filters.contact === "none") query.neverContacted = true;
+  if (filters.signups === "hide") query.excludeToolSignups = true;
   if (filters.includeErased === true && viewer.role === "admin") query.includeErased = true;
   if (filters.sort && LEAD_SORTS.includes(filters.sort)) query.sort = filters.sort;
   // Lead routing (§13.5, §21): these only narrow the scope above (the route refuses an area
@@ -541,20 +558,37 @@ export function addNote(viewer: CrmViewer, leadId: string, body: string, now: nu
 }
 
 /**
+ * Facts a console flow adds to a logged contact (admin console 1b, §4.2): the WhatsApp template
+ * key and language the staff member sent (never the text). Kept on erase (non-personal).
+ */
+export interface ContactExtra {
+  template?: string | null;
+  lang?: TemplateLang | null;
+}
+
+/**
  * Logs a call or WhatsApp message the staff member made themselves (D-041: nothing is sent by the
- * system). A `connected` outcome moves a `new` lead to `contacted`.
+ * system). A `connected` outcome moves a `new` lead to `contacted`. `extra` (admin console 1b)
+ * adds `{ template, lang }` to the activity meta, and `template` to the audit row.
  */
 export function logContact(
   viewer: CrmViewer,
   leadId: string,
-  input: { channel: ContactChannel; outcome: ContactOutcome; body?: string | null },
+  input: { channel: ContactChannel; outcome: ContactOutcome; body?: string | null; extra?: ContactExtra | null },
   now: number = Date.now(),
 ): CrmResult<LeadActivity> {
   const fieldErrors: Record<string, string[]> = {};
   if (!(CONTACT_CHANNELS as readonly string[]).includes(input.channel)) fieldErrors.channel = ["Choose call or WhatsApp."];
   if (!(CONTACT_OUTCOMES as readonly string[]).includes(input.outcome)) fieldErrors.outcome = ["Choose an outcome."];
+  const template = input.extra?.template ?? null;
+  const lang = input.extra?.lang ?? null;
+  if (template !== null && (typeof template !== "string" || !TEMPLATE_KEY_PATTERN.test(template))) fieldErrors.template = ["Choose a known template."];
+  if (lang !== null && !(TEMPLATE_LANGS as readonly string[]).includes(lang)) fieldErrors.lang = ["Choose English, Hindi or Hinglish."];
   if (Object.keys(fieldErrors).length > 0) return fail("validation", CRM_MESSAGES.validation, fieldErrors);
   const body = cleanMultiline(input.body, NOTE_MAX);
+  const meta: Record<string, string> = { outcome: input.outcome };
+  if (template !== null) meta.template = template;
+  if (lang !== null) meta.lang = lang;
   const db = getDb();
   return withTransaction(db, (): CrmResult<LeadActivity> => {
     const loaded = loadWritable(db, viewer, leadId);
@@ -563,7 +597,7 @@ export function logContact(
       leadId,
       type: input.channel,
       body,
-      meta: { outcome: input.outcome },
+      meta,
       actorId: viewer.userId,
       at: now,
     });
@@ -587,7 +621,7 @@ export function logContact(
       actorId: viewer.userId,
       action: CRM_AUDIT.contactLog,
       target: leadId,
-      details: { channel: input.channel, outcome: input.outcome },
+      details: template !== null ? { channel: input.channel, outcome: input.outcome, template } : { channel: input.channel, outcome: input.outcome },
       now,
     });
     return ok(toLeadActivity(activity));

@@ -147,18 +147,20 @@ export function ComingView({
               description={p.outcome}
               action={<Badge variant={current ? "warning" : "neutral"}>{p.status}</Badge>}
             >
-              <ul className="grid gap-3 sm:grid-cols-2">
-                {items.map(({ key, section }) => (
-                  <li key={key} className="rounded-control border border-dashed border-[#cbd8e7] bg-[#f8fbff] p-4">
-                    <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#7a5600]">
-                      <span className="sr-only">{c.sectionLabel}: </span>
-                      {t.navGroups[section]}
-                    </p>
-                    <h3 className="mt-1 font-bold text-navy">{c.items[key].title}</h3>
-                    <p className="mt-1 text-sm text-muted">{c.items[key].body}</p>
-                  </li>
-                ))}
-              </ul>
+              {items.length > 0 && (
+                <ul className="grid gap-3 sm:grid-cols-2">
+                  {items.map(({ key, section }) => (
+                    <li key={key} className="rounded-control border border-dashed border-[#cbd8e7] bg-[#f8fbff] p-4">
+                      <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#7a5600]">
+                        <span className="sr-only">{c.sectionLabel}: </span>
+                        {t.navGroups[section]}
+                      </p>
+                      <h3 className="mt-1 font-bold text-navy">{c.items[key].title}</h3>
+                      <p className="mt-1 text-sm text-muted">{c.items[key].body}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </PortalPanel>
           );
         })}

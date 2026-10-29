@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { CounsellorActivity } from "@/components/console/activity/CounsellorActivity";
 import { CrmPageHeader } from "@/components/crm/CrmBlocks";
 import { CrmGate, crmCentres, requestTime, type CrmAccess } from "@/components/crm/CrmGate";
 import { reportDayRange, type CrmMessages } from "@/components/crm/format";
@@ -7,6 +8,7 @@ import { ReportRangeForm, ReportsView } from "@/components/crm/ReportsView";
 import type { Locale } from "@/i18n/config";
 import { getLocale, getMessages } from "@/i18n/server";
 import { funnelReport } from "@/lib/crm";
+import { counsellorActivity } from "@/lib/crm/console/activity/activity";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getMessages("crm");
@@ -40,12 +42,23 @@ async function Reports({ access, searchParams, locale, t }: { access: CrmAccess;
     key: `last${days}` as const,
     ...reportDayRange(undefined, undefined, now, days),
   }));
-  const report = funnelReport(access.viewer, { from: Date.parse(range.fromIso), to: Date.parse(range.toIso) });
+  const span = { from: Date.parse(range.fromIso), to: Date.parse(range.toIso) };
+  const report = funnelReport(access.viewer, span);
+  // Admin console 1b (1B-NUMBERS): counsellor activity for the same dates (counsellors: their own row).
+  const activity = counsellorActivity(access.viewer, span);
   const centres = await crmCentres(locale);
   return (
     <>
       <ReportRangeForm range={range} presets={presets} locale={locale} t={t} />
-      <ReportsView report={report} range={range} permissions={access.permissions} centres={centres.names} locale={locale} t={t} />
+      <ReportsView
+        report={report}
+        range={range}
+        permissions={access.permissions}
+        centres={centres.names}
+        activity={<CounsellorActivity report={activity} range={range} canViewDashboard={access.permissions.canViewDashboard} locale={locale} />}
+        locale={locale}
+        t={t}
+      />
     </>
   );
 }

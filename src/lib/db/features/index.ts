@@ -1,5 +1,6 @@
 import { schema as ask } from "./ask.ts";
 import { schema as crm } from "./crm.ts";
+import { schema as crmConsole } from "./crm-console.ts";
 import { schema as crmIntake } from "./crm-intake.ts";
 import { schema as mcp } from "./mcp.ts";
 import { schema as mocktest } from "./mocktest.ts";
@@ -20,6 +21,9 @@ export const FEATURE_SCHEMAS: readonly { name: string; sql: string }[] = [
   // Lead routing (docs/lead-routing-plan.md §12): after crm, superadmin then crm_intake.
   { name: "superadmin", sql: superadmin },
   { name: "crm_intake", sql: crmIntake },
+  // Admin console Phase 1b (docs/admin-phase-1b-plan.md §3): right after crm_intake. Phase 2's
+  // crm_admission goes after it.
+  { name: "crm_console", sql: crmConsole },
   // Page layout (docs/page-layout-plan.md §5): before qb, which stays last.
   { name: "page_layout", sql: pageLayout },
   { name: "qb", sql: qb },

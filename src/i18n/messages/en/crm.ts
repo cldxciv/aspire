@@ -31,6 +31,12 @@ const crm = {
     staff: "Staff & rules",
     dashboard: "Lead dashboard",
     settings: "CRM settings",
+    // Admin console 1b (docs/admin-phase-1b-plan.md §13): pages built by the 1b packages.
+    admissions: "Admissions done",
+    targets: "Targets",
+    templates: "WhatsApp templates",
+    lostReview: "Lost enquiries to review",
+    sources: "Where enquiries come from",
   },
   common: {
     unassigned: "Unassigned",
@@ -224,6 +230,19 @@ const crm = {
         title: "Staff & rules",
         body: "Staff logins, roles and the assignment rules used for leads with no area.",
       },
+      // Admin console 1b (§13): the pages the 1b packages build.
+      targets: {
+        title: "Targets",
+        body: "Admission targets for each centre and session (April to March), split by programme if you want.",
+      },
+      templates: {
+        title: "WhatsApp templates",
+        body: "Messages counsellors can start from on WhatsApp, in English, Hindi and Hinglish. A template can be used only after a super admin approves it.",
+      },
+      maps: {
+        title: "Google Maps links",
+        body: "Each centre's Google Maps link for the centre location message, and the tagged link for its Google Business Profile.",
+      },
     },
   },
   inbox: {
@@ -274,6 +293,30 @@ const crm = {
     slaOpen: "Waiting for a first call",
     slaOverdue: "First call overdue",
     slaEscalated: "Escalated",
+    // Admin console 1b (docs/admin-phase-1b-plan.md §4.3): filters the dashboard's numbers open.
+    contact: "Calls and messages",
+    contactNone: "None logged yet",
+    signups: "Free-tool sign-ups",
+    signupsHide: "Leave out",
+    created: "Enquiry received",
+    createdToday: "Today",
+    createdWeek: "This week",
+    createdOver24h: "More than 24 hours ago",
+    /** Removable chips for the active filters ("Stage: New ×"). */
+    chips: {
+      label: "Active filters",
+      remove: "Remove filter {filter}",
+      clearAll: "Clear all",
+      // `contact=none` = no call AND no WhatsApp logged (NEVER_CONTACTED_SQL), not just "not called".
+      contactNone: "No call or WhatsApp logged yet",
+      signupsHide: "Free-tool sign-ups left out",
+      created: "Received: {when}",
+      createdValues: {
+        today: "today",
+        week: "this week",
+        over24h: "more than 24 hours ago",
+      },
+    },
   },
   /** "Add enquiry" drawer (admin-console plan §8, Agent B): walk-ins, phone calls, referrals. */
   add: {
@@ -336,6 +379,10 @@ const crm = {
       search: "Back to search results",
       today: "Back to Today's calls",
       pipeline: "Back to Pipeline",
+      admissions: "Back to Admissions done",
+      lost: "Back to Lost enquiries to review",
+      dashboard: "Back to the Lead dashboard",
+      lead: "Back to the enquiry",
     },
     /** WP9: the free-tool form was filled in by a student, never by a parent. */
     parentFlag: {

@@ -405,6 +405,40 @@ Staff APIs (docs/crm.md §12 has the full table; design `docs/lead-routing-plan.
 
 `GET /api/crm/leads` also takes `area` (area id, `none`, `tool_signups`) and `sla` (`open`, `overdue`, `escalated`). `POST /api/admin/users` with `role: "staff"`, and every change to a staff account, is super-admin-only; a non-super-admin changing a super admin's account gets 403 ("Only a super admin can change a super admin's account.").
 
+## Admin console Phase 1b (`/api/crm/**`, `/[lang]/crm/home`)
+
+Staff APIs of the admin console Phase 1b (D-078 – D-083; `docs/crm.md` §13 has the pages; design
+`docs/admin-phase-1b-plan.md` §8). Same rules as lead routing: D-007 envelope, `Cache-Control: no-store`,
+`X-Robots-Tag: noindex, nofollow`, same-origin writes, strict zod, body limits (8 KB; settings documents 32 KB). A lead
+the viewer cannot see is 404 (never "forbidden"), an erased lead 409. Super-admin-only writes are refused with 403 for
+anyone else on the server.
+
+| Method & path | Who | Body / query | Responses |
+|---|---|---|---|
+| GET `/[lang]/crm/home` | anyone | – | 307 to the role's home (admin `/admin`, area head `/crm/dashboard`, counsellor `/crm/today`, question-bank-only staff `/admin/questions`, other staff `/crm`; signed out → login `next=/crm/home`) |
+| GET `/api/crm/leads/:leadId/outcome[?taskId=]` | sees the lead | – | 200 `FollowUpContextView` · 404 · 409 erased |
+| POST `/api/crm/leads/:leadId/outcome` | sees the lead | `{ contact: { channel: "call"\|"whatsapp", outcome, note?, template?: { key, lang } } \| null, taskId?, next: { kind: "preset", preset: "later_today"\|"tomorrow"\|"in_3_days" } \| { kind: "at", at } \| { kind: "none", reason: "wrong_number"\|"closing"\|"has_other_task" }, nextTitle?, markNotReachable?, markLostWrongNumber? }` | 201 (one atomic write: task done → follow-up → contact → optional lost) · 404 · 409 · 422 (no `next`; `contact: null` without `taskId`; outside 08:00–21:00 IST; more than 5 min in the past; template not approved) |
+| GET `/api/crm/templates?context=general` | everyone in the CRM | – | 200 approved templates of that context |
+| GET `/api/crm/templates?all=1` | area heads, admins | – | 200 every template (missing seed drafts are added) · 403 counsellors |
+| PUT `/api/crm/templates/:key` | super admin | `{ lang: "en"\|"hi"\|"hinglish", body, expectedVersion }` | 200 (approved → draft) · 403 · 409 stale · 422 unknown slot, slot at the start or end, > 700 |
+| POST `/api/crm/templates/:key/status` | super admin | `{ status: "approved"\|"retired"\|"draft", expectedVersion }` | 200 · 403 · 409 |
+| PUT `/api/crm/templates/links` | super admin | `{ prospectusUrl: string \| null, expectedVersion }` | 200 · 403 · 409 · 422 (https, ≤ 300) |
+| GET / PUT `/api/crm/leads/:leadId/details` | sees the lead | PUT: partial strict `LeadMoreDetails` (`null` clears; second number = an Indian mobile ≠ the main number; joining session current or next) | 200 · 404 · 409 erased · 422; GET is audited `crm.lead_view` |
+| GET `/api/crm/leads/:leadId/duplicates` | sees the lead | – | 200 `DuplicateMatch[]` (≤ 5, only leads the viewer sees) |
+| POST `/api/crm/leads/:leadId/duplicates` | sees both leads, and admin, manager or the assignee of either | `{ otherLeadId, action: "dismiss" }` | 200 · 403 · 404 · 422 |
+| GET `/api/crm/lost-review?days=7\|14\|30&assignee=<id\|unassigned>` | area heads (scope), admins | – | 200 `LostReviewReport` · 403 counsellors |
+| POST `/api/crm/lost-review/:leadId` | area heads, admins | `{ lostAt (exact ISO from the list), decision: "kept"\|"reopened", reopenTo?, assigneeId?, followUp?: { kind: "preset", preset } \| { kind: "at", at } }` | 200 · 403 · 404 · 409 (erased, no longer lost, already reviewed) · 422 |
+| GET `/api/crm/targets?period=S2026` | admins, area heads (own centres) | – | 200 `TargetGrid` · 403 counsellors · 422 not a session key |
+| PUT `/api/crm/targets` | super admin | `{ period, metric, cells: [{ centreSlug, program, value 0–100000 }], expectedUpdatedAt }` (≤ 32 KB) | 200 · 403 · 409 stale (code `bad_request`) · 422 |
+| GET `/api/crm/sources?range=30d\|90d\|session` or `from=YYYY-MM-DD&to=YYYY-MM-DD`, `&centre=<slug\|none>` | area heads (scope), admins | – | 200 `SourcesReport` · 403 counsellors · 422 unusable range or centre |
+| GET / PUT `/api/crm/settings/centre-links` | read: area heads, admins · PUT: super admin | PUT `{ centres: { <slug>: { mapsUrl } }, expectedVersion }` (≤ 32 KB; https Google Maps hosts, ≤ 300) | 200 · 403 · 409 · 422 `centres.<slug>.mapsUrl` |
+
+Changed: `GET /api/crm/leads` (and the Enquiries page and CSV export) also takes `contact=none`, `signups=hide` and
+`created=today|week|over24h` (IST; replaces `createdFrom` / `createdTo`), and `centre` now matches the effective centre
+(own centre, else the routing area's default centre). `POST /api/admin/users` for a staff login without `crm.crmRole`
+answers 422 `{ fieldErrors: { crm: ["Choose the CRM role."] } }`. `GET /api/admin/users` adds `crm.areaIds`,
+`crm.areaNames` (`{ id, en, hi, active }`), `crm.awayUntil` and `crm.openLeads` to staff accounts.
+
 ## Rendering and caching (Next.js 16, Cache Components)
 
 - The list routes read `request.nextUrl.searchParams`, so they render per request. The request is read first and outside any `try/catch` so Next.js can bail out of prerendering cleanly.

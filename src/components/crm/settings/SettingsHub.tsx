@@ -1,4 +1,4 @@
-import { ChevronRight, Clock3, FileUp, MapPinned, PlugZap, UserCog, type LucideIcon } from "lucide-react";
+import { ChevronRight, Clock3, FileUp, MapPin, MapPinned, MessageSquareText, PlugZap, Target, UserCog, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import type { Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
@@ -7,7 +7,7 @@ import type { CrmPermissions } from "@/lib/crm/types";
 import type { CrmMessages } from "../format";
 import { ReadOnlyNotice } from "./ReadOnlyNotice";
 
-export type SettingsSectionKey = "areas" | "speed" | "import" | "integrations" | "staff";
+export type SettingsSectionKey = "areas" | "speed" | "import" | "integrations" | "staff" | "targets" | "templates" | "maps";
 
 /** LOCALE-FREE paths of the settings pages (each page re-checks access on the server). */
 export const SETTINGS_SECTIONS: readonly { key: SettingsSectionKey; href: string; icon: LucideIcon }[] = [
@@ -16,6 +16,10 @@ export const SETTINGS_SECTIONS: readonly { key: SettingsSectionKey; href: string
   { key: "import", href: "/crm/settings/import", icon: FileUp },
   { key: "integrations", href: "/crm/settings/integrations", icon: PlugZap },
   { key: "staff", href: "/crm/staff", icon: UserCog },
+  // Admin console 1b (docs/admin-phase-1b-plan.md §13): area heads and admins read, super admins edit.
+  { key: "targets", href: "/crm/targets", icon: Target },
+  { key: "templates", href: "/crm/templates", icon: MessageSquareText },
+  { key: "maps", href: "/crm/sources#maps", icon: MapPin },
 ];
 
 /** Which sections a viewer gets: import history is for admins; the rest for area heads and admins. */

@@ -234,6 +234,12 @@ export interface LeadSummary {
   /** Last four digits of the phone (lists and detail). Null once erased. */
   phoneLast4?: string | null;
   centreSlug: string | null;
+  /**
+   * Admin console 1b (§4.3): the centre the `centre` filter compares — the lead's own centre, else
+   * its routing area's default centre (so `/crm?centre=kullu` can show "Kullu (from area)" on an
+   * area-routed lead with no centre of its own). Null when neither is set. Lists always set it.
+   */
+  effectiveCentreSlug?: string | null;
   programInterest: string | null;
   currentClass: string | null;
   source: string;
@@ -323,7 +329,27 @@ export interface LeadFilters {
   area?: string;
   /** First-call clock (§15): `open`, `overdue` or `escalated`. */
   sla?: SlaFilter;
+  /** Admin console 1b (docs/admin-phase-1b-plan.md §4.3): `none` = no call or WhatsApp logged yet. */
+  contact?: ContactFilter;
+  /** `hide` = leave out free-tool sign-ups (in any area). */
+  signups?: SignupsFilter;
+  /**
+   * Created today / this week (IST, Monday start) / more than 24 hours ago, resolved with the request
+   * time. Relative values keep links short and put no dates in URLs; when set it replaces
+   * `createdFrom` / `createdTo`.
+   */
+  created?: CreatedFilter;
 }
+
+/** Inbox `contact` values (admin console 1b, §4.3). */
+export const CONTACT_FILTERS = ["none"] as const;
+export type ContactFilter = (typeof CONTACT_FILTERS)[number];
+/** Inbox `signups` values. */
+export const SIGNUPS_FILTERS = ["hide"] as const;
+export type SignupsFilter = (typeof SIGNUPS_FILTERS)[number];
+/** Inbox `created` values. */
+export const CREATED_FILTERS = ["today", "week", "over24h"] as const;
+export type CreatedFilter = (typeof CREATED_FILTERS)[number];
 
 export interface LeadPage {
   items: LeadSummary[];

@@ -16,8 +16,10 @@ export const PORTAL_HOME: Readonly<Record<Role, string>> = {
   student: "/student",
   parent: "/parent",
   admin: "/admin",
-  // Staff land on Today's calls (docs/lead-routing-plan.md §20, A6): the "Call now" list first.
-  staff: "/crm/today",
+  // Staff land on their role home (docs/admin-phase-1b-plan.md §5.A, D-078): `/crm/home` answers
+  // 307 to Today's calls (counsellors), the lead dashboard (area heads) or the question bank
+  // (question-bank-only staff).
+  staff: "/crm/home",
 };
 
 /** The CRM workspace (M7): staff accounts only reach this area; admins may open it too. */

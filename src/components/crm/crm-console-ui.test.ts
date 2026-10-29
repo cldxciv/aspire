@@ -137,9 +137,41 @@ describe("Back returns where you came from (allow-listed)", () => {
     expect(parseBackParam(["/crm/today", "/admin"])).toEqual({ path: "/crm/today", kind: "today" });
     expect(parseBackParam("/crm/today?x=1")).toEqual({ path: "/crm/today", kind: "today" });
     expect(parseBackParam("/crm/pipeline?centre=shimla&stage=lost&due=today")).toEqual({ path: "/crm/pipeline?centre=shimla", kind: "pipeline" });
-    for (const bad of ["https://evil.example/crm", "//evil.example", "/crm/leads/x", "/crm/staff", "/admin", "/hi/crm", "crm", "", null, 42, "/crm/reports", `/crm?q=${"x".repeat(700)}`]) {
+    for (const bad of ["https://evil.example/crm", "//evil.example", "/crm/leads/x/timeline", "/crm/leads/", "/crm/staff", "/admin", "/hi/crm", "crm", "", null, 42, "/crm/reports", `/crm?q=${"x".repeat(700)}`]) {
       expect(parseBackParam(bad), String(bad)).toBeNull();
     }
+  });
+
+  it("admin console 1b: Admissions done keeps its session, Lost review its days, the dashboard its area and dates", () => {
+    expect(parseBackParam("/crm/admissions")).toEqual({ path: "/crm/admissions", kind: "admissions" });
+    expect(parseBackParam("/crm/admissions?session=S2026&centre=shimla&page=2&q=riya")).toEqual({
+      path: "/crm/admissions?session=S2026&centre=shimla&page=2",
+      kind: "admissions",
+    });
+    expect(parseBackParam("/crm/admissions?session=2026&centre=Not%20A%20Slug&page=1")).toEqual({ path: "/crm/admissions", kind: "admissions" });
+    expect(parseBackParam("/crm/lost?days=14&assignee=u_abc-1&stage=lost")).toEqual({ path: "/crm/lost?days=14&assignee=u_abc-1", kind: "lost" });
+    expect(parseBackParam("/crm/lost?days=15")).toEqual({ path: "/crm/lost", kind: "lost" });
+    expect(parseBackParam("/crm/dashboard?area=kangra&from=2026-10-01&to=2026-10-21&x=1")).toEqual({
+      path: "/crm/dashboard?area=kangra&from=2026-10-01&to=2026-10-21",
+      kind: "dashboard",
+    });
+    expect(parseBackParam("/crm/admissions/extra")).toBeNull();
+    const back = new URLSearchParams(withBack("/crm/leads/a", "/crm/admissions?session=S2026").split("?")[1]).get("back");
+    expect(parseBackParam(back)).toEqual({ path: "/crm/admissions?session=S2026", kind: "admissions" });
+    for (const locale of LOCALES) {
+      const t = messagesFor(locale, "crm");
+      for (const kind of ["admissions", "lost", "dashboard", "lead"] as const) expect(t.lead.backTo[kind].trim(), `${locale} ${kind}`).not.toBe("");
+    }
+  });
+
+  it("admin console 1b: a duplicate's Open link returns to the enquiry it was opened from (id only)", () => {
+    expect(parseBackParam("/crm/leads/lead_abc-1")).toEqual({ path: "/crm/leads/lead_abc-1", kind: "lead" });
+    expect(parseBackParam("/crm/leads/lead_abc-1?back=%2Fcrm&x=1")).toEqual({ path: "/crm/leads/lead_abc-1", kind: "lead" });
+    for (const bad of ["/crm/leads/a%2Fb", "/crm/leads/a.b", `/crm/leads/${"x".repeat(65)}`, "/crm/leads/a/b"]) {
+      expect(parseBackParam(bad), bad).toBeNull();
+    }
+    const back = new URLSearchParams(withBack("/crm/leads/b", "/crm/leads/a").split("?")[1]).get("back");
+    expect(parseBackParam(back)).toEqual({ path: "/crm/leads/a", kind: "lead" });
   });
 
   it("opens the add-enquiry drawer from the console top bar's link", () => {

@@ -349,6 +349,34 @@ The defaults below apply until Aspire answers.
 
 ---
 
+## 20. Admin console Phase 1b: numbers, WhatsApp templates, targets, Google Maps links (added 22 October 2026)
+
+The owner asked for the console to show "your numbers" and make follow-ups faster. **What it does.** Console Home and the Lead dashboard show five numbers for every centre (enquiries, not yet called, overdue follow-ups, admissions against target, top sources), and each number opens the list it counts. Counsellors log a call and set the next follow-up in one step. They can open WhatsApp with a ready message from an enquiry, but **Aspire's system never sends anything**: the counsellor presses send on their own phone, and the call is logged only when they confirm they sent it.
+
+**Where to answer.** Sign in as the super admin. Templates: CRM → Manage → **WhatsApp templates** (`/crm/templates`), press **Approve** on each message you accept, or **Edit** first. Targets: CRM → Manage → **Targets** (`/crm/targets`). Google Maps links: CRM → Lead generation → **Where enquiries come from** → Centre links (`/crm/sources#maps`).
+
+Until Aspire answers: no template can be used (counsellors can still write their own message), "No target set" shows instead of targets, and no Google Maps link is filled in.
+
+| ID | Question for Aspire | Current value(s) | Where it appears | Source | Decision | Reference |
+|---|---|---|---|---|---|---|
+| WA-1 | **WhatsApp template "Welcome (first contact)".** Approve the wording? | "Namaste {parent_name} ji, I am {counsellor_name} from Aspire IIT & Medical, {centre}. Thank you for your enquiry about coaching for {student_first_name}. When is a good time for a short call? You can also send your questions here." (+ Hindi and Hinglish, `docs/hindi-review-register.md`) | `/crm/templates` → Approve | Plan §4.4 | | D-080 |
+| WA-2 | **"Missed call".** Approve? | "Namaste {parent_name} ji, I am {counsellor_name} from Aspire IIT & Medical, {centre}. I called about {student_first_name}'s enquiry but could not reach you. Please tell me a time that suits you and I will call again." | `/crm/templates` | Plan §4.4 | | D-080 |
+| WA-3 | **"Centre location".** Approve? (needs MAP-1 for the link) | "Namaste {parent_name} ji, here is our {centre} centre on Google Maps: {centre_map_link}. Please send me a message before you come, so that someone is there to meet you. – {counsellor_name}, Aspire IIT & Medical" | `/crm/templates` | Plan §4.4 | | D-080 |
+| WA-4 | **"Prospectus".** Approve, and give the prospectus link (https)? | "Namaste {parent_name} ji, here is the Aspire IIT & Medical prospectus, as promised: {prospectus_link}. If you have questions after reading it, reply here or tell me a good time to call. – {counsellor_name}, {centre}" · no prospectus link yet | `/crm/templates` → Prospectus link | Plan §4.4 | | D-080 |
+| WA-5 | **"Visit invite".** Approve? | "Namaste {parent_name} ji, you are welcome to visit our {centre} centre with {student_first_name} on {date} at {time}. You can meet a counsellor, see the centre and ask anything. Location: {centre_map_link}. Please reply to confirm. – {counsellor_name}, Aspire IIT & Medical" | `/crm/templates` | Plan §4.4 | | D-080 |
+| WA-6 | **"Scholarship test date".** Approve? | "Namaste {parent_name} ji, the next Aspire scholarship test is on {test_date}. If you would like to register {student_first_name} or have any questions, please reply here. – {counsellor_name}, Aspire IIT & Medical, {centre}" | `/crm/templates` | Plan §4.4 | | D-080 |
+| WA-7 | **"New batch".** Approve? | "Namaste {parent_name} ji, a new batch starts at our {centre} centre on {batch_start}. If {student_first_name} would like to join, or you want more details, reply here and I will call you. – {counsellor_name}, Aspire IIT & Medical" | `/crm/templates` | Plan §4.4 | | D-080 |
+| WA-8 | **"Thank you after a visit".** Approve? | "Namaste {parent_name} ji, thank you for visiting our {centre} centre today with {student_first_name}. If any question comes up at home, just message me here. – {counsellor_name}, Aspire IIT & Medical" | `/crm/templates` | Plan §4.4 | | D-080 |
+| TG-1 | **Admission targets for the 2026–27 session** (1 April 2026 – 31 March 2027), per centre and programme (JEE, NEET, Foundation, Integrated, or "any programme"). Optional: enquiry and counselling targets. | None set ("No target set") | `/crm/targets` (super admin) | Plan §5.B, decision 8 (session targets only, no monthly targets) | | D-078 |
+| MAP-1 | **Google Maps link of each centre** (the link from Google Maps → Share) | None | `/crm/sources#maps` → Edit links (super admin) | Plan §5.J | | D-082 |
+| MAP-2 | **Tagged website link for each centre's Google Business Profile.** Add it to each profile's "Website" field **only after the final web address is live** (decision 17). | Shown with a copy button, e.g. `…/centres?utm_source=google&utm_medium=gbp&utm_campaign=gbp-shimla` | `/crm/sources#maps` | Plan §6.6 | | D-082 |
+| AI-1 | **AI assistants we count.** Visits from these sites (or with these tags) count as "AI assistants (ChatGPT and others)". Add or remove any? | Sites: chatgpt.com, chat.openai.com, openai.com, perplexity.ai, gemini.google.com, bard.google.com, copilot.microsoft.com, copilot.cloud.microsoft, claude.ai, chat.deepseek.com, meta.ai, grok.com, you.com, poe.com, chat.mistral.ai · tags (`utm_source`): chatgpt.com, chatgpt, openai, perplexity, perplexity.ai, gemini, copilot, claude, claude.ai | `/crm/sources` → AI assistants; `/admin/search` | Plan §6.6 | | D-082 |
+| DQ-12 | **Changed from decision 12:** free tool users are triaged by super admins and admins (lead routing's **Tool sign-ups** list) until the tool contact form asks for the district. OK? | Tool sign-ups wait in their own list; Needs attention on Console Home shows how many | `/crm?area=tool_signups`; Console Home → Needs attention | Plan §18 | | D-078 |
+
+Other decision changes in this release (shown in the owner walkthrough): **decision 9**: lead routing's calling hours drive the suggested follow-up times, and 8 am–9 pm is the hard limit; **decision 11**: only super admins edit templates for now; **decision 8**: session targets only, no monthly targets.
+
+---
+
 ## Appendix A: All conflicts (C1–C45)
 
 Each conflict is a question for Aspire. The last column shows which item above answers it.

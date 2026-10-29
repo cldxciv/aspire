@@ -1,4 +1,5 @@
 import { History, Inbox, KeyRound, LogIn, MonitorCheck, Route, UsersRound } from "lucide-react";
+import type { ReactNode } from "react";
 import { ButtonLink } from "@/components/ui";
 import { stockImages } from "@/content/images";
 import type { Locale } from "@/i18n/config";
@@ -36,13 +37,19 @@ export type AdminViewMessages = {
   photoLabel: string;
 };
 
-/** Admin overview. `account` is null for the data-free preview (D-014): tiles show "—". */
+/**
+ * Admin overview. `account` is null for the data-free preview (D-014): tiles show "—".
+ * `numbers` (admin console 1b, 1B-NUMBERS): the five numbers by centre and Needs attention, shown
+ * first; the page passes their preview ("—", no database read) when `account` is null.
+ */
 export function AdminOverview({
   account,
+  numbers,
   locale,
   m,
 }: {
   account: AdminAccountView | null;
+  numbers?: ReactNode;
   locale: Locale;
   m: AdminViewMessages;
 }) {
@@ -64,6 +71,8 @@ export function AdminOverview({
         description={account ? o.lead : o.previewLead}
         badge={account ? undefined : t.blocks.previewBadge}
       />
+
+      {numbers}
 
       <AccountPanel
         id="admin-account"

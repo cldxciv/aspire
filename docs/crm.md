@@ -352,3 +352,83 @@ idempotency) · `crm_erase_suppressions` (keyed hash of an erased family's phone
 2. Change role / scope / active later in the same screen or `PUT /api/crm/staff/:userId` (SA). Disable the account:
    `PATCH /api/admin/users/:id` (SA for staff).
 3. Calling hours and the 1-hour rule: CRM → Settings → **Calling hours & speed**.
+
+## 13. Admin console Phase 1b: numbers, one-step follow-up, WhatsApp templates, family record, sources (D-078 – D-083)
+
+Plan: `docs/admin-phase-1b-plan.md`. Everything below is additive: one new feature schema, new routes and pages, and
+small changes to the inbox query. No new dependencies and no new environment variables.
+
+### 13.1 Role home and navigation
+
+- `GET /[lang]/crm/home` (a route handler, `PORTAL_HOME.staff`) answers 307: CRM admin → `/admin`, area head →
+  `/crm/dashboard`, counsellor → `/crm/today`, question-bank-only staff → `/admin/questions`, other staff → `/crm`,
+  students and parents → their portal, signed out → login with `next=/crm/home`, a pending temporary password → the
+  change-password page. A staff sign-in now lands on `/crm/home`.
+- Staff sidebar: Today's calls, Enquiries, Pipeline, **Admissions done** (all roles), Reports …; area heads and admins
+  also get a **Manage** group (Targets, WhatsApp templates, Lost enquiries to review) and **Lead generation** (Where
+  enquiries come from). Admin console: Lead generation, Google & AI search (`/admin/search`) and Settings → Site status
+  (`/admin/status`). The MCP page is called "AI assistant access".
+
+### 13.2 Pages
+
+| Page | Who | What |
+|---|---|---|
+| `/admin` (top) and `/crm/dashboard` (top) | admins; area heads (their centres) | Five numbers by effective centre + Total, and Needs attention. `/admin` shows today and week; the dashboard shows week only and leaves out lead routing's own unassigned / tool sign-up tiles. Signed-out preview: "—" and "Preview · no live data", no database read. |
+| `/crm/targets` | read: admins, area heads (own centres); edit: super admins | Session targets per centre × programme (JEE, NEET, Foundation, Integrated, Any); "Show optional targets" for enquiries and counselling. |
+| `/crm/admissions` | everyone in the CRM (scoped) | Admissions done per session and centre, 50 per page; erased rows are counted without a name. |
+| `/crm/templates` | read: area heads, admins; edit/approve/retire: super admins | The WhatsApp templates and the prospectus link. |
+| `/crm/lost` | area heads, admins | Lost enquiries to review (7 / 14 / 30 days, by counsellor), Keep lost / Reopen…, and the lost-reasons-by-counsellor table. |
+| `/crm` (Enquiries) | everyone in the CRM | Quick views (presets), removable filter chips, the filter form folded into "Filters (n on)" below `lg`; list rows show "Kullu (from area)" when the centre comes from the area. |
+| `/crm/sources` | area heads (own scope, read-only), admins | Where enquiries come from: channels, Google Maps, AI assistants, campaign tags, referring sites, landing pages, how they heard, Free tools & Rancho, weekly trend; Centre links card (`#maps`, super-admin edit, tagged GBP link with a copy button). |
+| `/admin/search` | admins (English) | Search and AI numbers that can be measured today (30 and 90 days); promises no rankings. |
+| `/admin/status` | admins (English) | Site status (release, mode, disk with a 3 GB warning, database, backups "Not set up (deferred)", integrations) and the static go-live summary. |
+| `/admin/users` | admins (staff creation: super admins) | People: role chips with counts; staff rows show CRM role, access, areas, older centre scope, away-until and open enquiries. |
+| `/admin/audit` | admins | Readable labels for every audit code; repeated enquiry views and AI-assistant tool calls grouped (every entry still listed). |
+| Lead page | anyone who sees the lead | "Log a call" and every Done open the one-step call dialog; WhatsApp composer with "Did you send it?"; More details; Possible duplicates. |
+
+### 13.3 API (same envelope, private headers, same-origin writes, strict zod)
+
+| Method & path | Who | Body / query → data |
+|---|---|---|
+| GET `/api/crm/leads/:leadId/outcome[?taskId=]` | sees the lead | → `FollowUpContextView` (presets, suggestion inputs, attempts, open task, calling hours, slot values); 409 erased |
+| POST `/api/crm/leads/:leadId/outcome` | sees the lead | `{ contact: {channel, outcome, note?, template?: {key, lang}} \| null, taskId?, next: {kind:"preset",preset} \| {kind:"at",at} \| {kind:"none",reason}, nextTitle?, markNotReachable?, markLostWrongNumber? }` → 201; one atomic write; 422 without `next`, outside 08:00–21:00 IST, or a template that is not approved |
+| GET `/api/crm/templates?context=general` / `?all=1` | approved: everyone; `all`: area heads, admins | `WaTemplate[]` (missing seed drafts are added on the first read) |
+| PUT `/api/crm/templates/:key` | super admin | `{ lang, body, expectedVersion }`; an approved template returns to draft; 409 stale |
+| POST `/api/crm/templates/:key/status` | super admin | `{ status: "approved" \| "retired" \| "draft", expectedVersion }` |
+| PUT `/api/crm/templates/links` | super admin | `{ prospectusUrl \| null, expectedVersion }` (https, ≤ 300) |
+| GET/PUT `/api/crm/leads/:leadId/details` | sees the lead | partial `LeadMoreDetails` (`null` clears); GET audited `crm.lead_view`; 409 erased |
+| GET `/api/crm/leads/:leadId/duplicates`; POST `{ otherLeadId, action: "dismiss" }` | sees the lead (dismiss: sees both, and admin, manager or assignee of either) | `DuplicateMatch[]` (≤ 5) |
+| GET `/api/crm/lost-review?days=7\|14\|30&assignee=` | area heads, admins | `LostReviewReport` |
+| POST `/api/crm/lost-review/:leadId` | area heads, admins | `{ lostAt, decision: "kept" \| "reopened", reopenTo?, assigneeId?, followUp? }` |
+| GET/PUT `/api/crm/targets?period=S2026` | read: admins, area heads; PUT: super admin | `TargetGrid`; PUT `{ period, metric, cells, expectedUpdatedAt }`, 409 stale (code `bad_request`) |
+| GET `/api/crm/sources?range=30d\|90d\|session` (or `from`/`to`) `&centre=<slug\|none>` | area heads, admins | `SourcesReport` |
+| GET/PUT `/api/crm/settings/centre-links` | read: area heads, admins; PUT: super admin | each centre's Google Maps link; 409 stale |
+
+Changed: `GET /api/crm/leads` (and the Enquiries page and export) gains `contact=none` (no call or WhatsApp logged
+yet), `signups=hide` (leave out free-tool sign-ups) and `created=today|week|over24h` (IST; replaces
+`createdFrom`/`createdTo`). **`centre` now matches the effective centre**: the lead's own centre, else its routing area's
+default centre (`none` = neither). `LeadSummary.effectiveCentreSlug` carries it. `POST /api/admin/users` for a staff login
+without `crm.crmRole` answers 422. `logContact` takes `extra: { template, lang }` (kept on the timeline entry and after
+erase). Lead links accept `back=/crm/leads/<id>` (back kind `lead`).
+
+### 13.4 Data model (feature `crm_console`, applied right after `crm_intake`; `CREATE … IF NOT EXISTS` only)
+
+| Table | Key | Notes |
+|---|---|---|
+| `crm_lead_details` | `lead_id` | second phone (E.164), school, board, hostel, target exam / year, heard via, referred by, joining session, best time, who decides. Erase wipes the second phone, school and referred-by. |
+| `crm_lead_attribution` | `lead_id` | the referrer host kept after erase (written only by erase). |
+| `crm_targets` | `(period, centre_slug, program, metric)` | `S2026` = 1 Apr 2026 – 31 Mar 2027 IST; month periods allowed by the CHECK but unused in 1b. |
+| `crm_wa_templates` | `key` | `context`, `status` draft / approved / retired, three bodies (≤ 700), `version`. |
+| `crm_duplicate_dismissals` | `(lead_a, lead_b)`, `lead_a < lead_b` | "Not the same family". |
+| `crm_lost_reviews` | `(lead_id, lost_at)` | kept / reopened per lost event. |
+
+Open vocabularies (board, exam, heard via, best time, who decides, programme, metric, template context) have length
+CHECKs only and are validated in code. Settings documents `centre_links` and `wa_links` live in `crm_settings`.
+Nothing is backfilled; the schema applies itself on the first database open.
+
+### 13.5 Audit codes (details never hold family data or URLs)
+
+`settings.targets_update {period, metric, cells}` · `settings.template_update {key, lang, version}` ·
+`settings.template_status {key, status}` · `settings.wa_links_update {version}` · `settings.centre_links_update
+{centres, version}` · `crm.lead_details_update {fields}` · `crm.duplicate_dismiss {otherLeadId}` · `crm.lost_review
+{decision}` · `crm.contact_log` gains `template`. Labels: `src/components/portal/audit-labels.ts`.

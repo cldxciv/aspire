@@ -17,7 +17,17 @@ import type { Role, Session } from "@/lib/auth/roles";
 import { cn } from "@/lib/cn";
 import { resolveCrmViewer } from "@/lib/crm/access";
 import { crmPermissions } from "@/lib/crm/types";
-import { adminChromeFor, crmNavItems, isQuestionBankPath, portalAreas, visibleStaffNavKeys, type CrmNavKey, type PortalArea } from "./areas";
+import {
+  adminChromeFor,
+  crmLeadGenItems,
+  crmManageItems,
+  crmNavItems,
+  isQuestionBankPath,
+  portalAreas,
+  visibleStaffNavKeys,
+  type CrmNavKey,
+  type PortalArea,
+} from "./areas";
 import { ConsoleTopBarTools } from "./ConsoleTopBar";
 import { PortalLanguageSwitcher } from "./PortalLanguageSwitcher";
 import { PortalBreadcrumb, PortalNav, PortalNavLinks, type PortalBreadcrumbMessages, type PortalNavMessages } from "./PortalNav";
@@ -174,17 +184,23 @@ export function crmBreadcrumbMessages(t: Messages<"portal">, crm: Messages<"crm"
       { label: t.areas.admin.label, href: portalAreas.admin.nav[0].href },
       { label: t.navGroups.admission, href: crmNavItems[0].href },
     ],
-    pages: crmNavItems.map((item) => ({ label: labels[item.key as CrmNavKey], href: item.href, exact: item.exact })),
+    // Admin console 1b (§13): the Manage and Lead generation pages are CRM pages too.
+    pages: [...crmNavItems, ...crmManageItems, ...crmLeadGenItems].map((item) => ({ label: labels[item.key as CrmNavKey], href: item.href, exact: item.exact })),
     fallback: crm.lead.metaTitle,
   };
 }
 
-/** Staff (CRM) area: the console names of the CRM pages (`crmPageLabels`). */
+/**
+ * Staff (CRM) area: the console names of the CRM pages (`crmPageLabels`), and (admin console 1b,
+ * §13) the "Manage" / "Lead generation" group headings and the phone "Menu" button.
+ */
 export function staffNavMessages(t: Messages<"portal">, crm: Messages<"crm">): PortalNavMessages {
   return {
     label: format(t.nav.sectionsLabel, { area: crm.area.label }),
     sidebarTitle: crm.area.sidebarTitle,
     items: crmPageLabels(t, crm),
+    groups: t.navGroups,
+    menu: t.shell.menu,
   };
 }
 

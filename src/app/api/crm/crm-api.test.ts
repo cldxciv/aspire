@@ -42,6 +42,7 @@ const exportCsv = await import("./export/route");
 const staff = await import("./staff/route");
 const staffMember = await import("./staff/[userId]/route");
 const rules = await import("./rules/route");
+const crmHome = await import("@/app/[lang]/(portal)/crm/home/route");
 
 type Browser = InstanceType<typeof TestBrowser>;
 
@@ -328,9 +329,10 @@ describe("staff accounts via /api/admin/users", () => {
     const one = (await (await ba.send(adminUser.GET, `/api/admin/users/${user.id}`, {}, params({ userId: user.id }))).json()).data;
     expect(one.crm.centreSlugs).toEqual(["shimla"]);
 
-    // Default membership: counsellor, every centre. CRM settings on other roles are refused.
+    // A staff login must name its CRM role (admin console 1b §5.L). CRM settings on other roles are refused.
     const plain = await ba.send(adminUsers.POST, "/api/admin/users", { body: { role: "staff", displayName: "Counsellor", loginId: "couns.new" } });
-    expect((await plain.json()).data.user.crm).toEqual({ crmRole: "counsellor", centreSlugs: [], active: true });
+    expect(plain.status).toBe(422);
+    expect((await plain.json()).fieldErrors).toEqual({ crm: ["Choose the CRM role."] });
     const wrong = await ba.send(adminUsers.POST, "/api/admin/users", {
       body: { role: "student", displayName: "Learner", loginId: "learner.x", crm: { crmRole: "manager" } },
     });
@@ -366,12 +368,13 @@ describe("staff accounts via /api/admin/users", () => {
       details: { crmRole: "manager", centres: "shimla", active: true },
     });
 
-    // The new staff member signs in on the Staff tab, changes the temporary password, lands on /crm.
+    // The new staff member signs in on the Staff tab, changes the temporary password, lands on their
+    // role home (/crm/home answers 307 to the right page; admin console 1b §5.A).
     const bs = browser();
     const signIn = await bs.send(login.POST, "/api/auth/login", {
       body: { loginId: "mgr.shimla", password: temporaryPassword, role: "staff", next: "/admin" },
     });
-    expect((await signIn.json()).data).toMatchObject({ role: "staff", redirectTo: "/crm/today", mustChangePassword: true });
+    expect((await signIn.json()).data).toMatchObject({ role: "staff", redirectTo: "/crm/home", mustChangePassword: true });
     expect((await api.me(bs)).status).toBe(403); // temporary password pending
     await bs.send(changePassword.POST, "/api/auth/change-password", {
       body: { currentPassword: temporaryPassword, newPassword: "manager-own-password-1" },
@@ -387,6 +390,61 @@ describe("staff accounts via /api/admin/users", () => {
       body: { loginId: "mgr.shimla", password: "manager-own-password-1", role: "student" },
     });
     expect(viaStudentTab.status).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Admin console Phase 1b (docs/admin-phase-1b-plan.md §4.3, §5.A).
+
+describe("admin console 1b: inbox filters and the role home", () => {
+  it("GET /api/crm/leads accepts contact=none, signups=hide and created=…; other values are ignored", async () => {
+    await createTestUser({ role: "admin", loginId: "admin.one", password: PASSWORD });
+    lead1("9876500041", "shimla");
+    const called = lead1("9876500042", "shimla");
+    const ba = await signedIn("admin.one", "admin");
+    expect((await api.contact(ba, called.leadId, { channel: "call", outcome: "busy" })).status).toBe(201);
+    const total = async (query: string) => {
+      const response = await api.list(ba, query);
+      expect(response.status, query).toBe(200);
+      return (await response.json()).data.total as number;
+    };
+    expect(await total("")).toBe(2);
+    expect(await total("?contact=none")).toBe(1);
+    expect(await total("?signups=hide")).toBe(2);
+    expect(await total("?created=week")).toBe(2);
+    expect(await total("?created=over24h")).toBe(0);
+    expect(await total("?stage=new&contact=none&signups=hide&created=over24h")).toBe(0);
+    expect(await total("?centre=shimla&contact=none")).toBe(1);
+    expect(await total("?contact=all&signups=show&created=yesterday")).toBe(2);
+  });
+
+  it("GET /[lang]/crm/home answers 307 to each role's home, in the page's language", async () => {
+    await createTestUser({ role: "admin", loginId: "admin.one", password: PASSWORD });
+    await createTestUser({ role: "admin", loginId: "admin.temp", password: PASSWORD, mustChangePassword: true });
+    await staffUser("mgr.one", { crmRole: "manager" });
+    await staffUser("couns.one", { crmRole: "counsellor" });
+    const qbOnly = await staffUser("qb.only", null);
+    await staffUser("staff.bare", null);
+    getDb()
+      .prepare("INSERT INTO qb_members (user_id, qb_role, subjects, active, created_at, updated_at) VALUES (?, 'author', '[]', 1, ?, ?)")
+      .run(qbOnly.id, Date.now(), Date.now());
+
+    const home = async (b: Browser, lang: "en" | "hi" = "en") => {
+      const response = await b.send(crmHome.GET, `/${lang}/crm/home`, {}, params({ lang }));
+      expect(response.status).toBe(307);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+      return response.headers.get("location");
+    };
+    expect(await home(browser())).toBe("/login?next=%2Fcrm%2Fhome");
+    expect(await home(browser(), "hi")).toBe("/hi/login?next=%2Fcrm%2Fhome");
+    expect(await home(await signedIn("admin.one", "admin"))).toBe("/admin");
+    expect(await home(await signedIn("admin.one", "admin"), "hi")).toBe("/hi/admin");
+    expect(await home(await signedIn("mgr.one", "staff"))).toBe("/crm/dashboard");
+    expect(await home(await signedIn("couns.one", "staff"), "hi")).toBe("/hi/crm/today");
+    expect(await home(await signedIn("qb.only", "staff"))).toBe("/admin/questions");
+    expect(await home(await signedIn("staff.bare", "staff"))).toBe("/crm");
+    expect(await home(await signedIn("admin.temp", "admin"))).toBe("/account/password?next=%2Fcrm%2Fhome");
   });
 });
 

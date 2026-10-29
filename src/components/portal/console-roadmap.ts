@@ -12,37 +12,18 @@ export type RoadmapPhase = { phase: RoadmapPhaseKey; current?: boolean; items: R
  * approved order of docs/admin-console-plan.md (§2.3, §3, §4). Unbuilt pages never get an empty
  * sidebar entry; they are listed here instead, each with the console section it will live in.
  * Copy lives in `portal.admin.coming` (every item key appears here exactly once). When a page
- * ships, remove it here and add it to the sidebar (`areas.ts`).
+ * ships, remove it here and add it to the sidebar (`areas.ts`). A released phase keeps its panel
+ * (status "Released") with no items.
  */
 export const consoleRoadmap: RoadmapPhase[] = [
-  {
-    phase: "p1a",
-    current: true,
-    items: [
-      { key: "addEnquiry", section: "admission" },
-      { key: "editErase", section: "admission" },
-      { key: "backButton", section: "admission" },
-    ],
-  },
-  {
-    phase: "p1b",
-    items: [
-      { key: "dashboardNumbers", section: "dashboard" },
-      { key: "callOutcomes", section: "admission" },
-      { key: "whatsappTemplates", section: "admission" },
-      { key: "enquiryDetails", section: "admission" },
-      { key: "admissionsTargets", section: "admission" },
-      { key: "leaveCover", section: "admission" },
-      { key: "sources", section: "leadGeneration" },
-      { key: "freeTools", section: "leadGeneration" },
-      { key: "searchOverview", section: "search" },
-      { key: "people", section: "access" },
-      { key: "siteStatus", section: "settings" },
-      { key: "readableLog", section: "settings" },
-    ],
-  },
+  // Phase 1a (add, edit and erase enquiries; Back) and Phase 1b (docs/admin-phase-1b-plan.md:
+  // numbers, call outcomes, WhatsApp templates, family details, targets, lost review, sources,
+  // search overview, People, Site status, readable log) are released.
+  { phase: "p1a", items: [] },
+  { phase: "p1b", items: [] },
   {
     phase: "p2",
+    current: true,
     items: [
       { key: "factSheet", section: "admission" },
       { key: "visits", section: "admission" },

@@ -122,7 +122,7 @@ describe("with the real service catalogue (src/lib/mcp/scopes.ts)", () => {
     const t = messagesFor("en", "mcp");
     const lines = permissionSummaryLines(MCP_SERVICE_VIEWS, { accounts: "write", content: "read" }, t.create, t.services);
     expect(lines).toEqual({
-      read: "Can read: Accounts, Programs, centres & results",
+      read: "Can read: Accounts, Website content",
       write: "Can change: Accounts",
     });
     expect(permissionSummaryLines(MCP_SERVICE_VIEWS, { site: "read" }, t.create, t.services)?.write).toBe("Can change: nothing");

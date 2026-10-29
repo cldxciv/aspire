@@ -346,6 +346,7 @@ export function ReportsView({
   range,
   permissions,
   centres,
+  activity,
   locale,
   t,
 }: {
@@ -353,6 +354,8 @@ export function ReportsView({
   range: ReportRange;
   permissions: CrmPermissions;
   centres: Readonly<Record<string, string>>;
+  /** Admin console 1b (1B-NUMBERS): the "Counsellor activity" section, shown before the export. */
+  activity?: React.ReactNode;
   locale: Locale;
   t: CrmMessages;
 }) {
@@ -451,6 +454,8 @@ export function ReportsView({
           <GateDailyTable days={report.gateDaily} locale={locale} t={t} />
         </PortalPanel>
       )}
+
+      {activity}
 
       <PortalPanel id="crm-report-export" title={r.exportTitle}>
         {permissions.canExport ? (

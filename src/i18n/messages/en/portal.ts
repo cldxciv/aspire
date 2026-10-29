@@ -29,9 +29,13 @@ const portal = {
     website: "What's on the website",
     users: "User accounts",
     audit: "Activity log",
-    mcp: "AI agent access",
+    // Admin console 1b (docs/admin-phase-1b-plan.md §5.L): plain words for the MCP page.
+    mcp: "AI assistant access",
     questionBank: "Question bank",
     pageLayout: "Page layout",
+    // Admin console 1b (§13): Site status (1B-HOUSEKEEPING) and Search overview (1B-SOURCES).
+    status: "Site status",
+    searchOverview: "Search overview",
   },
   /**
    * Plain console names for admissions (CRM) pages whose `crm.nav` label differs (decision 2).
@@ -55,6 +59,8 @@ const portal = {
     access: "Users & access",
     settings: "Settings & audit",
     tests: "Tests & question bank",
+    // Admin console 1b (§13): Targets, WhatsApp templates and Lost review (area heads and admins).
+    manage: "Manage",
   },
   shell: {
     viewWebsite: "View website",
@@ -286,22 +292,22 @@ const portal = {
       metaTitle: "What's coming",
       metaDescription: "The admin console pages and features planned next, by phase.",
       title: "What's coming",
-      lead: "Every page in the sidebar works today. Everything below is planned, in this order, and appears in the sidebar only once it works.",
+      lead: "Every page in the sidebar works today. Released phases are marked; everything else is planned, in this order, and appears in the sidebar only once it works.",
       sectionLabel: "Section",
       phases: {
         p1a: {
           name: "Phase 1a · Clean up the console",
-          status: "Being built now",
+          status: "Released",
           outcome: "Nothing says “not connected”, Back returns to where you were, and staff add, edit and erase enquiries on screen.",
         },
         p1b: {
           name: "Phase 1b · Your numbers and faster follow-ups",
-          status: "Next",
+          status: "Released",
           outcome: "Five numbers by centre against target, one-step call logging and where enquiries come from.",
         },
         p2: {
           name: "Phase 2 · Admission season",
-          status: "Planned",
+          status: "Next",
           outcome: "The scholarship test, visits and demo classes run in the console, and counsellors have a fact sheet.",
         },
         p3: {
@@ -326,66 +332,6 @@ const portal = {
         },
       },
       items: {
-        addEnquiry: {
-          title: "Add an enquiry",
-          body: "Walk-ins, phone calls and referrals, with how the family gave consent. A family already on file opens their record instead.",
-        },
-        editErase: {
-          title: "Edit and erase enquiries",
-          body: "Correct names and classes on screen. Admins can erase a record, with a reason.",
-        },
-        backButton: {
-          title: "Back returns to where you were",
-          body: "From Today's calls, Pipeline or a search, not always the inbox.",
-        },
-        dashboardNumbers: {
-          title: "Five numbers by centre",
-          body: "Enquiries today and this week, not yet called, overdue follow-ups, admissions against target and top sources, plus a “Needs attention” list.",
-        },
-        callOutcomes: {
-          title: "One-tap call outcomes",
-          body: "Log a call and set the next follow-up in one step, with suggested times and follow-up rules by stage.",
-        },
-        whatsappTemplates: {
-          title: "WhatsApp templates",
-          body: "Ready messages in English, Hindi and Hinglish. Staff always press send themselves.",
-        },
-        enquiryDetails: {
-          title: "More enquiry details and duplicate suggestions",
-          body: "School, board, town, hostel, how they heard and intake session; possible duplicates shown to staff.",
-        },
-        admissionsTargets: {
-          title: "Admissions done and targets",
-          body: "Admitted students this session against your targets, by centre and program.",
-        },
-        leaveCover: {
-          title: "Leave cover and lost-enquiry review",
-          body: "Hand a counsellor's enquiries to someone else in one go; managers review lost enquiries weekly.",
-        },
-        sources: {
-          title: "Where enquiries come from",
-          body: "Source, campaign tag, Google Maps and referring site (including ChatGPT and other AI assistants), with how many reached counselling and admission.",
-        },
-        freeTools: {
-          title: "Free tools & Rancho",
-          body: "Tool use per day and enquiries per tool; grows when the tool contact form ships.",
-        },
-        searchOverview: {
-          title: "Enquiries from Google and AI assistants",
-          body: "The search numbers that can be measured today.",
-        },
-        people: {
-          title: "People: one list for every account",
-          body: "Staff show their role and centres, and staff are created in one place only.",
-        },
-        siteStatus: {
-          title: "Site status and go-live checklist",
-          body: "Demo or production mode, last backup, free disk and what still blocks go-live.",
-        },
-        readableLog: {
-          title: "Readable activity log",
-          body: "Plain words for every action; repeated record views grouped together.",
-        },
         factSheet: {
           title: "Fact sheet",
           body: "Per centre: batches, start dates, timings, fees, test dates, scholarship slabs and hostel. Internal only.",

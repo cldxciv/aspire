@@ -607,3 +607,46 @@ describe("list privacy, tool ids and display names (CRM-UI requests)", () => {
     expect(detail.data.activities.find((x) => x.type === "task_created")?.meta.assigneeName).toBe(`Staff ${other.loginId}`);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Admin console Phase 1b (docs/admin-phase-1b-plan.md §4.3): the new inbox filters.
+
+describe("admin console 1b inbox filters (§4.3)", () => {
+  it("contact=none, signups=hide and created=today|week|over24h narrow the inbox; centre compares the effective centre", () => {
+    // NOW is Tuesday 20 Oct 2026, 11:30 IST: the week started on Monday 19 Oct, 00:00 IST.
+    const fresh = capture({ phone: "9876500101" }, NOW).leadId;
+    const called = capture({ phone: "9876500102" }, NOW - 20 * HOUR).leadId;
+    const older = capture({ phone: "9876500103" }, NOW - 3 * DAY).leadId;
+    const signup = captureLead(input({ phone: "9876500104", source: "tool", consent: { textVersion: "2026-10-21.gate.v1" } }), NOW - HOUR, { gate: true });
+    if (!signup.ok) throw new Error("capture failed");
+    // No centre of its own, but routed by district to Mandi, which the Kullu centre serves.
+    const routed = capture({ phone: "9876500105", centreSlug: null, district: "mandi" }, NOW - 2 * HOUR).leadId;
+    expect(logContact(admin, called, { channel: "call", outcome: "no_answer" }, NOW - 19 * HOUR).ok).toBe(true);
+
+    const ids = (filters: Parameters<typeof listLeads>[1]) => listLeads(admin, filters, { pageSize: 100 }, NOW).items.map((lead) => lead.id).sort();
+    expect(ids({ created: "today" })).toEqual([fresh, signup.leadId, routed].sort());
+    expect(ids({ created: "week" })).toEqual([fresh, called, signup.leadId, routed].sort());
+    expect(ids({ created: "over24h" })).toEqual([older]);
+    expect(ids({ contact: "none" })).toEqual([fresh, older, signup.leadId, routed].sort());
+    expect(ids({ signups: "hide" })).toEqual([fresh, called, older, routed].sort());
+    expect(ids({ stage: "new", contact: "none", signups: "hide", created: "today" })).toEqual([fresh, routed].sort());
+    expect(ids({ centre: "kullu" })).toEqual([routed]);
+    expect(ids({ centre: "shimla" })).toEqual([fresh, called, older, signup.leadId].sort());
+    expect(ids({ centre: "none" })).toEqual([]);
+    // `created` replaces explicit dates; unknown values are ignored by the service.
+    expect(ids({ created: "today", createdFrom: "2020-01-01" })).toEqual(ids({ created: "today" }));
+    expect(ids({ created: "someday" as never })).toHaveLength(5);
+  });
+
+  it("logContact keeps the WhatsApp template and language, and an erase keeps them (non-personal)", () => {
+    const { leadId } = capture({ phone: "9876500111" });
+    expect(logContact(admin, leadId, { channel: "whatsapp", outcome: "message_sent", extra: { template: "missed_call", lang: "hi" } }, NOW)).toMatchObject({
+      ok: true,
+      data: { meta: { outcome: "message_sent", template: "missed_call", lang: "hi" } },
+    });
+    expect(eraseLead(admin, leadId, NOW + 1).ok).toBe(true);
+    const detail = getLead(admin, leadId, NOW + 1, { audit: false });
+    if (!detail.ok) throw new Error("lead missing");
+    expect(detail.data.activities.find((x) => x.type === "whatsapp")?.meta).toEqual({ outcome: "message_sent", template: "missed_call", lang: "hi" });
+  });
+});

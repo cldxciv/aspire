@@ -16,8 +16,10 @@ import {
   type SlaFilter,
 } from "@/lib/crm/lead-ops-types";
 import {
+  CREATED_FILTERS,
   isGateConsentVersion,
   isLeadStage,
+  type CreatedFilter,
   type LeadActivity,
   type LeadFilters,
   type LeadStage,
@@ -398,9 +400,33 @@ export interface InboxFilters {
   area?: string;
   /** "" any, or `open` / `overdue` / `escalated`. */
   sla?: SlaFilter | "";
+  /** Admin console 1b (§4.3): "" any, or `none` (no call or WhatsApp logged yet). Optional for older callers. */
+  contact?: "none" | "";
+  /** "" any, or `hide` (leave out free-tool sign-ups). */
+  signups?: "hide" | "";
+  /** "" any, or `today` / `week` / `over24h` (created; IST, resolved by the server). */
+  created?: CreatedFilter | "";
 }
 
-export const EMPTY_FILTERS: InboxFilters = { q: "", stage: "", centre: "", program: "", source: "", assignee: "", due: "", page: 1, area: "", sla: "" };
+export const EMPTY_FILTERS: InboxFilters = {
+  q: "",
+  stage: "",
+  centre: "",
+  program: "",
+  source: "",
+  assignee: "",
+  due: "",
+  page: 1,
+  area: "",
+  sla: "",
+  contact: "",
+  signups: "",
+  created: "",
+};
+
+/** The URL keys of the inbox filters, in query-string order (the page number goes last). */
+export const INBOX_FILTER_KEYS = ["q", "stage", "centre", "program", "source", "assignee", "due", "area", "sla", "contact", "signups", "created"] as const;
+export type InboxFilterKey = (typeof INBOX_FILTER_KEYS)[number];
 
 type RawParams = Record<string, string | string[] | undefined> | URLSearchParams;
 
@@ -425,6 +451,7 @@ export function parseInboxFilters(params: RawParams): InboxFilters {
   };
   const area = first(params, "area").toLowerCase();
   const sla = first(params, "sla");
+  const created = first(params, "created");
   return {
     q: first(params, "q").slice(0, 80),
     stage: isLeadStage(stage) || stage === "open" ? stage : "",
@@ -436,6 +463,9 @@ export function parseInboxFilters(params: RawParams): InboxFilters {
     page: Number.isFinite(page) && page > 1 && page < 10_000 ? page : 1,
     area: area === AREA_FILTER_NONE || area === AREA_FILTER_TOOL_SIGNUPS || /^[a-z0-9-]{1,64}$/.test(area) ? area : "",
     sla: (SLA_FILTERS as readonly string[]).includes(sla) ? (sla as SlaFilter) : "",
+    contact: first(params, "contact") === "none" ? "none" : "",
+    signups: first(params, "signups") === "hide" ? "hide" : "",
+    created: (CREATED_FILTERS as readonly string[]).includes(created) ? (created as CreatedFilter) : "",
   };
 }
 
@@ -443,7 +473,7 @@ export function parseInboxFilters(params: RawParams): InboxFilters {
 export function inboxQuery(filters: InboxFilters, overrides: Partial<InboxFilters> = {}): string {
   const merged = { ...filters, ...overrides };
   const params = new URLSearchParams();
-  for (const key of ["q", "stage", "centre", "program", "source", "assignee", "due", "area", "sla"] as const) {
+  for (const key of INBOX_FILTER_KEYS) {
     const value = merged[key];
     if (value) params.set(key, value);
   }
@@ -464,13 +494,48 @@ export function toLeadFilters(filters: InboxFilters): LeadFilters {
   if (filters.due) out.due = filters.due;
   if (filters.area) out.area = filters.area;
   if (filters.sla) out.sla = filters.sla;
+  if (filters.contact) out.contact = filters.contact;
+  if (filters.signups) out.signups = filters.signups;
+  if (filters.created) out.created = filters.created;
   return out;
 }
 
 export function hasActiveFilters(filters: InboxFilters): boolean {
-  return Boolean(
-    filters.q || filters.stage || filters.centre || filters.program || filters.source || filters.assignee || filters.due || filters.area || filters.sla,
-  );
+  return INBOX_FILTER_KEYS.some((key) => Boolean(filters[key]));
+}
+
+/** The console filters (admin console 1b, §4.3) that the filter form has no field for. */
+export const CONSOLE_FILTER_KEYS = ["contact", "signups", "created"] as const;
+export type ConsoleFilterKey = (typeof CONSOLE_FILTER_KEYS)[number];
+
+/** One removable filter chip: its label and the inbox query WITHOUT that filter (page reset). */
+export interface FilterChip {
+  key: InboxFilterKey;
+  label: string;
+  /** Leading "?" or "" (the same list without this filter). */
+  removeQuery: string;
+}
+
+/**
+ * Chips for the console filters that dashboard links add (`contact=none`, `signups=hide`,
+ * `created=…`), so a list opened from a number always says what it is filtered by and each filter
+ * can be removed on its own. 1B-FAMILY's FilterChips adds the form filters' chips.
+ * Privacy (plan §1.2 rule 11): `removeQuery` keeps the viewer's own current search `q` — the one
+ * allowed exception, because it only points back at the same inbox page whose URL already carries
+ * that `q` (as pagination does). Never reuse a chip link outside the inbox.
+ */
+export function consoleFilterChips(t: CrmMessages, filters: InboxFilters): FilterChip[] {
+  const chips: FilterChip[] = [];
+  const c = t.inbox.chips;
+  const add = (key: ConsoleFilterKey, label: string) => {
+    const without: Partial<InboxFilters> = { page: 1 };
+    without[key] = "";
+    chips.push({ key, label, removeQuery: inboxQuery(filters, without) });
+  };
+  if (filters.contact === "none") add("contact", c.contactNone);
+  if (filters.signups === "hide") add("signups", c.signupsHide);
+  if (filters.created) add("created", format(c.created, { when: c.createdValues[filters.created] }));
+  return chips;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -486,7 +551,11 @@ export const BACK_PARAM = "back";
  * server page reads the real string (a client module's exports are references on the server).
  */
 export const ADD_LEAD_PARAM = "add";
-export type BackKind = "inbox" | "search" | "today" | "pipeline";
+/**
+ * Admin console 1b adds `admissions` (Admissions done), `lost` (Lost review), `dashboard`, and `lead`
+ * (another enquiry's page, e.g. the "Open" link of a possible duplicate).
+ */
+export type BackKind = "inbox" | "search" | "today" | "pipeline" | "admissions" | "lost" | "dashboard" | "lead";
 export interface BackTarget {
   /** LOCALE-FREE path + rebuilt query, e.g. `/crm?stage=new`. Localise with `localePath`. */
   path: string;
@@ -503,6 +572,37 @@ export function parseBackParam(raw: unknown): BackTarget | null {
   const path = mark === -1 ? value : value.slice(0, mark);
   const query = mark === -1 ? "" : value.slice(mark + 1);
   if (path === "/crm/today") return { path, kind: "today" };
+  // Admin console 1b: back to the enquiry a duplicate suggestion was opened from (the id only, no query).
+  if (/^\/crm\/leads\/[A-Za-z0-9_-]{1,64}$/.test(path)) return { path, kind: "lead" };
+  // Admin console 1b: the console lists keep only their own enum / slug / id parameters.
+  if (path === "/crm/admissions" || path === "/crm/lost" || path === "/crm/dashboard") {
+    let params: URLSearchParams;
+    try {
+      params = new URLSearchParams(query);
+    } catch {
+      params = new URLSearchParams();
+    }
+    const kept = new URLSearchParams();
+    const keep = (key: string, valid: (value: string) => boolean) => {
+      const value = params.get(key);
+      if (value !== null && valid(value)) kept.set(key, value);
+    };
+    if (path === "/crm/admissions") {
+      keep("session", (value) => /^S\d{4}$/.test(value));
+      keep("centre", (value) => SLUG.test(value));
+      keep("page", (value) => /^\d{1,4}$/.test(value) && Number(value) > 1);
+    } else if (path === "/crm/lost") {
+      keep("days", (value) => value === "7" || value === "14" || value === "30");
+      keep("assignee", (value) => ID.test(value));
+    } else {
+      keep("area", (value) => ID.test(value));
+      keep("from", (value) => /^\d{4}-\d{2}-\d{2}$/.test(value));
+      keep("to", (value) => /^\d{4}-\d{2}-\d{2}$/.test(value));
+    }
+    const rebuilt = kept.toString();
+    const kind: BackKind = path === "/crm/admissions" ? "admissions" : path === "/crm/lost" ? "lost" : "dashboard";
+    return { path: rebuilt ? `${path}?${rebuilt}` : path, kind };
+  }
   if (path !== "/crm" && path !== "/crm/pipeline") return null;
   let filters: InboxFilters;
   try {

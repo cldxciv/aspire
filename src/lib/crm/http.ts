@@ -13,7 +13,20 @@ import { SlidingWindowRateLimiter } from "@/lib/server/rate-limit";
 
 import { CRM_MESSAGES, resolveCrmViewer } from "./access";
 import { SLA_FILTERS, type SlaFilter } from "./lead-ops-types";
-import { isLeadStage, LEAD_SORTS, type CrmResult, type CrmViewer, type LeadFilters, type LeadSort } from "./types";
+import {
+  CONTACT_FILTERS,
+  CREATED_FILTERS,
+  isLeadStage,
+  LEAD_SORTS,
+  SIGNUPS_FILTERS,
+  type ContactFilter,
+  type CreatedFilter,
+  type CrmResult,
+  type CrmViewer,
+  type LeadFilters,
+  type LeadSort,
+  type SignupsFilter,
+} from "./types";
 
 /**
  * Route-handler plumbing for /api/crm/** (same rules as the admin APIs): same-origin for writes,
@@ -198,6 +211,13 @@ export function leadFiltersFromSearch(params: URLSearchParams): LeadFilters {
   if (area !== undefined && ID.test(area)) filters.area = area;
   const sla = get("sla");
   if (sla !== undefined && (SLA_FILTERS as readonly string[]).includes(sla)) filters.sla = sla as SlaFilter;
+  // Admin console 1b (§4.3): `contact=none`, `signups=hide`, `created=today|week|over24h`.
+  const contact = get("contact");
+  if (contact !== undefined && (CONTACT_FILTERS as readonly string[]).includes(contact)) filters.contact = contact as ContactFilter;
+  const signups = get("signups");
+  if (signups !== undefined && (SIGNUPS_FILTERS as readonly string[]).includes(signups)) filters.signups = signups as SignupsFilter;
+  const created = get("created");
+  if (created !== undefined && (CREATED_FILTERS as readonly string[]).includes(created)) filters.created = created as CreatedFilter;
   return filters;
 }
 

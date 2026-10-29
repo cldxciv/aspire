@@ -14,10 +14,11 @@ import {
   type CrmAccess,
 } from "@/components/crm/CrmGate";
 import { ADD_LEAD_PARAM, inboxQuery, parseInboxFilters, toLeadFilters, type CrmMessages } from "@/components/crm/format";
-import { InboxFiltersForm, LeadList, type InboxOptions } from "@/components/crm/InboxView";
+import { InboxControls, LeadList, type InboxOptions, type InboxPresetContext } from "@/components/crm/InboxView";
 import type { Locale } from "@/i18n/config";
 import { getLocale, getMessages } from "@/i18n/server";
 import { leadFilterForbidden, listLeads, listStaff } from "@/lib/crm";
+import { consoleCentres, titleCaseSlug, viewerCentreSlugs } from "@/lib/crm/console/centres";
 import { listAreaNames } from "@/lib/crm/repo/areas-core";
 import { getDb } from "@/lib/db/connection";
 
@@ -71,6 +72,12 @@ async function Inbox({ access, searchParams, locale, t }: { access: CrmAccess; s
         : [],
     areas: permissions.canAssign ? areaOptions(t, locale, areaNames) : undefined,
   };
+  // Admin console 1b (§5.I): quick views — "This centre" for the centres in the viewer's scope.
+  const labels = new Map((await consoleCentres(getDb(), locale)).flatMap((centre) => (centre.slug ? [[centre.slug, centre.label] as const] : [])));
+  const presets: InboxPresetContext = {
+    viewer: { role: viewer.role },
+    centres: (viewerCentreSlugs(getDb(), viewer) ?? [...labels.keys()]).map((slug) => ({ slug, label: labels.get(slug) ?? titleCaseSlug(slug) })),
+  };
   const page = listLeads(viewer, toLeadFilters(filters), { page: filters.page }, now);
   const addParam = params[ADD_LEAD_PARAM];
   const openAdd = permissions.canCreateLeads && (Array.isArray(addParam) ? addParam[0] : addParam) === "1";
@@ -86,7 +93,7 @@ async function Inbox({ access, searchParams, locale, t }: { access: CrmAccess; s
           />
         </div>
       )}
-      <InboxFiltersForm filters={filters} options={options} permissions={permissions} locale={locale} t={t} />
+      <InboxControls filters={filters} options={options} permissions={permissions} presets={presets} locale={locale} t={t} />
       <LeadList
         page={page}
         filters={filters}

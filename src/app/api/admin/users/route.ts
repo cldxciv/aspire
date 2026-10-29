@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
+import { z } from "zod";
 
-import { adminCreateUser, adminListUsers, type PublicUser } from "@/lib/auth/accounts";
+import { adminCreateUser, adminListUsers } from "@/lib/auth/accounts";
 import { authLog } from "@/lib/auth/log";
 import { AUTH_MESSAGES } from "@/lib/auth/messages";
 import { parseJsonBody, REQUEST_MESSAGES } from "@/lib/auth/request";
@@ -9,21 +10,23 @@ import { isRole } from "@/lib/auth/roles";
 import { requireAdmin, serverError } from "@/lib/auth/route-helpers";
 import { isSuperAdmin } from "@/lib/auth/super-admin";
 import { createUserBodySchema } from "@/lib/auth/schemas";
-import { staffMemberships, validateStaffInput, writeStaffMembership } from "@/lib/crm";
+import { validateStaffInput, writeStaffMembership } from "@/lib/crm";
 import { findAreasActive } from "@/lib/crm/repo/areas-core";
 import { setUserAreas } from "@/lib/crm/routing";
 import { staffAccountCrmSchema } from "@/lib/crm/schemas";
+import { CRM_ROLES } from "@/lib/crm/types";
+import { withPeopleCrm } from "@/lib/console/people";
+import { CRM_ROLE_REQUIRED_MESSAGE } from "@/lib/console/people-types";
 import { getDb } from "@/lib/db/connection";
 
-/** POST body: the core fields plus, for `staff` accounts, their CRM membership (M7) and areas (lead routing §21). */
-const createBodySchema = createUserBodySchema.extend({ crm: staffAccountCrmSchema.optional() });
-
-/** Adds the CRM membership to staff accounts (null when none yet). */
-function withCrm(users: PublicUser[]): PublicUser[] {
-  if (!users.some((user) => user.role === "staff")) return users;
-  const memberships = staffMemberships();
-  return users.map((user) => (user.role === "staff" ? { ...user, crm: memberships.get(user.id) ?? null } : user));
-}
+/**
+ * POST body: the core fields plus, for `staff` accounts, their CRM membership (M7) and areas (lead
+ * routing §21). Admin console 1b (§5.L): the CRM role has NO default here; a staff login without
+ * one is refused (422) instead of silently becoming "counsellor, every centre".
+ */
+const createBodySchema = createUserBodySchema.extend({
+  crm: staffAccountCrmSchema.extend({ crmRole: z.enum(CRM_ROLES, { error: CRM_ROLE_REQUIRED_MESSAGE }).optional() }).optional(),
+});
 
 const AREA_MESSAGES = {
   unknown_area: "Choose areas from the list.",
@@ -41,8 +44,9 @@ class AreaAssignmentError extends Error {
 
 /**
  * GET /api/admin/users[?role=student|parent|admin|staff] — every account (no password hashes),
- * with parent↔student link ids and, for staff, `crm: { crmRole, centreSlugs, active } | null`.
- * Admin only.
+ * with parent↔student link ids and, for staff, `crm: { crmRole, centreSlugs, active, areaIds,
+ * areaNames, awayUntil, openLeads } | null` (admin console 1b §5.L: lead routing's areas, "Away
+ * until" while it lasts, open enquiries assigned to the person). Admin only.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -50,7 +54,7 @@ export async function GET(request: NextRequest) {
     if (!auth.ok) return auth.response;
     const role = request.nextUrl.searchParams.get("role");
     if (role !== null && !isRole(role)) return portalApiError("bad_request", AUTH_MESSAGES.invalidRoleFilter);
-    return portalApiList(withCrm(adminListUsers(role ? { role } : {})));
+    return portalApiList(withPeopleCrm(adminListUsers(role ? { role } : {})));
   } catch (error) {
     return serverError("admin_users", error);
   }
@@ -60,7 +64,8 @@ export async function GET(request: NextRequest) {
  * POST /api/admin/users — `{ role, displayName, loginId, crm? }`. Same-origin, admin only; a
  * `staff` (CRM) account needs a SUPER ADMIN (D-044, Q7: 403 otherwise). `crm`
  * (`{ crmRole: "counsellor" | "manager", centreSlugs?: string[], areaIds?: string[] }`) only for
- * `role: "staff"` (default: counsellor, every centre); the account, its CRM membership and its
+ * `role: "staff"`, where `crm.crmRole` is REQUIRED (422 `{ crm: ["Choose the CRM role."] }`, checked
+ * after the super-admin rule; admin console 1b §5.L); the account, its CRM membership and its
  * areas (`setUserAreas` seam; an unknown area → 422) are created in one transaction. 201
  * `{ user, temporaryPassword }`: the temporary password is generated server-side and returned ONCE
  * (it is not stored in clear anywhere); the user must change it at first sign-in. 422 for an
@@ -94,7 +99,11 @@ export async function POST(request: NextRequest) {
         authLog({ action: "admin_users", outcome: "forbidden" });
         return portalApiError("forbidden", AUTH_MESSAGES.staffSuperAdminOnly);
       }
-      membership = validateStaffInput({ crmRole: crm?.crmRole ?? "counsellor", centreSlugs: crm?.centreSlugs ?? [], active: true });
+      // The CRM role is chosen on purpose, never defaulted (admin console 1b §5.L).
+      if (!crm?.crmRole) {
+        return portalApiError("validation", REQUEST_MESSAGES.validation, { fieldErrors: { crm: [CRM_ROLE_REQUIRED_MESSAGE] } });
+      }
+      membership = validateStaffInput({ crmRole: crm.crmRole, centreSlugs: crm.centreSlugs ?? [], active: true });
       if (!membership.ok) {
         return portalApiError("validation", REQUEST_MESSAGES.validation, { fieldErrors: membership.fieldErrors });
       }
@@ -137,7 +146,7 @@ export async function POST(request: NextRequest) {
       return portalApiError("validation", REQUEST_MESSAGES.validation, { fieldErrors });
     }
     authLog({ action: "admin_users", outcome: "success" });
-    const [user] = withCrm([result.user]);
+    const [user] = withPeopleCrm([result.user]);
     return portalApiItem({ user, temporaryPassword: result.temporaryPassword }, { status: 201 });
   } catch (error) {
     return serverError("admin_users", error);

@@ -2,41 +2,43 @@
  * Namespace "mcp" — admin MCP access tokens page (owner: MCP-ADMIN). English defines the shape;
  * ../hi/mcp.ts must match it. Plain object, no `as const` (see src/i18n/README.md).
  * Service keys match the service ids in src/lib/mcp/scopes.ts (MCP-CORE).
+ * Admin console 1b (§5.L, 1B-HOUSEKEEPING): plain words, "AI assistant access" and plain service
+ * names; only the wording changed (keys, services and scopes are the same).
  */
 const mcp = {
   meta: {
-    title: "AI agent access (MCP)",
-    description: "Create and revoke access tokens for Claude agents that connect to this website's MCP server.",
+    title: "AI assistant access",
+    description: "Let an AI assistant such as Claude look things up or add notes for you, with access tokens you can revoke at any time.",
   },
   /** Admin sidebar label for /admin/mcp (the lead wires it into the portal nav). */
   nav: {
-    label: "AI agent access",
+    label: "AI assistant access",
   },
   page: {
-    title: "AI agent access (MCP)",
-    lead: "Connect a Claude agent to this website with an access token. You choose what each token may read or change, service by service, and you can revoke it at any time.",
-    previewLead: "A data-free preview of agent access. Sign in with an admin account to create or revoke tokens.",
+    title: "AI assistant access",
+    lead: "Let an AI assistant such as Claude look things up or add notes for you. You choose what it may see or change, service by service.",
+    previewLead: "A data-free preview of AI assistant access. Sign in with an admin account to create or revoke access tokens.",
     previewTitle: "Access tokens",
     previewEmpty: "Access tokens are listed here once you sign in with an admin account.",
   },
   explainer: {
-    title: "How agent access works",
+    title: "How AI assistant access works",
     whatTitle: "What is MCP?",
     what: "The Model Context Protocol (MCP) is an open standard that lets an AI assistant such as Claude use the tools a website offers. This website's MCP server is at:",
     setupTitle: "Connect Claude Code",
     setup: "After you create a token, copy the ready-made command from the dialog and run it in a terminal on the computer where you use Claude Code.",
     servicesTitle: "What each permission allows",
-    servicesLead: "Permissions are set per service. Read lets an agent look things up. Write lets it make changes as well, and always includes Read.",
+    servicesLead: "Permissions are set per service. Read lets the assistant look things up. Write lets it make changes as well, and always includes Read.",
     read: "Read",
     write: "Write",
     noWrite: "Read only: this service has no write tools.",
     comingSoon: "Coming soon",
     writeWarningTitle: "Write permissions change real data",
-    writeWarning: "With Write, an agent can make changes on this website on your behalf, for example create or disable accounts. Grant it only to an agent you trust and supervise, only for the services it needs, and prefer a short expiry.",
+    writeWarning: "With Write, an AI assistant can make changes on this website on your behalf, for example create or disable accounts. Grant it only to an assistant you trust and supervise, only for the services it needs, and prefer a short expiry.",
     auditTitle: "Every call is recorded",
-    audit: "Every tool call an agent makes is written to the audit log (as “mcp.” actions) under the admin who created the token, so you can always see what it did.",
+    audit: "Every tool call an AI assistant makes is written to the activity log under the admin who created the token, so you can always see what it did.",
     secretTitle: "Tokens are secrets",
-    secret: "Anyone holding a token can act with its permissions until it expires or is revoked. Keep it in a password manager or your agent's settings, and never paste it into a chat, email or ticket. Revoke it as soon as it is no longer needed or may have leaked.",
+    secret: "Anyone holding a token can act with its permissions until it expires or is revoked. Keep it in a password manager or your assistant's settings, and never paste it into a chat, email or ticket. Revoke it as soon as it is no longer needed or may have leaked.",
   },
   /** One entry per MCP service id. */
   services: {
@@ -49,19 +51,19 @@ const mcp = {
       description: "Portal accounts and parent–student links. Never passwords or hashes.",
     },
     progress: {
-      name: "Study progress",
-      description: "A student's practice-tool progress: counts and labels only (mock tests, planner, weak topics).",
+      name: "Student progress",
+      description: "A student's practice-tool progress: counts and labels only (mock tests, planner, weak topics from Rancho, the AI doubt solver).",
     },
     audit: {
-      name: "Audit log",
-      description: "The audit log, newest first, with names instead of ids.",
+      name: "Activity log",
+      description: "The activity log, newest first, with names instead of ids.",
     },
     content: {
-      name: "Programs, centres & results",
-      description: "Programs, centres and results exactly as the website shows them.",
+      name: "Website content",
+      description: "Programmes, centres and results exactly as the website shows them.",
     },
     crm: {
-      name: "Enquiries (CRM)",
+      name: "Enquiries (admissions)",
       description: "Enquiry leads: the list (phone numbers masked), one lead's full record and timeline (each view is logged), your follow-up tasks and the admissions funnel report.",
     },
   },
@@ -91,13 +93,13 @@ const mcp = {
     noWriteHint: "This service has no write tools, so it can only be read.",
     comingSoon: "Coming soon",
     comingSoonHint: "This service isn't available yet.",
-    explicitOnly: "Families' personal data: the quick choices never include it. Tick it yourself only if the agent needs it.",
+    explicitOnly: "Families' personal data: the quick choices never include it. Tick it yourself only if the assistant needs it.",
     summaryRead: "Can read: {services}",
     summaryWrite: "Can change: {services}",
     summaryNothing: "nothing",
     summaryNone: "No permissions chosen yet.",
     listSeparator: ", ",
-    writeWarning: "Write lets an agent change data on this website on your behalf. Choose it only for an agent you trust and supervise, only for the services it needs, and prefer a short expiry.",
+    writeWarning: "Write lets an AI assistant change data on this website on your behalf. Choose it only for an assistant you trust and supervise, only for the services it needs, and prefer a short expiry.",
     expiry: "Expires after",
     expiryHint: "The token stops working automatically after this time.",
     expiryDays: "{days} days",
@@ -129,7 +131,7 @@ const mcp = {
     refreshing: "Refreshing…",
     caption: "Access tokens, newest first",
     emptyTitle: "No access tokens yet",
-    emptyBody: "Create a token above when you're ready to connect an agent.",
+    emptyBody: "Create a token above when you're ready to connect an AI assistant.",
     columns: {
       name: "Name",
       access: "Permissions",
@@ -168,7 +170,7 @@ const mcp = {
   },
   revoke: {
     title: "Revoke “{name}”?",
-    body: "Any agent using this token loses access straight away. This can't be undone; create a new token if you need access again.",
+    body: "Any AI assistant using this token loses access straight away. This can't be undone; create a new token if you need access again.",
     cancel: "Cancel",
     confirm: "Revoke token",
     revoking: "Revoking…",

@@ -2,26 +2,23 @@
 
 import { CheckCircle2, ClipboardPenLine, Eraser, LoaderCircle, MessageCircle, Pencil, Phone, Plus, StickyNote } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { CallOutcomeDialog } from "@/components/console/calls/CallOutcomeDialog";
+import type { CallsMessages } from "@/components/console/calls/messages";
+import { focusIfLost, useOutcomeStatus } from "@/components/console/calls/outcome-status";
+import { clearWaMark, sessionStore, type WaMark } from "@/components/console/calls/wa-return";
+import { WaReturnPrompt } from "@/components/console/calls/WaReturnPrompt";
+import { WhatsAppComposer } from "@/components/console/calls/WhatsAppComposer";
 import { Button, Notice } from "@/components/ui";
 import { format } from "@/i18n/format";
 import type { Messages } from "@/i18n/messages/types";
 import { cn } from "@/lib/cn";
-import {
-  CONTACT_CHANNELS,
-  ERASE_REASONS,
-  LEAD_STAGES,
-  LOST_REASONS,
-  type ContactChannel,
-  type EditableLeadField,
-  type LeadStage,
-} from "@/lib/crm/types";
+import { ERASE_REASONS, LEAD_STAGES, LOST_REASONS, type ContactChannel, type EditableLeadField, type LeadStage } from "@/lib/crm/types";
 import { crmRequests } from "./api";
 import { ActionFeedback, CrmDialog, fieldClasses, labelClasses, useCrmAction } from "./client-kit";
 import {
   NOTE_MAX,
   editDetailsRequest,
   eraseRequest,
-  logContactRequest,
   needsLostReason,
   noteRequest,
   stageChangeRequest,
@@ -29,7 +26,7 @@ import {
   type DetailIssue,
   type DetailValues,
 } from "./lead-forms";
-import { OUTCOMES_BY_CHANNEL, type Option } from "./types";
+import type { Option } from "./types";
 
 /** The `crm` message slices the lead-detail islands need (one shared object, passed to each). */
 export type LeadIslandMessages = Pick<Messages<"crm">, "common" | "errors" | "stages" | "lostReasons" | "lead">;
@@ -274,24 +271,50 @@ export function AssigneeControl({
 // ---------------------------------------------------------------------------------------------
 // Contact (D-041: links open on the staff member's device; we only log what happened)
 
+/**
+ * Admin console 1b (§5.C, §5.D; 1B-CALLS): "Call" is a plain `tel:` link — the tap only marks the
+ * call (CallReturnPrompt asks "Back from the call?" afterwards; no dialog on the tap). "Log a call"
+ * opens the one-step outcome dialog. "WhatsApp" opens the template composer instead of a bare wa.me
+ * link; nothing is logged until the staff member says they sent the message ("Back from WhatsApp?"
+ * asks again after a reload).
+ */
 export function ContactActions({
   leadId,
   name,
   telHref,
-  whatsAppHref,
+  phone,
   phoneDisplay,
   email,
   t,
+  c,
   pagePath,
-}: Base & { name: string; telHref: string | null; whatsAppHref: string | null; phoneDisplay: string | null; email: string | null }) {
-  const [dialog, setDialog] = useState<{ channel: ContactChannel } | null>(null);
+}: Base & { name: string; telHref: string | null; phone: string | null; phoneDisplay: string | null; email: string | null; c: CallsMessages }) {
+  const [callOpen, setCallOpen] = useState(false);
+  // `answered`: the "Back from WhatsApp?" prompt already got "Yes, I sent it" (open at the follow-up).
+  const [composer, setComposer] = useState<{ resume: WaMark | null; answered: boolean } | null>(null);
   const [status, setStatus] = useState("");
-  const c = t.lead.contact;
+  const k = t.lead.contact;
   const linkClasses =
     "inline-flex min-h-11 items-center justify-center gap-2 rounded-control px-4 py-2.5 text-sm font-bold transition hover:-translate-y-px motion-reduce:hover:translate-y-0";
 
   return (
     <div>
+      {phone && (
+        <WaReturnPrompt
+          leadId={leadId}
+          leadName={name}
+          suppressed={composer !== null}
+          c={c.whatsapp}
+          onYes={(mark) => {
+            setStatus("");
+            setComposer({ resume: mark, answered: true });
+          }}
+          onNo={() => {
+            clearWaMark(sessionStore());
+            setStatus(c.whatsapp.nothingLogged);
+          }}
+        />
+      )}
       {phoneDisplay && (
         <p className="mb-3 font-mono text-lg font-bold text-navy" lang="en">
           {phoneDisplay}
@@ -299,190 +322,99 @@ export function ContactActions({
       )}
       <div className="flex flex-wrap gap-2">
         {telHref && (
-          <a
-            href={telHref}
-            onClick={() => setDialog({ channel: "call" })}
-            className={cn(linkClasses, "bg-navy text-white hover:bg-navy-2")}
-            aria-label={format(t.common.callLead, { name })}
-          >
+          <a href={telHref} className={cn(linkClasses, "bg-navy text-white hover:bg-navy-2")} aria-label={format(t.common.callLead, { name })}>
             <Phone aria-hidden="true" className="size-4" />
-            {c.call}
+            {k.call}
           </a>
         )}
-        {whatsAppHref && (
-          <a
-            href={whatsAppHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => setDialog({ channel: "whatsapp" })}
+        {phone && (
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            onClick={() => {
+              setStatus("");
+              setComposer({ resume: null, answered: false });
+            }}
             className={cn(linkClasses, "bg-[#e7f7ee] text-[#0f5a3c] hover:bg-[#d3f0df]")}
-            aria-label={format(c.whatsappLabel, { name })}
+            aria-label={format(c.whatsapp.openLabel, { name })}
           >
             <MessageCircle aria-hidden="true" className="size-4" />
-            {c.whatsapp}
-          </a>
+            {c.whatsapp.open}
+          </button>
         )}
         {email && (
           <a href={`mailto:${email}`} className={cn(linkClasses, "border border-[#b9cbe0] bg-white text-navy hover:border-blue")}>
-            {c.email}
+            {k.email}
           </a>
         )}
-        <Button variant="outline" onClick={() => setDialog({ channel: "call" })}>
+        <Button
+          variant="outline"
+          aria-haspopup="dialog"
+          aria-label={format(c.calls.logCallLabel, { name })}
+          onClick={() => {
+            setStatus("");
+            setCallOpen(true);
+          }}
+        >
           <ClipboardPenLine aria-hidden="true" className="size-4" />
-          {c.log}
+          {c.calls.logCall}
         </Button>
       </div>
-      <p className="mt-3 text-xs text-muted">{c.honest}</p>
+      <p className="mt-3 text-xs text-muted">{k.honest}</p>
       <p role="status" className="mt-2 text-sm font-semibold text-success">
         {status}
       </p>
-      <LogContactDialog
-        open={dialog !== null}
-        initialChannel={dialog?.channel ?? "call"}
+      <CallOutcomeDialog
+        open={callOpen}
         leadId={leadId}
-        t={t}
+        leadName={name}
         pagePath={pagePath}
-        onClose={() => setDialog(null)}
-        onDone={() => {
-          setDialog(null);
-          setStatus(c.saved);
+        t={t}
+        c={c}
+        onClose={() => setCallOpen(false)}
+        onDone={(message) => {
+          setCallOpen(false);
+          setStatus(message);
         }}
       />
+      {phone && (
+        <WhatsAppComposer
+          open={composer !== null}
+          leadId={leadId}
+          leadName={name}
+          phone={phone}
+          pagePath={pagePath}
+          t={t}
+          c={c}
+          resume={composer?.resume ?? null}
+          resumeAnswered={composer?.answered ?? false}
+          onClose={() => setComposer(null)}
+          onDone={(message) => {
+            setComposer(null);
+            setStatus(message);
+          }}
+        />
+      )}
     </div>
   );
 }
 
+/**
+ * Compatibility wrapper (admin console 1b): the old "Log this contact" dialog now IS the one-step
+ * call outcome dialog. `initialChannel` is ignored — WhatsApp messages are logged through the
+ * composer's "Did you send it?" step only.
+ */
 export function LogContactDialog({
   open,
-  initialChannel,
   leadId,
+  leadName,
   t,
+  c,
   pagePath,
   onClose,
   onDone,
-}: Base & { open: boolean; initialChannel: ContactChannel; onClose: () => void; onDone: () => void }) {
-  return (
-    <CrmDialog open={open} titleId="crm-log-contact-title" onClose={onClose}>
-      <LogContactForm
-        key={initialChannel}
-        initialChannel={initialChannel}
-        leadId={leadId}
-        t={t}
-        pagePath={pagePath}
-        onCancel={onClose}
-        onDone={onDone}
-      />
-    </CrmDialog>
-  );
-}
-
-function LogContactForm({
-  initialChannel,
-  leadId,
-  t,
-  pagePath,
-  onCancel,
-  onDone,
-}: Base & { initialChannel: ContactChannel; onCancel: () => void; onDone: () => void }) {
-  const id = useId();
-  const c = t.lead.contact;
-  const [channel, setChannel] = useState<ContactChannel>(initialChannel);
-  const [outcome, setOutcome] = useState("");
-  const [note, setNote] = useState("");
-  const [issue, setIssue] = useState<string | null>(null);
-  const action = useCrmAction(t, pagePath);
-  const outcomes = OUTCOMES_BY_CHANNEL[channel];
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const built = logContactRequest(leadId, { channel, outcome, note });
-    if (!built.ok) {
-      setIssue(built.issue === "outcomeRequired" ? c.outcomeRequired : format(t.lead.notes.tooLong, { max: NOTE_MAX }));
-      return;
-    }
-    setIssue(null);
-    const data = await action.run(built.request);
-    if (data !== null) onDone();
-  }
-
-  return (
-    <form onSubmit={submit} noValidate className="p-5 md:p-6" aria-busy={action.pending || undefined}>
-      <h2 id="crm-log-contact-title" className="text-lg font-extrabold text-navy">
-        {c.logTitle}
-      </h2>
-      <p className="mt-2 text-sm text-muted">{c.logIntro}</p>
-      <fieldset className="mt-4">
-        <legend className={labelClasses}>{c.channel}</legend>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {CONTACT_CHANNELS.map((value) => (
-            <label key={value} className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-control border border-line px-3 has-checked:border-blue has-checked:bg-blue-soft">
-              <input
-                type="radio"
-                name={`${id}-channel`}
-                value={value}
-                checked={channel === value}
-                onChange={() => {
-                  setChannel(value);
-                  setOutcome("");
-                }}
-                className="size-4 accent-[#1768d4]"
-              />
-              <span className="text-sm font-semibold">{c.channels[value]}</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-      <fieldset className="mt-4" aria-describedby={issue === c.outcomeRequired ? `${id}-issue` : undefined}>
-        <legend className={labelClasses}>
-          {c.outcome} <span className="font-normal text-muted">{t.common.required}</span>
-        </legend>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-          {outcomes.map((value) => (
-            <label key={value} className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-control border border-line px-3 has-checked:border-blue has-checked:bg-blue-soft">
-              <input
-                type="radio"
-                name={`${id}-outcome`}
-                value={value}
-                checked={outcome === value}
-                onChange={() => setOutcome(value)}
-                className="size-4 accent-[#1768d4]"
-              />
-              <span className="text-sm">{c.outcomes[value]}</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-      <div className="mt-4 flex flex-col gap-1.5">
-        <label htmlFor={`${id}-note`} className={labelClasses}>
-          {c.note} <span className="font-normal text-muted">{t.common.optional}</span>
-        </label>
-        <textarea
-          id={`${id}-note`}
-          value={note}
-          rows={3}
-          maxLength={NOTE_MAX}
-          placeholder={c.notePlaceholder}
-          onChange={(event) => setNote(event.target.value)}
-          className={cn(fieldClasses, "min-h-20")}
-        />
-      </div>
-      {issue && (
-        <p id={`${id}-issue`} className="mt-3 text-sm font-semibold text-danger">
-          {issue}
-        </p>
-      )}
-      <ActionFeedback status="" error={action.error} className="mt-2" />
-      <div className="mt-5 flex flex-wrap justify-end gap-2">
-        <Button variant="outline" onClick={onCancel}>
-          {t.common.cancel}
-        </Button>
-        <Button type="submit" variant="dark" disabled={action.pending}>
-          {action.pending && <Spinner />}
-          {c.save}
-        </Button>
-      </div>
-    </form>
-  );
+}: Base & { open: boolean; initialChannel?: ContactChannel; leadName: string; c: CallsMessages; onClose: () => void; onDone: (message: string) => void }) {
+  return <CallOutcomeDialog open={open} leadId={leadId} leadName={leadName} pagePath={pagePath} t={t} c={c} onClose={onClose} onDone={onDone} />;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -544,33 +476,83 @@ export function NoteForm({ leadId, t, pagePath }: Base) {
 // ---------------------------------------------------------------------------------------------
 // Tasks
 
+/**
+ * A task's Done button (lead page and Today's calls). Admin console 1b (§5.C; 1B-CALLS): ticking a
+ * task off asks what happened — it opens the one-step outcome dialog with this task, which completes
+ * the task, sets the next follow-up and logs the call in one save ("No call needed" is offered).
+ * Inside an `OutcomeStatusRegion` (the task lists) the result is said by the region, and focus moves
+ * to the panel heading when the refresh removes this task's row; elsewhere it keeps its own line.
+ */
 export function CompleteTaskButton({
   taskId,
   title,
+  leadId,
+  leadName,
   t,
+  c,
   pagePath,
   compact = false,
 }: {
   taskId: string;
   title: string;
+  leadId: string;
+  leadName: string;
   t: Pick<Messages<"crm">, "errors" | "lead">;
+  c: CallsMessages;
   pagePath: string;
   compact?: boolean;
 }) {
-  const action = useCrmAction(t, pagePath);
+  const [open, setOpen] = useState(false);
+  const [status, setStatus] = useState("");
+  // The task list's region (lead page, Today's calls): it keeps the result line and a focus target
+  // after the refresh drops this completed task's row — and this button with it.
+  const region = useOutcomeStatus();
+  const saved = useRef(false);
+  const focusTargetId = region?.focusTargetId ?? null;
+  useEffect(
+    () => () => {
+      // Unmounted after a save: the Done button that held focus is gone, so focus goes to the panel heading.
+      if (saved.current) window.requestAnimationFrame(() => focusIfLost(focusTargetId));
+    },
+    [focusTargetId],
+  );
   return (
     <span className="inline-flex flex-col items-start gap-1">
       <Button
-        size="sm"
         variant="outline"
-        disabled={action.pending}
+        aria-haspopup="dialog"
         aria-label={format(t.lead.tasks.completeLabel, { title })}
-        onClick={() => action.run(crmRequests.completeTask(taskId), t.lead.tasks.completed)}
+        onClick={() => {
+          setStatus("");
+          region?.announce("");
+          setOpen(true);
+        }}
       >
-        {action.pending ? <Spinner /> : <CheckCircle2 aria-hidden="true" className="size-4" />}
+        <CheckCircle2 aria-hidden="true" className="size-4" />
         {compact ? null : t.lead.tasks.complete}
       </Button>
-      <ActionFeedback status={action.status} error={action.error} />
+      {!region && (
+        <p role="status" className="text-sm font-semibold text-success">
+          {status}
+        </p>
+      )}
+      <CallOutcomeDialog
+        open={open}
+        leadId={leadId}
+        leadName={leadName}
+        taskId={taskId}
+        taskTitle={title}
+        pagePath={pagePath}
+        t={t}
+        c={c}
+        onClose={() => setOpen(false)}
+        onDone={(message) => {
+          saved.current = true;
+          setOpen(false);
+          if (region) region.announce(message);
+          else setStatus(message);
+        }}
+      />
     </span>
   );
 }

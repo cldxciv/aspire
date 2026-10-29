@@ -10,6 +10,7 @@ import {
   localizedPostLoginPath,
   portalPathAllowsRole,
   portalRoleForPath,
+  PORTAL_HOME,
   postLoginRedirect,
   QUESTION_BANK_HOME,
   sanitizeNextPath,
@@ -26,13 +27,18 @@ describe("postLoginRedirect", () => {
 });
 
 describe("staff and the CRM (M7)", () => {
-  it("sends staff to Today's calls and only ever to /crm pages (lead routing §20, A6)", () => {
-    expect(postLoginRedirect("staff", undefined)).toBe("/crm/today");
+  it("sends staff to their role home (/crm/home, admin console 1b §5.A) and only ever to /crm pages", () => {
+    expect(PORTAL_HOME.staff).toBe("/crm/home");
+    expect(postLoginRedirect("staff", undefined)).toBe("/crm/home");
     expect(postLoginRedirect("staff", "/crm/leads/abc")).toBe("/crm/leads/abc");
     expect(postLoginRedirect("staff", "/crm")).toBe("/crm");
-    expect(postLoginRedirect("staff", "/admin")).toBe("/crm/today");
-    expect(postLoginRedirect("staff", "/student")).toBe("/crm/today");
-    expect(postLoginRedirect("staff", "//evil.com/crm")).toBe("/crm/today");
+    expect(postLoginRedirect("staff", "/crm/today")).toBe("/crm/today");
+    expect(postLoginRedirect("staff", "/admin")).toBe("/crm/home");
+    expect(postLoginRedirect("staff", "/student")).toBe("/crm/home");
+    expect(postLoginRedirect("staff", "//evil.com/crm")).toBe("/crm/home");
+    // The role home is itself a CRM path: a sign-in link may carry it as `next`.
+    expect(sanitizeNextPath("/hi/crm/home")).toBe("/crm/home");
+    expect(buildLoginHref("/crm/home", "hi")).toBe("/hi/login?next=%2Fcrm%2Fhome");
   });
 
   it("lets admins follow a /crm next, but not students or parents", () => {
@@ -67,7 +73,7 @@ describe("staff and the question bank (docs/question-bank-plan.md §B6)", () => 
     expect(portalPathAllowsRole("/admin/users", "staff")).toBe(false);
     expect(postLoginRedirect("staff", "/admin/questions/review")).toBe("/admin/questions/review");
     expect(postLoginRedirect("staff", "/hi/admin/questions")).toBe("/admin/questions");
-    expect(postLoginRedirect("staff", "/admin/users")).toBe("/crm/today");
+    expect(postLoginRedirect("staff", "/admin/users")).toBe("/crm/home");
   });
 
   it("admins keep the whole admin area; students and parents never get the question bank", () => {

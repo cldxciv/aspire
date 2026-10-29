@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { CentreNumbers } from "@/components/console/dashboard/CentreNumbers";
+import { NeedsAttention } from "@/components/console/dashboard/NeedsAttention";
 import { CrmPageHeader, NotAllowed } from "@/components/crm/CrmBlocks";
 import { CrmGate, requestTime, type CrmAccess } from "@/components/crm/CrmGate";
 import { DashboardView, type DashboardPreset } from "@/components/crm/dashboard/DashboardView";
@@ -7,6 +9,9 @@ import { reportDayRange, type CrmMessages } from "@/components/crm/format";
 import type { Locale } from "@/i18n/config";
 import { localePath } from "@/i18n/paths";
 import { getLocale, getMessages } from "@/i18n/server";
+import { needsAttention } from "@/lib/crm/console/dashboard/attention";
+import { consoleNumbers } from "@/lib/crm/console/dashboard/numbers";
+import { consolePermissions } from "@/lib/crm/console/types";
 import { DASHBOARD_MAX_DAYS, dashboardAreaScope, dashboardData } from "@/lib/crm/dashboard";
 import { DAY_MS } from "@/lib/crm/pure";
 import { listAreaNames } from "@/lib/crm/repo/areas-core";
@@ -81,20 +86,28 @@ async function Dashboard({ access, searchParams, locale, t }: { access: CrmAcces
     .filter((entry) => entry.active && (allowed === "all" || (allowed ?? []).includes(entry.id)))
     .map((entry) => ({ id: entry.id, name: areaNames[entry.id] }));
   const escalated = permissions.isSuperAdmin ? slaQueue(viewer, "escalated", now) : null;
+  // Admin console 1b (1B-NUMBERS): five numbers by centre and Needs attention on top (managers:
+  // their centres; admins: every centre), without repeating lead routing's tiles below.
+  const numbers = await consoleNumbers(viewer, now, locale);
+  const attention = needsAttention(viewer, now, "crm");
 
   return (
-    <DashboardView
-      data={result.data}
-      escalated={escalated?.ok ? escalated.data.items : null}
-      permissions={permissions}
-      range={{ fromDay: range.fromDay, toDay: range.toDay, invalid: range.invalid }}
-      presets={presets}
-      areaOptions={areaOptions}
-      area={area}
-      areaNames={areaNames}
-      now={now}
-      locale={locale}
-      t={t}
-    />
+    <>
+      <CentreNumbers data={numbers} variant="crm" canEditTargets={consolePermissions(viewer, permissions).canEditTargets} locale={locale} />
+      <NeedsAttention items={attention} variant="crm" locale={locale} />
+      <DashboardView
+        data={result.data}
+        escalated={escalated?.ok ? escalated.data.items : null}
+        permissions={permissions}
+        range={{ fromDay: range.fromDay, toDay: range.toDay, invalid: range.invalid }}
+        presets={presets}
+        areaOptions={areaOptions}
+        area={area}
+        areaNames={areaNames}
+        now={now}
+        locale={locale}
+        t={t}
+      />
+    </>
   );
 }

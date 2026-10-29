@@ -1,20 +1,25 @@
 "use client";
 
 import { Ban, CircleCheck, Copy, KeyRound, Link2, LoaderCircle, Pencil, RefreshCw, ShieldCheck, ShieldOff, TriangleAlert, UserPlus } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import Link from "next/link";
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { describedBy, inputClasses } from "@/components/auth/fields";
 import { SuperAdminBadge } from "@/components/crm/SuperAdminBadge";
 import { Badge, Button, Notice } from "@/components/ui";
 import { useLocale } from "@/i18n/client";
-import { htmlLang } from "@/i18n/config";
+import { htmlLang, type Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
+import type consolePeopleEn from "@/i18n/messages/en/console-people";
 import type { Messages } from "@/i18n/messages/types";
+import { localePath } from "@/i18n/paths";
 import { callApi, retryAfterMinutes, type ApiFailure } from "@/lib/auth/client-api";
 import { DISPLAY_NAME_MAX_LENGTH, LOGIN_ID_PATTERN } from "@/lib/auth/identifiers";
 import { buildChangePasswordHref, buildLoginHref } from "@/lib/auth/paths";
 import { ROLES, type Role } from "@/lib/auth/roles";
 import { cn } from "@/lib/cn";
-import { SUPER_ADMIN_CLI, type SuperAdminEntry, type SuperAdminList } from "@/lib/crm/lead-ops-types";
+import type { PeopleCrm } from "@/lib/console/people-types";
+import { SUPER_ADMIN_CLI, type CrmArea, type SuperAdminEntry, type SuperAdminList } from "@/lib/crm/lead-ops-types";
+import { CRM_ROLES, type CrmRole } from "@/lib/crm/types";
 
 /** What the admin API returns for each account (`PublicUser`): never a password or hash. */
 export type AdminUserView = {
@@ -28,12 +33,18 @@ export type AdminUserView = {
   updatedAt?: string;
   linkedStudentIds?: string[];
   linkedParentIds?: string[];
+  /** Staff accounts: CRM role, access, areas, away status and open enquiries (null = no CRM membership yet). */
+  crm?: PeopleCrm | null;
 };
+
+/** People list words (src/i18n/messages/{en,hi}/console-people.ts, admin console 1b §5.L). */
+export type ConsolePeopleMessages = typeof consolePeopleEn;
 
 export type UserManagerMessages = {
   users: Messages<"portal">["admin"]["users"];
   errors: Messages<"portal">["errors"];
   roles: Messages<"auth">["roles"];
+  people: ConsolePeopleMessages;
 };
 
 type UsersT = UserManagerMessages["users"];
@@ -44,6 +55,22 @@ type RoleFilter = "all" | Role;
 type StatusFilter = "all" | "active" | "disabled";
 
 const PAGE_PATH = "/admin/users";
+
+/** The role chips, in the order the People list shows them (§5.L). */
+export const ROLE_CHIPS = ["all", "staff", "admin", "student", "parent"] as const satisfies readonly RoleFilter[];
+
+/** How many accounts each chip holds (all statuses, before the search). */
+export function countByRole(users: readonly AdminUserView[]): Record<(typeof ROLE_CHIPS)[number], number> {
+  const counts = { all: users.length, staff: 0, admin: 0, student: 0, parent: 0 };
+  for (const user of users) counts[user.role] += 1;
+  return counts;
+}
+
+/** An area's name in the page language, marked when it is no longer in use. */
+function areaLabel(area: { en: string; hi: string; active: boolean }, locale: Locale, inactive: string): string {
+  const name = locale === "hi" ? area.hi || area.en : area.en;
+  return area.active ? name : format(inactive, { name });
+}
 
 function isUser(user: AdminUserView | undefined): user is AdminUserView {
   return user !== undefined;
@@ -63,8 +90,11 @@ export function filterUsers(
   );
 }
 
-/** Localised copy for a failed admin API call (the server's English text is never shown). */
-export function adminFailureMessage(result: ApiFailure, m: UserManagerMessages, minutes = retryAfterMinutes): string {
+/**
+ * Localised copy for a failed admin API call (the server's English text is never shown). Takes only
+ * the portal messages it reads, so callers without the People words can use it too.
+ */
+export function adminFailureMessage(result: ApiFailure, m: Pick<UserManagerMessages, "users" | "errors">, minutes = retryAfterMinutes): string {
   if (result.error === "unauthenticated") return m.errors.sessionExpired;
   if (result.known === "passwordChangeRequired") return m.errors.passwordChangeRequired;
   const known = result.known;
@@ -99,12 +129,16 @@ export function UserManager({
   initialUsers,
   currentUserId,
   messages: m,
+  centreNames = {},
 }: {
   initialUsers: AdminUserView[];
   currentUserId: string;
   messages: UserManagerMessages;
+  /** Centre slug → name in the page language, for the older centre scope on staff rows. */
+  centreNames?: Readonly<Record<string, string>>;
 }) {
   const t = m.users;
+  const p = m.people;
   const locale = useLocale();
   const [users, setUsers] = useState<AdminUserView[]>(initialUsers);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
@@ -142,6 +176,7 @@ export function UserManager({
   const byId = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
   const students = useMemo(() => users.filter((user) => user.role === "student"), [users]);
   const visible = filterUsers(users, { role: roleFilter, status: statusFilter, query });
+  const roleCounts = useMemo(() => countByRole(users), [users]);
   const dateFormat = useMemo(
     () => new Intl.DateTimeFormat(htmlLang[locale], { dateStyle: "medium", timeZone: "Asia/Kolkata" }),
     [locale],
@@ -303,26 +338,28 @@ export function UserManager({
           </Button>
         </div>
 
-        <fieldset className="mb-4 grid gap-3 rounded-control bg-[#f8fbff] p-3 sm:grid-cols-[repeat(2,minmax(0,12rem))_minmax(0,1fr)]">
+        <div role="group" aria-label={p.chips.label} className="mb-3 flex flex-wrap gap-2">
+          {ROLE_CHIPS.map((chip) => {
+            const pressed = roleFilter === chip;
+            return (
+              <button
+                key={chip}
+                type="button"
+                aria-pressed={pressed}
+                onClick={() => setRoleFilter(chip)}
+                className={cn(
+                  "inline-flex min-h-11 items-center rounded-full border px-4 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue",
+                  pressed ? "border-navy bg-navy text-white" : "border-line bg-white text-navy hover:border-blue",
+                )}
+              >
+                {format(p.chips.withCount, { label: p.chips[chip], count: roleCounts[chip] })}
+              </button>
+            );
+          })}
+        </div>
+
+        <fieldset className="mb-4 grid gap-3 rounded-control bg-[#f8fbff] p-3 sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
           <legend className="sr-only">{t.filtersLabel}</legend>
-          <div className="flex flex-col gap-1">
-            <label htmlFor={`${filterIds}-role`} className="text-xs font-bold text-[#354b66]">
-              {t.filterRole}
-            </label>
-            <select
-              id={`${filterIds}-role`}
-              value={roleFilter}
-              onChange={(event) => setRoleFilter(event.target.value as RoleFilter)}
-              className={cn(inputClasses, "border-[#b9cbe0]")}
-            >
-              <option value="all">{t.all}</option>
-              {ROLES.map((role) => (
-                <option key={role} value={role}>
-                  {m.roles[role]}
-                </option>
-              ))}
-            </select>
-          </div>
           <div className="flex flex-col gap-1">
             <label htmlFor={`${filterIds}-status`} className="text-xs font-bold text-[#354b66]">
               {t.filterStatus}
@@ -473,6 +510,8 @@ export function UserManager({
                     </p>
                   )}
 
+                  {user.role === "staff" && <StaffFacts user={user} p={p} locale={locale} dateFormat={dateFormat} centreNames={centreNames} />}
+
                   {renaming?.id === user.id && (
                     <form onSubmit={saveRename} noValidate className="mt-3 flex flex-wrap items-end gap-2 rounded-md bg-[#f8fbff] p-3">
                       <div className="flex min-w-0 flex-1 flex-col gap-1 sm:max-w-sm">
@@ -585,6 +624,77 @@ export function UserManager({
           />
         )}
       </Modal>
+    </div>
+  );
+}
+
+/**
+ * A staff account's CRM facts (admin console 1b §5.L): CRM role, access, lead-routing areas, the
+ * older centre scope, "Away until" and open enquiries, with links to where they are changed.
+ */
+export function StaffFacts({
+  user,
+  p,
+  locale,
+  dateFormat,
+  centreNames = {},
+}: {
+  user: AdminUserView;
+  p: ConsolePeopleMessages;
+  locale: Locale;
+  dateFormat: Intl.DateTimeFormat;
+  /** Centre slug → name in the page language; an unknown slug is shown as written. */
+  centreNames?: Readonly<Record<string, string>>;
+}) {
+  const crm = user.crm ?? null;
+  const s = p.staff;
+  const linkClass = "inline-flex min-h-11 items-center font-bold text-blue underline-offset-2 hover:underline";
+  return (
+    <div role="group" aria-label={format(s.detailsLabel, { name: user.displayName })} className="mt-3 rounded-md bg-[#f8fbff] p-3 text-sm">
+      {crm ? (
+        <>
+          <div className="flex flex-wrap gap-1.5">
+            <Badge variant="info">{s.crmRole[crm.crmRole]}</Badge>
+            <Badge variant={crm.active ? "success" : "warning"}>{crm.active ? s.access.active : s.access.inactive}</Badge>
+            {crm.awayUntil && (
+              <Badge variant="warning">
+                <span suppressHydrationWarning>{format(s.away, { date: dateFormat.format(new Date(crm.awayUntil)) })}</span>
+              </Badge>
+            )}
+          </div>
+          <dl className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,auto)_minmax(0,1fr)]">
+            <dt className="font-bold text-[#354b66]">{s.areas}</dt>
+            <dd className="min-w-0 break-words">{crm.areaNames.length ? crm.areaNames.map((area) => areaLabel(area, locale, s.areaInactive)).join(", ") : s.noAreas}</dd>
+            <dt className="font-bold text-[#354b66]">{s.centres}</dt>
+            <dd className="min-w-0 break-words">
+              {crm.centreSlugs.length
+                ? crm.centreSlugs.map((slug, index) => (
+                    <Fragment key={slug}>
+                      {index > 0 && ", "}
+                      {centreNames[slug] ?? (
+                        <span lang="en" translate="no">
+                          {slug}
+                        </span>
+                      )}
+                    </Fragment>
+                  ))
+                : s.everyCentre}
+            </dd>
+            <dt className="font-bold text-[#354b66]">{s.openLeads}</dt>
+            <dd className="tabular-nums">{crm.openLeads}</dd>
+          </dl>
+        </>
+      ) : (
+        <p className="text-muted">{s.noMembership}</p>
+      )}
+      <p className="mt-1 flex flex-wrap gap-x-4">
+        <Link href={localePath("/crm/settings/areas", locale)} className={linkClass}>
+          {s.areasLink}
+        </Link>
+        <Link href={localePath("/crm/staff", locale)} className={linkClass}>
+          {s.rulesLink}
+        </Link>
+      </p>
     </div>
   );
 }
@@ -778,32 +888,68 @@ function SuperAdminChangeForm({
   );
 }
 
-function CreateUserForm({
+type CreateErrors = { displayName?: string; loginId?: string; crmRole?: string };
+
+/** Areas a new staff login can join: active ones that were not merged away. */
+export function joinableAreas(areas: readonly CrmArea[]): CrmArea[] {
+  return areas.filter((area) => area.active && !area.mergedInto);
+}
+
+export function CreateUserForm({
   m,
   allowStaff,
   onCreated,
   onFailure,
+  initialRole = "student",
 }: {
   m: UserManagerMessages;
   /** Staff (CRM) logins are a super-admin action (D-044, Q7). */
   allowStaff: boolean;
   onCreated: (user: AdminUserView, temporaryPassword: string) => Promise<void>;
   onFailure: (result: ApiFailure) => string;
+  /** The role selected at first (tests render the staff fields with "staff"). */
+  initialRole?: Role;
 }) {
   const t = m.users;
+  const c = m.people.create;
+  const locale = useLocale();
   const id = useId();
-  const [role, setRole] = useState<Role>("student");
+  const [role, setRole] = useState<Role>(initialRole);
   const [displayName, setDisplayName] = useState("");
   const [loginId, setLoginId] = useState("");
-  const [errors, setErrors] = useState<{ displayName?: string; loginId?: string }>({});
+  // Staff only (admin console 1b §5.L): the CRM role is chosen on purpose (no preselection) and
+  // areas are optional; the server refuses a staff login without a role.
+  const [crmRole, setCrmRole] = useState<CrmRole | null>(null);
+  const [areaIds, setAreaIds] = useState<string[]>([]);
+  // null = not loaded yet (shown as "Loading areas…"); loaded once the staff role is chosen.
+  const [areas, setAreas] = useState<CrmArea[] | "failed" | null>(null);
+  const [errors, setErrors] = useState<CreateErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
   const loginRef = useRef<HTMLInputElement>(null);
+  const crmRoleRef = useRef<HTMLInputElement>(null);
+  const staff = role === "staff";
 
-  function focusFirst(next: { displayName?: string; loginId?: string }) {
+  useEffect(() => {
+    if (!staff || areas !== null) return;
+    let cancelled = false;
+    void callApi<CrmArea[]>("/api/crm/areas").then((result) => {
+      if (!cancelled) setAreas(result.ok ? joinableAreas(result.data) : "failed");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [staff, areas]);
+
+  function focusFirst(next: CreateErrors) {
     if (next.displayName) nameRef.current?.focus();
     else if (next.loginId) loginRef.current?.focus();
+    else if (next.crmRole) crmRoleRef.current?.focus();
+  }
+
+  function toggleArea(areaId: string, on: boolean) {
+    setAreaIds((current) => (on ? [...current.filter((value) => value !== areaId), areaId] : current.filter((value) => value !== areaId)));
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -811,35 +957,46 @@ function CreateUserForm({
     if (pending) return;
     const name = displayName.trim().replace(/\s+/g, " ");
     const login = loginId.trim().toLowerCase();
-    const next: { displayName?: string; loginId?: string } = {};
+    const next: CreateErrors = {};
     if (!name) next.displayName = t.errors.displayNameRequired;
     else if (Array.from(name).length > DISPLAY_NAME_MAX_LENGTH) next.displayName = t.errors.invalidDisplayName;
     if (!login) next.loginId = t.errors.loginIdRequired;
     else if (!LOGIN_ID_PATTERN.test(login)) next.loginId = t.errors.invalidLoginId;
+    if (staff && !crmRole) next.crmRole = c.crmRoleRequired;
     setErrors(next);
     setFormError(null);
-    if (next.displayName || next.loginId) return focusFirst(next);
+    if (next.displayName || next.loginId || next.crmRole) return focusFirst(next);
 
     setPending(true);
-    const result = await callApi<{ user: AdminUserView; temporaryPassword: string }>("/api/admin/users", {
-      body: { role, displayName: name, loginId: login },
-    });
+    const body: Record<string, unknown> = { role, displayName: name, loginId: login };
+    if (staff && crmRole) body.crm = { crmRole, centreSlugs: [], areaIds };
+    const result = await callApi<{ user: AdminUserView; temporaryPassword: string }>("/api/admin/users", { body });
     setPending(false);
     if (result.ok) {
       setDisplayName("");
       setLoginId("");
+      setCrmRole(null);
+      setAreaIds([]);
       await onCreated(result.data.user, result.data.temporaryPassword);
       return;
     }
     if (result.error === "validation" && Object.keys(result.fieldErrors).length) {
-      const fields: { displayName?: string; loginId?: string } = {};
+      const fields: CreateErrors = {};
       if ("loginId" in result.fieldErrors) {
         fields.loginId = result.fieldErrors.loginId === "loginIdTaken" ? t.errors.loginIdTaken : t.errors.invalidLoginId;
       }
       if ("displayName" in result.fieldErrors) fields.displayName = t.errors.invalidDisplayName;
+      if ("crm" in result.fieldErrors || "crm.crmRole" in result.fieldErrors) fields.crmRole = c.crmRoleRequired;
+      const areaProblem = "crm.areaIds" in result.fieldErrors;
+      if (areaProblem) {
+        // An area changed since the list loaded: reload it and let the admin choose again.
+        setAreas(null);
+        setAreaIds([]);
+        setFormError(c.areasFailed);
+      }
       setErrors(fields);
       focusFirst(fields);
-      return;
+      if (Object.keys(fields).length > 0 || areaProblem) return;
     }
     setFormError(onFailure(result));
   }
@@ -858,7 +1015,10 @@ function CreateUserForm({
           <select
             id={`${id}-role`}
             value={role}
-            onChange={(event) => setRole(event.target.value as Role)}
+            onChange={(event) => {
+              setRole(event.target.value as Role);
+              setErrors((current) => ({ ...current, crmRole: undefined }));
+            }}
             className={cn(inputClasses, "border-[#b9cbe0]")}
           >
             {ROLES.filter((option) => allowStaff || option !== "staff").map((option) => (
@@ -918,6 +1078,83 @@ function CreateUserForm({
             </p>
           )}
         </div>
+
+        {staff && (
+          <div className="grid gap-4 md:col-span-3 md:grid-cols-2">
+            <fieldset
+              aria-describedby={errors.crmRole ? `${id}-crm-hint ${id}-crm-error` : `${id}-crm-hint`}
+              className={cn("min-w-0 rounded-control border p-3", errors.crmRole ? "border-danger" : "border-[#d7e3f0]")}
+            >
+              <legend className="px-1 text-sm font-bold text-navy">{c.crmRole}</legend>
+              <p id={`${id}-crm-hint`} className="text-xs text-muted">
+                {c.crmRoleHint}
+              </p>
+              <div className="mt-2 grid gap-1">
+                {CRM_ROLES.map((option, index) => (
+                  <label key={option} className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      ref={index === 0 ? crmRoleRef : undefined}
+                      type="radio"
+                      name={`${id}-crm-role`}
+                      value={option}
+                      checked={crmRole === option}
+                      required
+                      onChange={() => {
+                        setCrmRole(option);
+                        setErrors((current) => ({ ...current, crmRole: undefined }));
+                      }}
+                      className="size-5 accent-navy"
+                    />
+                    {m.people.staff.crmRole[option]}
+                  </label>
+                ))}
+              </div>
+              {errors.crmRole && (
+                <p id={`${id}-crm-error`} className="mt-1 text-sm font-semibold text-danger">
+                  {errors.crmRole}
+                </p>
+              )}
+            </fieldset>
+
+            <fieldset aria-describedby={`${id}-areas-hint`} className="min-w-0 rounded-control border border-[#d7e3f0] p-3">
+              <legend className="px-1 text-sm font-bold text-navy">{c.areas}</legend>
+              <p id={`${id}-areas-hint`} className="text-xs text-muted">
+                {c.areasHint}
+              </p>
+              {areas === null ? (
+                <p role="status" className="mt-2 text-sm text-muted">
+                  {c.areasLoading}
+                </p>
+              ) : areas === "failed" ? (
+                <p className="mt-2 text-sm text-muted">{c.areasFailed}</p>
+              ) : areas.length === 0 ? (
+                <p className="mt-2 text-sm text-muted">{c.noAreasYet}</p>
+              ) : (
+                <div className="mt-2 grid max-h-64 gap-1 overflow-y-auto sm:grid-cols-2">
+                  {areas.map((area) => (
+                    <label key={area.id} className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        value={area.id}
+                        checked={areaIds.includes(area.id)}
+                        onChange={(event) => toggleArea(area.id, event.target.checked)}
+                        className="size-5 accent-navy"
+                      />
+                      {areaLabel({ en: area.nameEn, hi: area.nameHi, active: area.active }, locale, c.areaInactive)}
+                    </label>
+                  ))}
+                </div>
+              )}
+              {areaIds.length === 0 && (
+                <p className="mt-2 flex gap-2 rounded-control border border-[#f2dfa0] bg-gold-soft p-2 text-sm text-[#5c4a12]">
+                  <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                  <span>{c.noAreasWarning}</span>
+                </p>
+              )}
+            </fieldset>
+          </div>
+        )}
+
         <div className="md:col-span-3">
           {formError && (
             <Notice variant="error" role="alert" className="mb-3">

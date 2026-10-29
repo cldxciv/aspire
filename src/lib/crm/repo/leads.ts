@@ -4,6 +4,7 @@ import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 
 import type { ClockReason } from "../lead-ops-types";
 import type { LeadStage, LostReason } from "../types";
+import { EFFECTIVE_CENTRE_SQL, NEVER_CONTACTED_SQL, TOOL_SIGNUP_SQL } from "./console-sql";
 import { escapeLike, int, stringArray, text, type Row } from "./rows";
 
 /** `crm_leads` access. Epoch-ms times; the services turn rows into API shapes. */
@@ -51,6 +52,11 @@ export interface LeadRow {
   /** The routing area's names (null without an area). */
   areaNameEn: string | null;
   areaNameHi: string | null;
+  /**
+   * Admin console 1b (§4.3): the routing area's default centre (null without one). The lead's
+   * effective centre is `centreSlug ?? areaDefaultCentre`, the same as `EFFECTIVE_CENTRE_SQL`.
+   */
+  areaDefaultCentre: string | null;
   /** The open first-call clock (`crm_sla_clocks`, at most one per lead), or null. */
   openClock: OpenClockFacts | null;
 }
@@ -65,7 +71,7 @@ export interface OpenClockFacts {
 }
 
 /** Fields read from other tables: never inserted or updated through `crm_leads`. */
-type JoinedFields = "assigneeName" | "areaId" | "areaNameEn" | "areaNameHi" | "openClock";
+type JoinedFields = "assigneeName" | "areaId" | "areaNameEn" | "areaNameHi" | "areaDefaultCentre" | "openClock";
 
 /** Writable columns (camelCase → SQL column). Anything else can never reach an UPDATE. */
 const COLUMN: Readonly<Record<string, string>> = {
@@ -112,6 +118,7 @@ export type LeadUpdate = Partial<Omit<LeadRow, "id" | "createdAt" | JoinedFields
 const SELECT = `
   SELECT l.*, u.display_name AS assignee_name,
          r.area_id AS routing_area_id, ar.name_en AS routing_area_name_en, ar.name_hi AS routing_area_name_hi,
+         ar.default_centre_slug AS routing_area_default_centre,
          c.reason AS clock_reason, c.started_at AS clock_started_at, c.due_at AS clock_due_at,
          c.tier1_at AS clock_tier1_at, c.tier2_at AS clock_tier2_at
     FROM crm_leads l
@@ -171,6 +178,7 @@ function mapLead(row: Row): LeadRow {
     areaId: text(row.routing_area_id),
     areaNameEn: text(row.routing_area_name_en),
     areaNameHi: text(row.routing_area_name_hi),
+    areaDefaultCentre: text(row.routing_area_default_centre),
     openClock: mapClock(row),
   };
 }
@@ -249,6 +257,7 @@ export interface SlaQueryFilter {
 export interface LeadQuery {
   scope: LeadScope;
   stage?: LeadStage | "open";
+  /** The lead's EFFECTIVE centre (its centre, else its routing area's default centre); `none` = neither. */
   centre?: string | "none";
   program?: string;
   source?: string;
@@ -264,10 +273,17 @@ export interface LeadQuery {
   /** An area id, `none` (no area, not a tool sign-up) or `tool_signups` (no area, every arrival a tool sign-up). */
   area?: string;
   sla?: SlaQueryFilter;
+  /** Admin console 1b (§4.3): no call or WhatsApp logged yet (`contact=none`). */
+  neverContacted?: boolean;
+  /** Admin console 1b (§4.3): leave out free-tool sign-ups in any area (`signups=hide`). */
+  excludeToolSignups?: boolean;
   sort?: "recent_activity" | "newest" | "oldest" | "due" | "name";
   limit: number;
   offset: number;
 }
+
+/** A query without paging or order (counts, `countForFilters`). */
+export type LeadCountQuery = Omit<LeadQuery, "limit" | "offset" | "sort">;
 
 /** The record-level scope as SQL on `crm_leads l` (also used by repo/sla.ts and the dashboard). */
 export function scopeClause(scope: LeadScope, where: string[], values: SQLInputValue[]): void {
@@ -292,6 +308,17 @@ export function scopeClause(scope: LeadScope, where: string[], values: SQLInputV
     }
     where.push(`(${parts.join(" OR ")})`);
   }
+}
+
+/**
+ * The record-level scope as one SQL condition on `crm_leads l` (admin console 1b, §4.2): `1=1` for
+ * `all`. Console queries use only this (or the inbox query builder), never a copy of the scope logic.
+ */
+export function scopedLeadWhere(scope: LeadScope): { sql: string; values: SQLInputValue[] } {
+  const where: string[] = [];
+  const values: SQLInputValue[] = [];
+  scopeClause(scope, where, values);
+  return { sql: where.length > 0 ? where.join(" AND ") : "1=1", values };
 }
 
 /** `area` filter as SQL on `crm_leads l`: an area id, `none` or `tool_signups` (also used by repo/sla.ts). */
@@ -331,9 +358,11 @@ function whereFor(query: Omit<LeadQuery, "limit" | "offset" | "sort">): { sql: s
     where.push("l.stage = ?");
     values.push(query.stage);
   }
-  if (query.centre === "none") where.push("l.centre_slug IS NULL");
+  // Admin console 1b (§4.3): the centre filter compares the EFFECTIVE centre, so an area-routed
+  // enquiry without a chosen centre shows under its area's centre (scope rules are unchanged).
+  if (query.centre === "none") where.push(`${EFFECTIVE_CENTRE_SQL} IS NULL`);
   else if (query.centre) {
-    where.push("l.centre_slug = ?");
+    where.push(`${EFFECTIVE_CENTRE_SQL} = ?`);
     values.push(query.centre);
   }
   if (query.program) {
@@ -378,6 +407,8 @@ function whereFor(query: Omit<LeadQuery, "limit" | "offset" | "sort">): { sql: s
   }
   if (query.area) areaClause(query.area, where, values);
   if (query.sla) slaClause(query.sla, where, values);
+  if (query.neverContacted) where.push(NEVER_CONTACTED_SQL);
+  if (query.excludeToolSignups) where.push(`NOT ${TOOL_SIGNUP_SQL}`);
   return { sql: where.length > 0 ? `WHERE ${where.join(" AND ")}` : "", values };
 }
 
@@ -397,6 +428,28 @@ export function queryLeads(db: DatabaseSync, query: LeadQuery): { rows: LeadRow[
     .all(...values, query.limit, query.offset)
     .map(mapLead);
   return { rows, total };
+}
+
+/**
+ * How many leads match a query: the same WHERE as the inbox (`queryLeads`), so a number counted
+ * here equals the list total for the same filters (admin console 1b, §4.2, §10.2).
+ */
+export function countLeads(db: DatabaseSync, query: LeadCountQuery): number {
+  const { sql, values } = whereFor(query);
+  return Number(db.prepare(`SELECT COUNT(*) AS n FROM crm_leads l ${sql}`).get(...values)?.n ?? 0);
+}
+
+/**
+ * `countLeads` split by the effective centre (`by: "centre"`) or the assignee (`by: "assignee"`);
+ * `key: null` = no centre / unassigned. Largest group first, then by key.
+ */
+export function countLeadsGrouped(db: DatabaseSync, query: LeadCountQuery, by: "centre" | "assignee"): { key: string | null; count: number }[] {
+  const { sql, values } = whereFor(query);
+  const group = by === "centre" ? EFFECTIVE_CENTRE_SQL : "l.assigned_to";
+  return db
+    .prepare(`SELECT ${group} AS group_key, COUNT(*) AS n FROM crm_leads l ${sql} GROUP BY group_key ORDER BY n DESC, group_key`)
+    .all(...values)
+    .map((row) => ({ key: text(row.group_key), count: Number(row.n) }));
 }
 
 /** Lightweight rows for reports: no personal fields. */

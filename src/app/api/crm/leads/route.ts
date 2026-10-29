@@ -21,7 +21,10 @@ const ROUTE = "leads";
  * (slug or `none`), program, source, assignee (id, `me`, `unassigned`), due (`today`/`overdue`), q
  * (name or last 4+ phone digits), createdFrom, createdTo, sort, page, pageSize (≤ 100); lead routing
  * (§21): area (an area id, `none`, `tool_signups`; 403 outside an area head's areas) and sla
- * (`open` / `overdue` / `escalated`).
+ * (`open` / `overdue` / `escalated`); admin console 1b (docs/admin-phase-1b-plan.md §4.3): contact
+ * (`none` = no call or WhatsApp logged yet), signups (`hide` = leave out free-tool sign-ups) and
+ * created (`today` / `week` / `over24h`, IST; replaces createdFrom/createdTo). `centre` matches the
+ * EFFECTIVE centre (the lead's own, else its routing area's default centre; `none` = neither).
  * → `{ items: LeadSummary[], total, page, pageSize }`.
  */
 export async function GET(request: NextRequest) {

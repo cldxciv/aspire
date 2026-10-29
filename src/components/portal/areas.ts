@@ -1,23 +1,30 @@
 import {
+  ArchiveRestore,
+  Award,
   BookOpen,
   Bot,
   BriefcaseBusiness,
   CalendarCheck,
   CalendarDays,
   ChartColumn,
+  Compass,
   FileQuestion,
+  Gauge,
   GraduationCap,
   HeartHandshake,
   History,
   Inbox,
   LayoutDashboard,
   ListOrdered,
+  MessageSquareText,
   MonitorCheck,
   Megaphone,
   Route,
+  SearchCheck,
   Settings2,
   ShieldCheck,
   SquareKanban,
+  Target,
   TrendingUp,
   UserCog,
   UsersRound,
@@ -83,15 +90,33 @@ export const crmNavItems: PortalNavItem[] = [
   // Lead routing (docs/lead-routing-plan.md §16, §20): area heads, admins and super admins.
   { key: "dashboard", href: "/crm/dashboard", icon: LayoutDashboard, managersOnly: true },
   { key: "pipeline", href: "/crm/pipeline", icon: SquareKanban },
+  // Admin console 1b (docs/admin-phase-1b-plan.md §5.B, 1B-NUMBERS): every CRM role.
+  { key: "admissions", href: "/crm/admissions", icon: Award },
   { key: "reports", href: "/crm/reports", icon: ChartColumn },
   { key: "staff", href: "/crm/staff", icon: UserCog, managersOnly: true },
   { key: "settings", href: "/crm/settings", icon: Settings2, managersOnly: true },
 ];
 
 /**
- * Admin console sections (docs/admin-console-plan.md §2.3, decision 2). Only pages that work are
- * listed, so a section with no working page yet (Lead generation, Google & AI search) has no
- * group: its planned pages are on "What's coming" (`console-roadmap.ts`).
+ * Admin console 1b (§13): the "Manage" group — Targets (1B-NUMBERS), WhatsApp templates
+ * (1B-CALLS) and Lost enquiries to review (1B-FAMILY). Area heads and admins; each page re-checks.
+ */
+export const crmManageItems: PortalNavItem[] = [
+  { key: "targets", href: "/crm/targets", icon: Target, managersOnly: true },
+  { key: "templates", href: "/crm/templates", icon: MessageSquareText, managersOnly: true },
+  { key: "lostReview", href: "/crm/lost", icon: ArchiveRestore, managersOnly: true },
+];
+
+/** Admin console 1b (§13): "Lead generation" — Where enquiries come from (1B-SOURCES). */
+export const crmLeadGenItems: PortalNavItem[] = [{ key: "sources", href: "/crm/sources", icon: Compass, managersOnly: true }];
+
+/** Every staff (CRM) sidebar item, in order. */
+const staffNavItems: PortalNavItem[] = [...crmNavItems, ...crmManageItems, ...crmLeadGenItems];
+
+/**
+ * Admin console sections (docs/admin-console-plan.md §2.3, decision 2). Only working pages (or, from
+ * Phase 1b, the pages its packages build) are listed; everything else is on "What's coming"
+ * (`console-roadmap.ts`).
  */
 const adminGroups: PortalNavGroup[] = [
   {
@@ -102,6 +127,8 @@ const adminGroups: PortalNavGroup[] = [
     ],
   },
   { key: "admission", items: crmNavItems },
+  { key: "manage", items: crmManageItems },
+  { key: "leadGeneration", items: crmLeadGenItems },
   // Question bank (docs/question-bank-plan.md §B6): also the whole admin nav of QB staff.
   { key: "tests", items: [{ key: "questionBank", href: "/admin/questions", icon: FileQuestion }] },
   {
@@ -112,6 +139,8 @@ const adminGroups: PortalNavGroup[] = [
       { key: "pageLayout", href: "/admin/page-layout", icon: ListOrdered },
     ],
   },
+  // Admin console 1b (§5.J, 1B-SOURCES): admins only, English.
+  { key: "search", items: [{ key: "searchOverview", href: "/admin/search", icon: SearchCheck }] },
   {
     key: "access",
     items: [
@@ -119,7 +148,24 @@ const adminGroups: PortalNavGroup[] = [
       { key: "mcp", href: "/admin/mcp", icon: Bot },
     ],
   },
-  { key: "settings", items: [{ key: "audit", href: "/admin/audit", icon: History }] },
+  {
+    key: "settings",
+    items: [
+      // Admin console 1b (§5.M, 1B-HOUSEKEEPING): admins only, English.
+      { key: "status", href: "/admin/status", icon: Gauge },
+      { key: "audit", href: "/admin/audit", icon: History },
+    ],
+  },
+];
+
+/**
+ * The staff (CRM) sidebar: the CRM pages, then the "Manage" and "Lead generation" groups (hidden
+ * from counsellors: `managersOnly`; a group with no visible item is not shown).
+ */
+const staffGroups: PortalNavGroup[] = [
+  { key: null, items: crmNavItems },
+  { key: "manage", items: crmManageItems },
+  { key: "leadGeneration", items: crmLeadGenItems },
 ];
 
 /**
@@ -187,7 +233,8 @@ export const portalAreas: Record<PortalArea, PortalAreaConfig> = {
   },
   staff: {
     icon: BriefcaseBusiness,
-    nav: crmNavItems,
+    nav: staffNavItems,
+    groups: staffGroups,
     strip: "bg-[#7c5cd6]",
     badge: "border-[#d9ccf7] bg-[#f3eeff] text-[#5b3cc4]",
     eyebrow: "text-[#5b3cc4]",

@@ -1,5 +1,12 @@
 import Form from "next/form";
 import Link from "next/link";
+import { familyMessages } from "@/components/console/details/messages";
+import { inboxFilterChips } from "@/components/console/inbox/filter-chips";
+import { FilterChips } from "@/components/console/inbox/FilterChips";
+import { FiltersDisclosure } from "@/components/console/inbox/FiltersDisclosure";
+import { InboxPresets } from "@/components/console/inbox/InboxPresets";
+import { activePresetKey, inboxPresets, type PresetViewer } from "@/components/console/inbox/presets";
+import { consoleCommon } from "@/components/console/shared/messages";
 import { PortalPanel } from "@/components/portal/PortalBlocks";
 import { EmptyState } from "@/components/ui";
 import type { Locale } from "@/i18n/config";
@@ -12,7 +19,9 @@ import {
   areaName,
   centreLabel,
   classProgramLabel,
+  CONSOLE_FILTER_KEYS,
   hasActiveFilters,
+  INBOX_FILTER_KEYS,
   inboxQuery,
   leadCountLabel,
   phoneLast4,
@@ -70,143 +79,216 @@ export function InboxFiltersForm({
       {control}
     </div>
   );
+  const form = (
+    <Form action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Enquiries keeps the quick-view and dashboard filters the form has no field for (contact,
+          sign-ups, created), so refining a list never silently widens it; each one has its own
+          removable chip above the form. */}
+      {inbox &&
+        CONSOLE_FILTER_KEYS.map((key) => (filters[key] ? <input key={key} type="hidden" name={key} value={filters[key]} /> : null))}
+      <div className="flex min-w-0 flex-col gap-1.5 sm:col-span-2">
+        <label htmlFor="crm-q" className="text-sm font-bold text-navy">
+          {f.search}
+        </label>
+        <input
+          id="crm-q"
+          name="q"
+          type="search"
+          defaultValue={filters.q}
+          maxLength={80}
+          aria-describedby="crm-q-hint"
+          className={selectClasses}
+        />
+        <p id="crm-q-hint" className="text-xs text-muted">
+          {f.searchHint}
+        </p>
+      </div>
+      {inbox && field(
+        "crm-stage",
+        f.stage,
+        <select id="crm-stage" name="stage" defaultValue={filters.stage} className={selectClasses}>
+          <option value="">{t.common.any}</option>
+          {LEAD_STAGES.map((stage) => (
+            <option key={stage} value={stage}>
+              {t.stages[stage]}
+            </option>
+          ))}
+        </select>,
+      )}
+      {inbox && field(
+        "crm-sla",
+        f.sla,
+        <select id="crm-sla" name="sla" defaultValue={filters.sla ?? ""} className={selectClasses}>
+          <option value="">{t.common.any}</option>
+          <option value="open">{f.slaOpen}</option>
+          <option value="overdue">{f.slaOverdue}</option>
+          <option value="escalated">{f.slaEscalated}</option>
+        </select>,
+      )}
+      {permissions.canAssign &&
+        options.areas &&
+        field(
+          "crm-area",
+          f.area,
+          <select id="crm-area" name="area" defaultValue={filters.area ?? ""} className={selectClasses}>
+            <option value="">{t.common.any}</option>
+            {options.areas.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>,
+        )}
+      {inbox && field(
+        "crm-due",
+        f.due,
+        <select id="crm-due" name="due" defaultValue={filters.due} className={selectClasses}>
+          <option value="">{f.dueAny}</option>
+          <option value="today">{f.dueToday}</option>
+          <option value="overdue">{f.dueOverdue}</option>
+        </select>,
+      )}
+      {field(
+        "crm-centre",
+        f.centre,
+        <select id="crm-centre" name="centre" defaultValue={filters.centre} className={selectClasses}>
+          <option value="">{t.common.any}</option>
+          {options.centres.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>,
+      )}
+      {field(
+        "crm-program",
+        f.program,
+        <select id="crm-program" name="program" defaultValue={filters.program} className={selectClasses}>
+          <option value="">{t.common.any}</option>
+          {options.programs.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>,
+      )}
+      {field(
+        "crm-source",
+        f.source,
+        <select id="crm-source" name="source" defaultValue={filters.source} className={selectClasses}>
+          <option value="">{t.common.any}</option>
+          {options.sources.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>,
+      )}
+      {permissions.canAssign &&
+        field(
+          "crm-assignee",
+          f.assignee,
+          <select id="crm-assignee" name="assignee" defaultValue={filters.assignee} className={selectClasses}>
+            <option value="">{t.common.any}</option>
+            <option value="me">{f.assigneeMe}</option>
+            <option value="unassigned">{t.common.unassigned}</option>
+            {options.assignees.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>,
+        )}
+      <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-4">
+        <button
+          type="submit"
+          className="inline-flex min-h-11 items-center justify-center rounded-control bg-navy px-4 text-sm font-bold text-white hover:bg-navy-2"
+        >
+          {t.common.apply}
+        </button>
+        {hasActiveFilters(filters) && (
+          <Link
+            href={action}
+            className="inline-flex min-h-11 items-center justify-center rounded-control border border-[#b9cbe0] bg-white px-4 text-sm font-bold text-navy hover:border-blue"
+          >
+            {t.common.clear}
+          </Link>
+        )}
+      </div>
+    </Form>
+  );
+  if (!inbox) {
+    return (
+      <section aria-labelledby="crm-inbox-filters" className="mb-5 rounded-card border border-line bg-white p-4 shadow-soft md:p-5">
+        <h2 id="crm-inbox-filters" className="mb-3 text-base font-extrabold text-navy">
+          {f.filtersTitle}
+        </h2>
+        {form}
+      </section>
+    );
+  }
+  // Admin console 1b (§5.I, 1B-FAMILY): on Enquiries the form folds into "Filters (2 on)", closed
+  // below `lg` and open from `lg` up; the section keeps its (visually hidden) heading.
+  const m = familyMessages(locale).inbox;
+  const on = INBOX_FILTER_KEYS.filter((key) => Boolean(filters[key])).length;
   return (
-    <section aria-labelledby="crm-inbox-filters" className="mb-5 rounded-card border border-line bg-white p-4 shadow-soft md:p-5">
-      <h2 id="crm-inbox-filters" className="mb-3 text-base font-extrabold text-navy">
+    <section aria-labelledby="crm-inbox-filters" className="mb-5 rounded-card border border-line bg-white px-4 py-2 shadow-soft md:px-5">
+      <h2 id="crm-inbox-filters" className="sr-only">
         {f.filtersTitle}
       </h2>
-      <Form action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="flex min-w-0 flex-col gap-1.5 sm:col-span-2">
-          <label htmlFor="crm-q" className="text-sm font-bold text-navy">
-            {f.search}
-          </label>
-          <input
-            id="crm-q"
-            name="q"
-            type="search"
-            defaultValue={filters.q}
-            maxLength={80}
-            aria-describedby="crm-q-hint"
-            className={selectClasses}
-          />
-          <p id="crm-q-hint" className="text-xs text-muted">
-            {f.searchHint}
-          </p>
-        </div>
-        {inbox && field(
-          "crm-stage",
-          f.stage,
-          <select id="crm-stage" name="stage" defaultValue={filters.stage} className={selectClasses}>
-            <option value="">{t.common.any}</option>
-            {LEAD_STAGES.map((stage) => (
-              <option key={stage} value={stage}>
-                {t.stages[stage]}
-              </option>
-            ))}
-          </select>,
-        )}
-        {inbox && field(
-          "crm-sla",
-          f.sla,
-          <select id="crm-sla" name="sla" defaultValue={filters.sla ?? ""} className={selectClasses}>
-            <option value="">{t.common.any}</option>
-            <option value="open">{f.slaOpen}</option>
-            <option value="overdue">{f.slaOverdue}</option>
-            <option value="escalated">{f.slaEscalated}</option>
-          </select>,
-        )}
-        {permissions.canAssign &&
-          options.areas &&
-          field(
-            "crm-area",
-            f.area,
-            <select id="crm-area" name="area" defaultValue={filters.area ?? ""} className={selectClasses}>
-              <option value="">{t.common.any}</option>
-              {options.areas.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>,
-          )}
-        {inbox && field(
-          "crm-due",
-          f.due,
-          <select id="crm-due" name="due" defaultValue={filters.due} className={selectClasses}>
-            <option value="">{f.dueAny}</option>
-            <option value="today">{f.dueToday}</option>
-            <option value="overdue">{f.dueOverdue}</option>
-          </select>,
-        )}
-        {field(
-          "crm-centre",
-          f.centre,
-          <select id="crm-centre" name="centre" defaultValue={filters.centre} className={selectClasses}>
-            <option value="">{t.common.any}</option>
-            {options.centres.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>,
-        )}
-        {field(
-          "crm-program",
-          f.program,
-          <select id="crm-program" name="program" defaultValue={filters.program} className={selectClasses}>
-            <option value="">{t.common.any}</option>
-            {options.programs.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>,
-        )}
-        {field(
-          "crm-source",
-          f.source,
-          <select id="crm-source" name="source" defaultValue={filters.source} className={selectClasses}>
-            <option value="">{t.common.any}</option>
-            {options.sources.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>,
-        )}
-        {permissions.canAssign &&
-          field(
-            "crm-assignee",
-            f.assignee,
-            <select id="crm-assignee" name="assignee" defaultValue={filters.assignee} className={selectClasses}>
-              <option value="">{t.common.any}</option>
-              <option value="me">{f.assigneeMe}</option>
-              <option value="unassigned">{t.common.unassigned}</option>
-              {options.assignees.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>,
-          )}
-        <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-4">
-          <button
-            type="submit"
-            className="inline-flex min-h-11 items-center justify-center rounded-control bg-navy px-4 text-sm font-bold text-white hover:bg-navy-2"
-          >
-            {t.common.apply}
-          </button>
-          {hasActiveFilters(filters) && (
-            <Link
-              href={action}
-              className="inline-flex min-h-11 items-center justify-center rounded-control border border-[#b9cbe0] bg-white px-4 text-sm font-bold text-navy hover:border-blue"
-            >
-              {t.common.clear}
-            </Link>
-          )}
-        </div>
-      </Form>
+      <FiltersDisclosure summary={on > 0 ? format(m.filtersOn, { n: on }) : m.filters}>
+        <div className="pb-3">{form}</div>
+      </FiltersDisclosure>
     </section>
+  );
+}
+
+/** Who the quick views are for, and the centres in their scope (slug + label in the page language). */
+export type InboxPresetContext = {
+  viewer: PresetViewer;
+  centres: readonly { slug: string; label: string }[];
+};
+
+/**
+ * Admin console 1b (docs/admin-phase-1b-plan.md §5.I; 1B-FAMILY): the Enquiries controls — quick
+ * views (the active one `aria-current="page"`), a removable chip per active filter with "Clear
+ * all", then the folded filter form.
+ */
+export function InboxControls({
+  filters,
+  options,
+  permissions,
+  presets,
+  locale,
+  t,
+}: {
+  filters: InboxFilters;
+  options: InboxOptions;
+  permissions: CrmPermissions;
+  presets: InboxPresetContext;
+  locale: Locale;
+  t: CrmMessages;
+}) {
+  const m = familyMessages(locale).inbox;
+  const list = inboxPresets(presets.viewer, presets.centres, m);
+  const centres: Record<string, string> = Object.fromEntries([
+    ...presets.centres.map((centre) => [centre.slug, centre.label] as const),
+    ...options.centres.map((option) => [option.value, option.label] as const),
+  ]);
+  const chips = inboxFilterChips(filters, {
+    t,
+    m,
+    centres,
+    noCentre: consoleCommon(locale).common.noCentre,
+    assignees: options.assignees,
+    areas: options.areas,
+  });
+  return (
+    <>
+      <InboxPresets presets={list} activeKey={activePresetKey(list, filters)} label={m.presetsLabel} locale={locale} />
+      <FilterChips chips={chips} locale={locale} t={t.inbox.chips} />
+      <InboxFiltersForm filters={filters} options={options} permissions={permissions} locale={locale} t={t} />
+    </>
   );
 }
 
@@ -228,6 +310,17 @@ export type InboxRowContext = {
 function displayName(t: CrmMessages, lead: LeadSummary): string {
   if (lead.erased) return t.common.erased;
   return lead.displayName?.trim() || t.common.unnamed;
+}
+
+/**
+ * The lead's centre; a lead with none of its own shows its routing area's default centre as
+ * "Kullu (from area)", the centre the "This centre" quick view and the centre filter match (§4.3).
+ */
+function centreText(lead: LeadSummary, ctx: InboxRowContext): string | null {
+  const own = centreLabel(ctx.t, ctx.centres, lead.centreSlug);
+  if (own) return own;
+  const fromArea = centreLabel(ctx.t, ctx.centres, lead.effectiveCentreSlug);
+  return fromArea ? format(familyMessages(ctx.locale).inbox.centreFromArea, { centre: fromArea }) : null;
 }
 
 function assigneeText(lead: LeadSummary, ctx: InboxRowContext): string {
@@ -312,7 +405,7 @@ function leadHref(id: string, ctx: Pick<InboxRowContext, "locale" | "back">) {
 }
 
 function InboxRow({ lead, ctx }: { lead: LeadSummary; ctx: InboxRowContext }) {
-  const { t, locale, now, centres } = ctx;
+  const { t, locale, now } = ctx;
   const name = displayName(t, lead);
   return (
     <tr className={cn("align-top hover:bg-[#f8fbff]", lead.overdue && "bg-[#fffaf0]")}>
@@ -326,7 +419,7 @@ function InboxRow({ lead, ctx }: { lead: LeadSummary; ctx: InboxRowContext }) {
         <MaskedPhone last4={phoneLast4(lead.phone)} t={t} />
       </td>
       <td className="px-3 py-3">{classProgramLabel(t, lead.currentClass, lead.programInterest) ?? <span className="text-muted">{t.common.none}</span>}</td>
-      <td className="px-3 py-3">{centreLabel(t, centres, lead.centreSlug) ?? <span className="text-muted">{t.common.none}</span>}</td>
+      <td className="px-3 py-3">{centreText(lead, ctx) ?? <span className="text-muted">{t.common.none}</span>}</td>
       <td className="px-3 py-3">{areaName(locale, lead.area) ?? <span className="text-muted">{t.inbox.noArea}</span>}</td>
       <td className="px-3 py-3">
         <SourceBadges source={lead.source} tool={lead.tool} t={t} />
@@ -349,10 +442,10 @@ function InboxRow({ lead, ctx }: { lead: LeadSummary; ctx: InboxRowContext }) {
 }
 
 function InboxCard({ lead, ctx }: { lead: LeadSummary; ctx: InboxRowContext }) {
-  const { t, locale, now, centres } = ctx;
+  const { t, locale, now } = ctx;
   const c = t.inbox.columns;
   const name = displayName(t, lead);
-  const centre = centreLabel(t, centres, lead.centreSlug);
+  const centre = centreText(lead, ctx);
   const area = areaName(locale, lead.area);
   const program = classProgramLabel(t, lead.currentClass, lead.programInterest);
   return (

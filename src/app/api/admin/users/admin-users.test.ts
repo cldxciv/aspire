@@ -16,6 +16,10 @@ const { listAudit } = await import("@/lib/db/audit");
 const { findUserById } = await import("@/lib/db/users");
 const { upsertGrant } = await import("@/lib/db/super-admins");
 const { ensureSuperAdminBootstrap } = await import("@/lib/auth/super-admin");
+const { ensureAreasSeeded } = await import("@/lib/crm/routing/seed");
+const { setAvailability } = await import("@/lib/crm/repo/staff-ops");
+const { captureLead } = await import("@/lib/crm/capture");
+const { CRM_ROLE_REQUIRED_MESSAGE } = await import("@/lib/console/people-types");
 const { AUTH_MESSAGES } = await import("@/lib/auth/messages");
 const { createTestUser, params, TestBrowser } = await import("@/lib/auth/testing/harness");
 const login = await import("@/app/api/auth/login/route");
@@ -395,5 +399,103 @@ describe("GET /api/admin/audit", () => {
     expect(entries.map((e: { action: string }) => e.action)).toContain("auth.login");
     expect((await api.audit(b, "?limit=0")).status).toBe(400);
     expect((await api.audit(b, "?limit=500")).status).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Admin console 1b §5.L: the CRM role is required for staff logins; the list carries LR's facts.
+
+describe("staff logins and the People list (admin console 1b)", () => {
+  async function asSuperAdmin() {
+    const signed = await asAdmin();
+    ensureSuperAdminBootstrap(getDb()); // the only admin becomes super admin
+    return signed;
+  }
+
+  it("a staff login without a CRM role is refused with a clear message, and nothing is created", async () => {
+    const { b } = await asSuperAdmin();
+    for (const crm of [undefined, {}, { areaIds: [] }, { centreSlugs: [] }]) {
+      const response = await api.create(b, { role: "staff", displayName: "No Role", loginId: "no.role", ...(crm === undefined ? {} : { crm }) });
+      expect(response.status, JSON.stringify(crm)).toBe(422);
+      expect((await response.json()).fieldErrors).toEqual({ crm: [CRM_ROLE_REQUIRED_MESSAGE] });
+    }
+    expect(CRM_ROLE_REQUIRED_MESSAGE).toBe("Choose the CRM role.");
+    const bad = await api.create(b, { role: "staff", displayName: "Bad Role", loginId: "bad.role", crm: { crmRole: "boss" } });
+    expect(bad.status).toBe(422);
+    const listed = (await (await api.list(b, "?role=staff")).json()).data as { loginId: string }[];
+    expect(listed.map((u) => u.loginId)).toEqual([]);
+    expect(listAudit(getDb(), { limit: 50 }).filter((e) => e.action === "admin.user_create")).toEqual([]);
+
+    // With the role chosen it works, and no "counsellor, every centre" default is applied silently.
+    const ok = await api.create(b, { role: "staff", displayName: "Area Head", loginId: "area.head", crm: { crmRole: "manager" } });
+    expect(ok.status).toBe(201);
+    expect((await ok.json()).data.user.crm).toMatchObject({ crmRole: "manager", centreSlugs: [], active: true });
+  });
+
+  it("the super-admin rule is unchanged: an ordinary admin still gets 403 before any role check", async () => {
+    await asSuperAdmin();
+    await createTestUser({ role: "admin", loginId: "admin.two", password: "admin-two-pass-1" });
+    const ordinary = await signedIn({ loginId: "admin.two", password: "admin-two-pass-1" });
+    for (const body of [
+      { role: "staff", displayName: "New Staff", loginId: "staff.two" },
+      { role: "staff", displayName: "New Staff", loginId: "staff.two", crm: { crmRole: "counsellor" } },
+    ]) {
+      const response = await api.create(ordinary, body);
+      expect(response.status).toBe(403);
+      expect((await response.json()).message).toBe(AUTH_MESSAGES.staffSuperAdminOnly);
+    }
+    // Other roles never need (or accept) CRM settings.
+    expect((await api.create(ordinary, { role: "student", displayName: "Learner", loginId: "learner.x" })).status).toBe(201);
+    expect((await api.create(ordinary, { role: "student", displayName: "Learner", loginId: "learner.y", crm: { crmRole: "manager" } })).status).toBe(422);
+  });
+
+  it("GET adds areas, away status and open enquiries to staff accounts only", async () => {
+    const { b } = await asSuperAdmin();
+    const now = Date.now();
+    ensureAreasSeeded(getDb(), now);
+    const created = await api.create(b, { role: "staff", displayName: "Hill Head", loginId: "hill.head", crm: { crmRole: "manager", areaIds: ["kangra", "chamba"] } });
+    expect(created.status).toBe(201);
+    const head = (await created.json()).data.user as { id: string; crm: Record<string, unknown> };
+    // Areas come back in the areas' own order, with both names; nothing else yet.
+    expect(head.crm).toMatchObject({ crmRole: "manager", active: true, awayUntil: null, openLeads: 0 });
+    const areaIds = head.crm.areaIds as string[];
+    expect([...areaIds].sort()).toEqual(["chamba", "kangra"]);
+    const names = head.crm.areaNames as { id: string; en: string; hi: string; active: boolean }[];
+    expect(names.map((area) => area.id)).toEqual(areaIds);
+    for (const area of names) {
+      expect(area.en).toMatch(/\S/);
+      expect(area.hi).toMatch(/\S/);
+      expect(area.active).toBe(true);
+    }
+
+    const plain = await createTestUser({ role: "staff", loginId: "no.membership", password: "staff-pass-2026" });
+    // Away until a future time; open leads assigned to the head (lost and erased ones do not count).
+    const until = now + 3 * 86_400_000;
+    setAvailability(getDb(), { userId: head.id, awayUntil: until, note: null, actorId: null, now });
+    const leadIds: string[] = [];
+    for (const [index, phone] of ["9700000101", "9700000102", "9700000103", "9700000104"].entries()) {
+      const result = captureLead({ source: "admissions", studentName: `Synthetic ${index}`, phone, consent: { textVersion: "2026-10-20.v2" } }, now);
+      if (!result.ok) throw new Error(result.error);
+      leadIds.push(result.leadId);
+    }
+    const db = getDb();
+    for (const id of leadIds) db.prepare("UPDATE crm_leads SET assigned_to = ? WHERE id = ?").run(head.id, id);
+    db.prepare("UPDATE crm_leads SET stage = 'lost' WHERE id = ?").run(leadIds[2]);
+    db.prepare("UPDATE crm_leads SET erased_at = ? WHERE id = ?").run(now, leadIds[3]);
+
+    const list = (await (await api.list(b)).json()).data as { id: string; role: string; crm?: Record<string, unknown> | null }[];
+    const byId = new Map(list.map((u) => [u.id, u]));
+    expect(byId.get(head.id)?.crm).toMatchObject({ awayUntil: new Date(until).toISOString(), openLeads: 2, areaIds });
+    expect(byId.get(plain.id)?.crm).toBeNull();
+    for (const account of list.filter((u) => u.role !== "staff")) expect(account).not.toHaveProperty("crm");
+    // Only ids, names, counts and times: no family's phone number or name.
+    const text = JSON.stringify(list);
+    expect(text).not.toContain("9700000101");
+    expect(text).not.toContain("Synthetic 0");
+
+    // "Away" ends on its own once the time has passed.
+    setAvailability(getDb(), { userId: head.id, awayUntil: now - 60_000, note: null, actorId: null, now: now - 120_000 });
+    const after = (await (await api.list(b, "?role=staff")).json()).data as { id: string; crm: { awayUntil: string | null } | null }[];
+    expect(after.find((u) => u.id === head.id)?.crm?.awayUntil).toBeNull();
   });
 });

@@ -1,20 +1,51 @@
 "use client";
 
 import { PhoneCall } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { CallOutcomeDialog } from "@/components/console/calls/CallOutcomeDialog";
+import type { CallsMessages } from "@/components/console/calls/messages";
+import { focusIfLost } from "@/components/console/calls/outcome-status";
 import { Button } from "@/components/ui";
 import { clearCallMark, markCallStarted, readCallMark, sessionStore, shouldPromptCallReturn, telLinkOf } from "./call-return";
-import { LogContactDialog, type LeadIslandMessages } from "./LeadActions";
+import type { LeadIslandMessages } from "./LeadActions";
 
 /**
  * Lead page island (docs/lead-routing-plan.md §20, A6): after a `tel:` call from this page, when
- * the member comes back (tab visible again, or the page reloaded), offer "Log the call" — which
- * opens the same "log this contact" dialog. Nothing is sent anywhere; only a lead id and a time
- * are kept in this browser's session (see call-return.ts).
+ * the member comes back (tab visible again, or the page reloaded), offer "Log the call". The `tel:`
+ * tap itself only marks the call (no dialog on the tap); "Log the call" opens the one-step call
+ * outcome dialog (admin console 1b §5.C: what happened + the next follow-up in one save). Nothing is
+ * sent anywhere; only a lead id and a time are kept in this browser's session (see call-return.ts).
  */
-export function CallReturnPrompt({ leadId, t, pagePath }: { leadId: string; t: LeadIslandMessages; pagePath: string }) {
+export function CallReturnPrompt({
+  leadId,
+  leadName,
+  t,
+  c,
+  pagePath,
+  focusAfterId,
+}: {
+  leadId: string;
+  leadName: string;
+  t: LeadIslandMessages;
+  c: CallsMessages;
+  pagePath: string;
+  /**
+   * A stable element (the contact panel's heading) that takes focus after the call is logged: the
+   * prompt — with the "Log the call" button the dialog would return focus to — is gone by then.
+   */
+  focusAfterId?: string;
+}) {
   const [prompt, setPrompt] = useState(false);
   const [dialog, setDialog] = useState(false);
+  const [status, setStatus] = useState("");
+  const refocus = useRef(false);
+
+  // Runs after the dialog closed (child effects first) and the prompt was removed in the same commit.
+  useEffect(() => {
+    if (prompt || !refocus.current) return;
+    refocus.current = false;
+    focusIfLost(focusAfterId);
+  }, [prompt, focusAfterId]);
 
   useEffect(() => {
     const storage = sessionStore();
@@ -36,7 +67,7 @@ export function CallReturnPrompt({ leadId, t, pagePath }: { leadId: string; t: L
   }, [leadId]);
 
   const r = t.lead.callReturn;
-  const done = () => {
+  const dismiss = () => {
     clearCallMark(sessionStore());
     setPrompt(false);
     setDialog(false);
@@ -45,8 +76,8 @@ export function CallReturnPrompt({ leadId, t, pagePath }: { leadId: string; t: L
   return (
     <>
       {/* Always mounted (out of the layout flow), so screen readers announce the prompt when it appears (WCAG 4.1.3). */}
-      <p role="status" className="sr-only">
-        {prompt ? `${r.title} ${r.body}` : ""}
+      <p role="status" className={prompt || !status ? "sr-only" : "text-sm font-semibold text-success"}>
+        {prompt ? `${r.title} ${r.body}` : status}
       </p>
       {prompt && (
         <div role="region" aria-label={r.title} className="flex flex-wrap items-center gap-3 rounded-card border border-[#bcd6fb] bg-blue-soft p-4 shadow-soft">
@@ -56,16 +87,29 @@ export function CallReturnPrompt({ leadId, t, pagePath }: { leadId: string; t: L
             <p className="text-sm text-[#354b66]">{r.body}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="dark" onClick={() => setDialog(true)}>
+            <Button variant="dark" aria-haspopup="dialog" onClick={() => setDialog(true)}>
               {r.log}
             </Button>
-            <Button variant="outline" onClick={done}>
+            <Button variant="outline" onClick={dismiss}>
               {r.dismiss}
             </Button>
           </div>
         </div>
       )}
-      <LogContactDialog open={dialog} initialChannel="call" leadId={leadId} t={t} pagePath={pagePath} onClose={() => setDialog(false)} onDone={done} />
+      <CallOutcomeDialog
+        open={dialog}
+        leadId={leadId}
+        leadName={leadName}
+        pagePath={pagePath}
+        t={t}
+        c={c}
+        onClose={() => setDialog(false)}
+        onDone={(message) => {
+          refocus.current = true;
+          dismiss();
+          setStatus(message);
+        }}
+      />
     </>
   );
 }

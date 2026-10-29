@@ -33,6 +33,12 @@ import type leadGate from "./en/leadGate";
 import type qb from "./en/qb";
 import type qbImport from "./en/qbImport";
 import type layout from "./en/layout";
+import type consoleCommon from "./en/console-common";
+import type consoleCalls from "./en/console-calls";
+import type consoleSources from "./en/console-sources";
+import type consoleNumbers from "./en/console-numbers";
+import type consoleFamily from "./en/console-family";
+import type consolePeople from "./en/console-people";
 
 export type Catalog = {
   common: typeof common;
@@ -62,6 +68,13 @@ export type Catalog = {
   qb: typeof qb;
   qbImport: typeof qbImport;
   layout: typeof layout;
+  /** Admin console Phase 1b catalogs (docs/admin-phase-1b-plan.md §12); components import them directly too. */
+  "console-common": typeof consoleCommon;
+  "console-calls": typeof consoleCalls;
+  "console-sources": typeof consoleSources;
+  "console-numbers": typeof consoleNumbers;
+  "console-family": typeof consoleFamily;
+  "console-people": typeof consolePeople;
 };
 
 export type Namespace = keyof Catalog;

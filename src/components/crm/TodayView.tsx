@@ -1,5 +1,7 @@
 import { ArrowRight, Phone } from "lucide-react";
 import Link from "next/link";
+import { callsMessages } from "@/components/console/calls/messages";
+import { OutcomeStatusRegion } from "@/components/console/calls/outcome-status";
 import { portalAreas } from "@/components/portal/areas";
 import { PortalPanel } from "@/components/portal/PortalBlocks";
 import { EmptyState } from "@/components/ui";
@@ -56,6 +58,8 @@ export function TodayView({
 }) {
   const d = t.today;
   const island: LeadIslandMessages = { common: t.common, errors: t.errors, stages: t.stages, lostReasons: t.lostReasons, lead: t.lead };
+  // Admin console 1b (§5.C): Done opens the one-step outcome dialog (what happened + next follow-up).
+  const calls = callsMessages(locale);
   const tiles = [
     { label: d.tiles.overdue, value: data.overdue.length, warn: data.overdue.length > 0 },
     { label: d.tiles.due, value: data.dueToday.length, warn: false },
@@ -89,7 +93,7 @@ export function TodayView({
                   <Phone aria-hidden="true" className="size-4" />
                   {t.lead.contact.call}
                 </Link>
-                <CompleteTaskButton taskId={task.id} title={task.title} t={island} pagePath={PAGE_PATH} />
+                <CompleteTaskButton taskId={task.id} title={task.title} leadId={task.leadId} leadName={name} t={island} c={calls} pagePath={PAGE_PATH} />
               </div>
             </li>
           );
@@ -138,12 +142,13 @@ export function TodayView({
         </dl>
       </section>
 
+      {/* 1B-CALLS (§5.C step 6): Done's result line and focus target outlive the refresh that drops the task's row. */}
       <PortalPanel id="crm-today-overdue" title={d.overdueTitle}>
-        {taskList(data.overdue, d.overdueEmpty)}
+        <OutcomeStatusRegion focusTargetId="crm-today-overdue">{taskList(data.overdue, d.overdueEmpty)}</OutcomeStatusRegion>
       </PortalPanel>
 
       <PortalPanel id="crm-today-due" title={d.dueTitle}>
-        {taskList(data.dueToday, d.dueEmpty)}
+        <OutcomeStatusRegion focusTargetId="crm-today-due">{taskList(data.dueToday, d.dueEmpty)}</OutcomeStatusRegion>
       </PortalPanel>
 
       <PortalPanel id="crm-today-new" title={d.newTitle}>

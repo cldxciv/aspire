@@ -7,6 +7,7 @@ import { findUserById } from "@/lib/db/users";
 import { keyedHash, secretBoxStatus } from "@/lib/server/secret-box";
 
 import { CRM_AUDIT, CRM_MESSAGES, crmAudit, fail, ok } from "./access";
+import { eraseConsoleData } from "./console/erase";
 import { deleteGateDataForLead } from "./gate";
 import { cleanSlug, toIso } from "./pure";
 import { insertActivity, scrubActivities } from "./repo/activities";
@@ -76,6 +77,10 @@ const KEEP_META_KEYS = [
   "adId",
   "campaignId",
   "consentConfirmed",
+  // Admin console 1b (docs/admin-phase-1b-plan.md §3): the WhatsApp template key and language a
+  // staff member sent (never the text).
+  "template",
+  "lang",
 ] as const;
 
 export const ERASED_TASK_TITLE = "[erased]";
@@ -122,6 +127,9 @@ export function eraseLead(
         eraseLog("no_suppression_key");
       }
     }
+    // Admin console 1b (§3): keep the non-personal referrer host and wipe the personal "more
+    // details" BEFORE the referrer is wiped below.
+    eraseConsoleData(db, lead, now);
     updateLead(db, leadId, {
       studentName: null,
       guardianName: null,

@@ -27,6 +27,12 @@ import enLeadGate from "./en/leadGate";
 import enQb from "./en/qb";
 import enQbImport from "./en/qbImport";
 import enLayout from "./en/layout";
+import enConsoleCommon from "./en/console-common";
+import enConsoleCalls from "./en/console-calls";
+import enConsoleSources from "./en/console-sources";
+import enConsoleNumbers from "./en/console-numbers";
+import enConsoleFamily from "./en/console-family";
+import enConsolePeople from "./en/console-people";
 import hiAbout from "./hi/about";
 import hiAdmissions from "./hi/admissions";
 import hiAuth from "./hi/auth";
@@ -54,6 +60,12 @@ import hiLeadGate from "./hi/leadGate";
 import hiQb from "./hi/qb";
 import hiQbImport from "./hi/qbImport";
 import hiLayout from "./hi/layout";
+import hiConsoleCommon from "./hi/console-common";
+import hiConsoleCalls from "./hi/console-calls";
+import hiConsoleSources from "./hi/console-sources";
+import hiConsoleNumbers from "./hi/console-numbers";
+import hiConsoleFamily from "./hi/console-family";
+import hiConsolePeople from "./hi/console-people";
 import type { Catalog, Messages, Namespace } from "./types";
 
 export type { Catalog, Messages, Namespace } from "./types";
@@ -92,6 +104,12 @@ const catalogs: Readonly<Record<Locale, Catalog>> = {
     qb: enQb,
     qbImport: enQbImport,
     layout: enLayout,
+    "console-common": enConsoleCommon,
+    "console-calls": enConsoleCalls,
+    "console-sources": enConsoleSources,
+    "console-numbers": enConsoleNumbers,
+    "console-family": enConsoleFamily,
+    "console-people": enConsolePeople,
   },
   hi: {
     common: hiCommon,
@@ -121,6 +139,12 @@ const catalogs: Readonly<Record<Locale, Catalog>> = {
     qb: hiQb,
     qbImport: hiQbImport,
     layout: hiLayout,
+    "console-common": hiConsoleCommon,
+    "console-calls": hiConsoleCalls,
+    "console-sources": hiConsoleSources,
+    "console-numbers": hiConsoleNumbers,
+    "console-family": hiConsoleFamily,
+    "console-people": hiConsolePeople,
   },
 };
 

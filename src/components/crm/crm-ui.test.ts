@@ -27,12 +27,15 @@ import {
   type LeadSummary,
   type MyTask,
 } from "@/lib/crm/types";
+import { callsMessages } from "@/components/console/calls/messages";
 import { crmFailureMessage, crmRequests, exportHref } from "./api";
 import { CrmPageHeader } from "./CrmBlocks";
 import {
   consentHistory,
+  consoleFilterChips,
   dueStatus,
   EMPTY_FILTERS,
+  hasActiveFilters,
   inboxQuery,
   istDueAt,
   maskPhone,
@@ -331,7 +334,7 @@ describe("localised API failures", () => {
 
 describe("staff area navigation", () => {
   it("hides Staff & rules from counsellors", () => {
-    expect(visibleStaffNavKeys(false)).toEqual(["inbox", "today", "pipeline", "reports"]);
+    expect(visibleStaffNavKeys(false)).toEqual(["inbox", "today", "pipeline", "admissions", "reports"]);
     expect(visibleStaffNavKeys(true)).toContain("staff");
     expect(crmPermissions({ role: "counsellor" })).toMatchObject({ canViewStaff: false, canExport: false, canAssign: false });
   });
@@ -384,6 +387,10 @@ describe.each(LOCALES)("pages render (%s)", (locale) => {
     expect(html).toContain(t.tools.predictor);
     expect(html).toContain(`href="${locale === "hi" ? "/hi" : ""}/crm/leads/lead-1"`);
     expect(html).toContain('name="assignee"');
+    // Admin console 1b (§5.I, 1B-FAMILY): the inbox form folds into a native "Filters" disclosure
+    // (closed in the markup; opened at lg by the island); the section keeps a visually hidden heading.
+    expect(html).toMatch(/<details class="group[^"]*"( data-first-paint="")?><summary/);
+    expect(html).toContain(`<h2 id="crm-inbox-filters" class="sr-only">${esc(t.inbox.filtersTitle)}</h2>`);
 
     const counsellorFilters = inLocale(
       locale,
@@ -415,8 +422,13 @@ describe.each(LOCALES)("pages render (%s)", (locale) => {
     expect(html).toMatch(/<h1[^>]*>Riya Sharma<\/h1>/);
     expectLabelledControls(html);
     expect(html).toContain('href="tel:+916000012345"');
-    expect(html).toContain('href="https://wa.me/916000012345"');
-    expect(html).toContain('rel="noopener noreferrer"');
+    // Admin console 1b (§5.C, §5.D; 1B-CALLS): WhatsApp opens the template composer (no bare wa.me
+    // link on the page), "Log a call" and every task's Done open the one-step outcome dialog.
+    const calls = callsMessages(locale);
+    expect(html).not.toContain("https://wa.me/");
+    expect(html).toContain(`aria-label="${esc(calls.whatsapp.openLabel.replace("{name}", "Riya Sharma"))}"`);
+    expect(html).toContain(esc(calls.calls.logCall));
+    expect(count(html, /aria-haspopup="dialog"/g)).toBeGreaterThanOrEqual(3);
     expect(html).toContain(esc(t.lead.contact.honest));
     // Every captured field, UTM / page context and consent.
     for (const text of [
@@ -872,9 +884,127 @@ describe("lead routing helpers (LR-CORE)", () => {
   });
 
   it("gives area heads and admins the Dashboard and Settings items; counsellors are unchanged", () => {
-    expect(visibleStaffNavKeys(false)).toEqual(["inbox", "today", "pipeline", "reports"]);
-    expect(visibleStaffNavKeys(true)).toEqual(["inbox", "today", "dashboard", "pipeline", "reports", "staff", "settings"]);
+    // Admin console 1b adds Admissions done (every role) and the Manage / Lead generation pages (heads).
+    expect(visibleStaffNavKeys(false)).toEqual(["inbox", "today", "pipeline", "admissions", "reports"]);
+    expect(visibleStaffNavKeys(true)).toEqual([
+      "inbox",
+      "today",
+      "dashboard",
+      "pipeline",
+      "admissions",
+      "reports",
+      "staff",
+      "settings",
+      "targets",
+      "templates",
+      "lostReview",
+      "sources",
+    ]);
     expect(t.nav.dashboard).toBeTruthy();
     expect(messagesFor("hi", "crm").nav.settings).toMatch(/[ऀ-ॿ]/);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Admin console Phase 1b foundations (docs/admin-phase-1b-plan.md §4.3, §13; 1B-CORE)
+
+describe("admin console 1b: inbox filters and chips (§4.3)", () => {
+  it("round-trips contact, signups and created through the URL and drops junk", () => {
+    const filters = parseInboxFilters({ stage: "new", contact: "none", signups: "hide", created: "over24h", centre: "shimla" });
+    expect(filters).toMatchObject({ stage: "new", contact: "none", signups: "hide", created: "over24h", centre: "shimla" });
+    expect(inboxQuery(filters)).toBe("?stage=new&centre=shimla&contact=none&signups=hide&created=over24h");
+    expect(toLeadFilters(filters)).toMatchObject({ stage: "new", contact: "none", signups: "hide", created: "over24h" });
+    expect(hasActiveFilters({ ...EMPTY_FILTERS, created: "today" })).toBe(true);
+    expect(hasActiveFilters(EMPTY_FILTERS)).toBe(false);
+    expect(parseInboxFilters({ contact: "some", signups: "show", created: "yesterday" })).toEqual(EMPTY_FILTERS);
+    expect(parseInboxFilters(new URLSearchParams("created=week&page=2"))).toMatchObject({ created: "week", page: 2 });
+  });
+
+  it.each(LOCALES)("gives each console filter a removable chip (%s)", (locale) => {
+    const t = messagesFor(locale, "crm");
+    const filters = parseInboxFilters({ stage: "new", contact: "none", signups: "hide", created: "today", page: "3" });
+    const chips = consoleFilterChips(t, filters);
+    expect(chips.map((chip) => chip.key)).toEqual(["contact", "signups", "created"]);
+    expect(chips.map((chip) => chip.label)).toEqual([
+      t.inbox.chips.contactNone,
+      t.inbox.chips.signupsHide,
+      t.inbox.chips.created.replace("{when}", t.inbox.chips.createdValues.today),
+    ]);
+    // Each chip removes only its own filter (and goes back to page 1).
+    expect(chips.map((chip) => chip.removeQuery)).toEqual([
+      "?stage=new&signups=hide&created=today",
+      "?stage=new&contact=none&created=today",
+      "?stage=new&contact=none&signups=hide",
+    ]);
+    expect(consoleFilterChips(t, EMPTY_FILTERS)).toEqual([]);
+    for (const text of [t.inbox.chips.label, t.inbox.chips.remove, t.inbox.chips.clearAll, t.inbox.contact, t.inbox.signups, t.inbox.created]) {
+      expect(text.trim()).not.toBe("");
+    }
+  });
+});
+
+describe.each(LOCALES)("admin console 1b: nav, settings hub and the lead page slots (%s)", (locale) => {
+  const t = messagesFor(locale, "crm");
+  const prefix = locale === "hi" ? "/hi" : "";
+
+  it("staff nav: heads get the Manage and Lead generation pages; counsellors only Admissions done", () => {
+    const portal = messagesFor(locale, "portal");
+    const messages = staffNavMessages(portal, t);
+    const nav = (canManage: boolean) =>
+      inLocale(locale, createElement(PortalNavLinks, { area: "staff", locale, messages, visibleKeys: visibleStaffNavKeys(canManage), pathname: `${prefix}/crm/targets` }));
+    const counsellor = nav(false);
+    expect(counsellor).toContain(`href="${prefix}/crm/admissions"`);
+    for (const path of ["/crm/targets", "/crm/templates", "/crm/lost", "/crm/sources"]) expect(counsellor).not.toContain(`href="${prefix}${path}"`);
+    expect(counsellor).not.toContain(esc(portal.navGroups.manage));
+    const head = nav(true);
+    for (const path of ["/crm/targets", "/crm/templates", "/crm/lost", "/crm/sources"]) expect(head).toContain(`href="${prefix}${path}"`);
+    for (const label of [t.nav.admissions, t.nav.targets, t.nav.templates, t.nav.lostReview, t.nav.sources, portal.navGroups.manage, portal.navGroups.leadGeneration]) {
+      expect(head).toContain(esc(label));
+    }
+    expect(head).toMatch(new RegExp(`<a aria-current="page"[^>]*href="${prefix}/crm/targets"`));
+    expect(count(head, /aria-current="page"/g)).toBe(1);
+  });
+
+  it("settings hub: Targets, WhatsApp templates and Google Maps links cards for heads and admins", () => {
+    for (const permissions of [crmPermissions({ role: "admin", superAdmin: true }), crmPermissions({ role: "admin" }), crmPermissions({ role: "manager" })]) {
+      const html = inLocale(locale, createElement(SettingsHub, { permissions, superAdminNames: [], locale, t }));
+      for (const href of ["/crm/targets", "/crm/templates", "/crm/sources#maps"]) expect(html).toContain(`href="${prefix}${href}"`);
+      for (const key of ["targets", "templates", "maps"] as const) {
+        expect(html).toContain(esc(t.settings.sections[key].title));
+        expect(html).toContain(esc(t.settings.sections[key].body));
+      }
+    }
+  });
+
+  it("names the more-details fields on the timeline", () => {
+    const ctx = { t, locale, viewer: viewer("counsellor"), staffNames: {}, tasks: [] };
+    const common = messagesFor(locale, "crm");
+    const lines = activitySummary(
+      { id: 9, type: "field_update", body: null, meta: { fields: ["details.school", "details.heardVia", "studentName", "details.unknownField"] }, actorId: null, actorName: null, at: DETAIL.createdAt },
+      ctx,
+    );
+    const school = locale === "hi" ? "स्कूल" : "school";
+    const heard = locale === "hi" ? "हमारे बारे में कैसे पता चला" : "how they heard about us";
+    expect(lines).toEqual([common.lead.timeline.fieldsEdited.replace("{fields}", [school, heard, common.lead.details.fieldNames.studentName, "unknownField"].join(", "))]);
+  });
+
+  it("the lead page renders with the two empty 1b slots (duplicates, more details) and unchanged sections", () => {
+    const html = inLocale(
+      locale,
+      createElement(LeadDetailView, {
+        lead: DETAIL,
+        viewer: viewer("manager"),
+        permissions: crmPermissions({ role: "manager" }),
+        centres: CENTRES,
+        assigneeOptions: [],
+        staffNames: {},
+        now: NOW,
+        locale,
+        t,
+      }),
+    );
+    expect(count(html, /<h1\b/g)).toBe(1);
+    expect(html).toContain(esc(t.lead.timeline.title));
+    expect(html).toContain(esc(t.lead.tasks.title));
   });
 });

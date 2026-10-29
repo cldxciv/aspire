@@ -45,7 +45,18 @@ export const SUPER_ADMIN_CLI = "npm run auth:super-admin -- grant <login id>";
 // ---------------------------------------------------------------------------------------------
 // §12 Settings documents (`crm_settings`)
 
-export const CRM_SETTING_KEYS = ["calling_hours", "speed_rule", "routing", "areas_seed", "meta_config", "meta_status"] as const;
+export const CRM_SETTING_KEYS = [
+  "calling_hours",
+  "speed_rule",
+  "routing",
+  "areas_seed",
+  "meta_config",
+  "meta_status",
+  // Admin console Phase 1b (docs/admin-phase-1b-plan.md §3): each centre's Google Maps link and
+  // the WhatsApp templates' prospectus link (super admins write; src/lib/crm/console/).
+  "centre_links",
+  "wa_links",
+] as const;
 export type CrmSettingKey = (typeof CRM_SETTING_KEYS)[number];
 
 /** A settings document with its optimistic-lock version (`expectedVersion` on every PUT). */

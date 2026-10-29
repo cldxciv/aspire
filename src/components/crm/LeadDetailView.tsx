@@ -17,13 +17,19 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
+import { callsMessages, type CallsMessages } from "@/components/console/calls/messages";
+import { OutcomeStatusRegion } from "@/components/console/calls/outcome-status";
+import { LeadMoreDetails } from "@/components/console/details/LeadMoreDetails";
+import { DuplicateSuggestions } from "@/components/console/duplicates/DuplicateSuggestions";
+import { consoleCommon } from "@/components/console/shared/messages";
 import { PortalPanel } from "@/components/portal/PortalBlocks";
 import { Notice } from "@/components/ui";
 import { localeNames, type Locale } from "@/i18n/config";
 import { format } from "@/i18n/format";
 import { localePath } from "@/i18n/paths";
 import { cn } from "@/lib/cn";
+import { DETAIL_FIELD_PREFIX } from "@/lib/crm/console/types";
 import type { CrmPermissions, CrmViewer, LeadActivity, LeadDetail, LeadTask } from "@/lib/crm/types";
 import { CallReturnPrompt } from "./CallReturnPrompt";
 import { ChangeAreaButton } from "./ChangeAreaButton";
@@ -46,6 +52,7 @@ import {
   istDayKey,
   lostReasonLabel,
   needsParentConfirmation,
+  normaliseE164,
   outcomeLabel,
   programLabel,
   routingMatchLabel,
@@ -58,7 +65,6 @@ import {
   toolLabel,
   toolUseSummary,
   topicLabel,
-  whatsAppHref,
   type BackTarget,
   type ConsentEntry,
   type CrmMessages,
@@ -127,6 +133,8 @@ export function LeadDetailView({
   const pagePath = `/crm/leads/${lead.id}`;
   const name = leadName(t, lead);
   const island: LeadIslandMessages = { common: t.common, errors: t.errors, stages: t.stages, lostReasons: t.lostReasons, lead: t.lead };
+  // Admin console 1b (§5.C, §5.D; 1B-CALLS): the call dialog and WhatsApp composer words.
+  const calls = callsMessages(locale);
   const editable = !lead.erased;
   const openTasks = lead.tasks.filter((task) => !task.doneAt);
   const doneTasks = lead.tasks.filter((task) => task.doneAt);
@@ -174,7 +182,12 @@ export function LeadDetailView({
         </Notice>
       )}
 
-      {editable && lead.phone && <CallReturnPrompt leadId={lead.id} t={island} pagePath={pagePath} />}
+      {editable && lead.phone && <CallReturnPrompt leadId={lead.id} leadName={name} t={island} c={calls} pagePath={pagePath} focusAfterId="crm-lead-contact" />}
+
+      {/* Admin console 1b slot (§5.F, 1B-FAMILY): "Possible duplicates"; renders only when there are matches. */}
+      <Suspense fallback={null}>
+        <DuplicateSuggestions lead={lead} viewer={viewer} permissions={permissions} locale={locale} pagePath={pagePath} now={now} />
+      </Suspense>
 
       {editable && (
         <section aria-labelledby="crm-lead-manage" className="rounded-card border border-line bg-white p-5 shadow-soft md:p-6">
@@ -222,21 +235,25 @@ export function LeadDetailView({
               leadId={lead.id}
               name={name}
               telHref={telHref(lead.phone)}
-              whatsAppHref={whatsAppHref(lead.phone)}
+              phone={normaliseE164(lead.phone)}
               phoneDisplay={displayPhone(lead.phone)}
               email={lead.email}
               t={island}
+              c={calls}
               pagePath={pagePath}
             />
           </PortalPanel>
         )}
 
         <PortalPanel id="crm-lead-tasks" title={t.lead.tasks.title}>
-          {openTasks.length === 0 ? (
-            <p className="text-sm text-muted">{t.lead.tasks.empty}</p>
-          ) : (
-            <TaskList tasks={openTasks} now={now} locale={locale} t={t} island={island} pagePath={pagePath} editable={editable} />
-          )}
+          {/* 1B-CALLS (§5.C step 6): Done's result line and focus target outlive the refresh that drops the task's row. */}
+          <OutcomeStatusRegion focusTargetId="crm-lead-tasks">
+            {openTasks.length === 0 ? (
+              <p className="text-sm text-muted">{t.lead.tasks.empty}</p>
+            ) : (
+              <TaskList tasks={openTasks} leadId={lead.id} leadName={name} now={now} locale={locale} t={t} island={island} calls={calls} pagePath={pagePath} editable={editable} />
+            )}
+          </OutcomeStatusRegion>
           {editable && (
             <div className="mt-5 border-t border-line pt-4">
               <h3 className="mb-3 text-sm font-extrabold uppercase tracking-wide text-muted">{t.lead.tasks.add}</h3>
@@ -265,13 +282,19 @@ export function LeadDetailView({
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-        <LeadDetailsPanel
-          lead={lead}
-          centres={centres}
-          locale={locale}
-          t={t}
-          edit={editable && detailOptions ? { island, pagePath, options: detailOptions } : null}
-        />
+        <div className="min-w-0 space-y-5">
+          <LeadDetailsPanel
+            lead={lead}
+            centres={centres}
+            locale={locale}
+            t={t}
+            edit={editable && detailOptions ? { island, pagePath, options: detailOptions } : null}
+          />
+          {/* Admin console 1b slot (§5.E, 1B-FAMILY): "More details" under Details. */}
+          <Suspense fallback={null}>
+            <LeadMoreDetails lead={lead} viewer={viewer} permissions={permissions} locale={locale} pagePath={pagePath} now={now} />
+          </Suspense>
+        </div>
         <div className="space-y-5">
           {editable && (
             <PortalPanel id="crm-lead-note" title={t.lead.notes.title}>
@@ -410,18 +433,24 @@ function ConvertPlaceholder({ t }: { t: CrmMessages }) {
 
 function TaskList({
   tasks,
+  leadId,
+  leadName,
   now,
   locale,
   t,
   island,
+  calls,
   pagePath,
   editable,
 }: {
   tasks: LeadTask[];
+  leadId: string;
+  leadName: string;
   now: number;
   locale: Locale;
   t: CrmMessages;
   island: LeadIslandMessages;
+  calls: CallsMessages;
   pagePath: string;
   editable: boolean;
 }) {
@@ -436,7 +465,8 @@ function TaskList({
               {task.assignee && <span>· {format(t.lead.tasks.assignedTo, { name: task.assignee.displayName })}</span>}
             </p>
           </div>
-          {editable && <CompleteTaskButton taskId={task.id} title={task.title} t={island} pagePath={pagePath} />}
+          {/* Admin console 1b (§5.C): Done asks what happened (one-step outcome dialog with this task). */}
+          {editable && <CompleteTaskButton taskId={task.id} title={task.title} leadId={leadId} leadName={leadName} t={island} c={calls} pagePath={pagePath} />}
         </li>
       ))}
     </ul>
@@ -797,9 +827,15 @@ export function activitySummary(
     }
     case "field_update": {
       const fields = Array.isArray(meta.fields) ? meta.fields : [];
-      const names = fields.map((field) =>
-        Object.hasOwn(t.lead.details.fieldNames, field) ? t.lead.details.fieldNames[field as keyof CrmMessages["lead"]["details"]["fieldNames"]] : field,
-      );
+      // Admin console 1b (§5.E): "details.school" etc. come from the more-details panel.
+      const detailNames = consoleCommon(locale).details.fields;
+      const names = fields.map((field) => {
+        if (field.startsWith(DETAIL_FIELD_PREFIX)) {
+          const key = field.slice(DETAIL_FIELD_PREFIX.length);
+          return Object.hasOwn(detailNames, key) ? detailNames[key as keyof typeof detailNames] : key;
+        }
+        return Object.hasOwn(t.lead.details.fieldNames, field) ? t.lead.details.fieldNames[field as keyof CrmMessages["lead"]["details"]["fieldNames"]] : field;
+      });
       if (names.length) lines.push(format(tl.fieldsEdited, { fields: names.join(", ") }));
       break;
     }

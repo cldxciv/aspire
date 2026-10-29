@@ -12,7 +12,7 @@ import { defineTool, fail, READ_ONLY } from "./types";
 
 /**
  * `get_student_progress`: counts and labels only, from the stores the student and parent portals
- * use (mock tests, planner, Ask Aspire weak topics). Never answers, plan contents, flashcards,
+ * use (mock tests, planner, weak topics from Rancho, the AI doubt solver). Never answers, plan contents, flashcards,
  * nicknames, schools, question text, photos or model answers.
  */
 
@@ -25,7 +25,7 @@ export const getStudentProgress = defineTool({
     "Summarises one STUDENT account's activity on the website's study tools (counts and labels only): " +
     "mock tests (attempts, tests taken, average accuracy 0–1, best score per test id, longest streak, badges), " +
     "study planner (has a plan, exam, days to exam, streak, XP, activity in the last 30 days), " +
-    `and up to ${WEAK_TOPIC_LIMIT} 'weak topics' (subject + short topic label + how many doubts were asked in Ask Aspire). ` +
+    `and up to ${WEAK_TOPIC_LIMIT} 'weak topics' from Rancho (the AI doubt solver): subject + short topic label + how many doubts were asked. ` +
     "Only data saved from signed-in devices exists (guest use stays in the browser). Students are minors: use this only for the admin task at hand " +
     "and do not copy it elsewhere. studentId comes from list_accounts (role student).",
   scope: "read",
@@ -82,7 +82,7 @@ export const getStudentProgress = defineTool({
       summary:
         `Student "${user.displayName}": ${mock.totalAttempts} mock-test attempt(s) (accuracy ${accuracy}); ` +
         `planner ${planner.hasPlan ? `active, streak ${planner.streak.current} day(s), ${planner.activeDaysLast30} active day(s) in the last 30` : "not set up"}; ` +
-        `${weakTopics.length} weak topic(s) from Ask Aspire.`,
+        `${weakTopics.length} weak topic(s) from Rancho (the AI doubt solver).`,
       data,
     };
   },
