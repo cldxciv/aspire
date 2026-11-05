@@ -39,6 +39,7 @@ export type NavItem = {
 /** Main navigation per the approved homepage design (D-022). Order matters. */
 export const mainNav: NavItem[] = [
   { labelKey: "home", href: "/" },
+  { labelKey: "about", href: "/about" },
   {
     labelKey: "programs",
     href: "/programs",
@@ -50,7 +51,6 @@ export const mainNav: NavItem[] = [
   { labelKey: "results", href: "/results" },
   { labelKey: "centres", href: "/centres" },
   { labelKey: "hostels", href: "/hostels" },
-  { labelKey: "about", href: "/about" },
   {
     labelKey: "resources",
     href: "/resources",
